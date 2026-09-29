@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Repo-tracked pre-commit hook: run the project gates before each commit.
+
+Opt-in (point git at this directory once):
+
+    git config core.hooksPath .githooks
+
+Does two things:
+  1. STRUCTURE MAP (hands-free): if a committed ``docs/REPO_MAP.md`` exists,
+     regenerate it from the git INDEX (``--staged`` -- exactly what this commit
+     will contain) and, if it changed, re-stage it so the refreshed map is part of
+     THIS commit. No amend dance.
+  2. GOVERNANCE GATE: run ``scripts/check_docs.py`` and BLOCK the commit if the
+     governance docs are inconsistent (a ✅ story with no recorded validation, a
+     stray {{placeholder}}, a dangling link, a stale map).
+
+Both steps are fail-open on absence, so a repo that has adopted only part of the
+kit is never blocked spuriously. Skip entirely with ``git commit --no-verify``.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True, check=False
+    )
+
+
+def _repo_root() -> Path:
+    out = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
+    )
+    return Path(out.stdout.strip())
+
+
+def _refresh_map() -> int:
+    root = _repo_root()
+    gen = root / "scripts" / "gen_repo_map.py"
+    ann = root / "docs" / "repo-map.annotations.json"
+    out = root / "docs" / "REPO_MAP.md"
+    if not gen.exists() or not out.exists():
+        return 0  # map not adopted -> nothing to do
+
+    before = out.read_text(encoding="utf-8") if out.exists() else ""
+    cmd = [
+        sys.executable,
+        str(gen),
+        "--staged",
+        "--ref-label",
+        "main",
+        "-o",
+        str(out),
+    ]
+    if ann.exists():
+        cmd[3:3] = ["--annotations", str(ann)]  # insert after --staged
+    result = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        sys.stderr.write(
+            "\npre-commit: repo-map generation failed:\n" + result.stderr + "\n"
+        )
+        return result.returncode
+
+    after = out.read_text(encoding="utf-8")
+    if after != before:
+        _run(root, "add", str(out.relative_to(root)))
+        sys.stderr.write("pre-commit: refreshed docs/REPO_MAP.md and staged it.\n")
+    return 0
+
+
+def _run_governance_gate(root: Path) -> int:
+    """Run scripts/check_docs.py and block the commit on failure."""
+    checker = root / "scripts" / "check_docs.py"
+    if not checker.exists():
+        return 0
+    result = subprocess.run(
+        [sys.executable, str(checker), "--repo-root", str(root)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout + result.stderr)
+        sys.stderr.write(
+            "\npre-commit: governance gate failed (see above). Fix the cause or "
+            "bypass with --no-verify only if you understand why.\n"
+        )
+    return result.returncode
+
+
+def main() -> int:
+    # 1. keep the structure map fresh (auto-fix + re-stage)
+    rc = _refresh_map()
+    if rc != 0:
+        return rc
+    # 2. enforce governance-doc consistency (block on failure)
+    return _run_governance_gate(_repo_root())
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

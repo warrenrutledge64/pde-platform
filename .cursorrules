@@ -1,0 +1,14 @@
+Read AGENTS.md at the repository root and follow it fully before doing any work.
+
+This project uses a validation-gated, one-story-at-a-time operating system.
+AGENTS.md is the entrypoint and defines the binding rules. In particular:
+
+- "Done" means validated live and recorded in governance/RUNBOOK.md — never on
+  inference, never because code merged.
+- Do the session ritual first: close out the prior story, then check the
+  advancement gate (a story cannot start until its dependencies are all done).
+- Never self-certify a story as done; the human validates, you record.
+- Never push to main directly — branch + PR only.
+- End every session by authoring the next story's warm handoff.
+
+See AGENTS.md for the full operating system.

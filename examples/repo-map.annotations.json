@@ -1,0 +1,25 @@
+{
+  "title": "My Project — Repository Structure Map",
+  "intro": "REPO FACTS are generated from the git tree and are authoritative. The INTERPRETATION section applies human framing (phases/roles). Every annotated path is validated against the real tree, so a renamed or removed directory surfaces as drift.",
+  "roles": {
+    "src": "Application source code",
+    "src/api": "HTTP handlers / route layer",
+    "src/core": "Domain logic (pure, no I/O)",
+    "infra": "Infrastructure-as-code",
+    "docs": "Project documentation",
+    "scripts": "Developer tooling"
+  },
+  "groups": [
+    {
+      "label": "Runtime",
+      "note": "Everything that ships and runs in production.",
+      "paths": ["src", "infra"]
+    },
+    {
+      "label": "Support",
+      "note": "Docs and tooling — not shipped, but part of the effort.",
+      "paths": ["docs", "scripts"]
+    }
+  ],
+  "footer": "Replace these example paths/labels with your own. Any path that does not exist in the tree will be flagged by the gate — that is the point."
+}

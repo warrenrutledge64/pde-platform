@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# CDK / Node (added when infrastructure lands)
+node_modules/
+cdk.out/
+*.tsbuildinfo
+
+# Local env / secrets — never commit
+.env
+*.local
