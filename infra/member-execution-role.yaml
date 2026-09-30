@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 1.1 (re-scoped, orchestrate-and-pull, RD-006) — the tier-1 trust
+  fabric. Deploys a least-privilege MEMBER execution role into a member account
+  (Pipeline-Dev / Sandbox / Prod). The role is assumable ONLY by a SPECIFIC
+  Pipeline-Hub orchestrator role (never the Hub account root), with an ExternalId.
+  In the orchestrate-and-pull model the Hub DIRECTS this role and the deployment
+  ACTION EXECUTES LOCALLY in the member; the Hub does not push writes into the
+  member. Deploy this stack ONCE PER MEMBER (or via a StackSet). Do NOT deploy
+  into the Organization management account.
+
+  TIGHT TIER-1 SCOPE: this establishes the trust identity + DIRECTION only. The
+  orchestration engine (Step Functions), the results intake data-contract, and the
+  Hub-signed decision-token machinery are Phase 2 (RD-006 amendment).
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  HubAccountId:
+    Type: String
+    Description: The Pipeline-Hub (shared control plane) account ID (RD-006).
+    Default: "641628980935"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  HubOrchestratorRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Hub-side orchestrator role allowed to assume/direct
+      this member execution role. Per RD-006 the member trusts a specific Hub
+      ROLE, not the Hub account root. This orchestrator role is created in the Hub
+      during Phase 2; the trust may name it before it exists (it resolves at
+      assume-time).
+    Default: pde-hub-orchestrator
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+
+  ExternalId:
+    Type: String
+    Description: >-
+      Shared secret required on sts:AssumeRole (confused-deputy protection). The
+      Hub orchestrator must present this exact value. Store it in the Hub's config;
+      do not commit the real value to source.
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 128
+
+  RolePrefix:
+    Type: String
+    Description: PDE naming prefix (ZTIE co-existence — avoid collisions).
+    Default: pde-
+    AllowedPattern: "^[a-z][a-z0-9-]{1,15}$"
+
+  EnvironmentName:
+    Type: String
+    Description: Which member this role is being deployed into (for naming/tagging).
+    AllowedValues: [dev, sandbox, prod]
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Permissions the member's LOCAL execution uses --------------------------
+  # In orchestrate-and-pull the ACTION runs locally in this member; these are the
+  # permissions that local execution needs to deploy PDE artifacts IN THIS ACCOUNT.
+  # Scoped to the pde- stack namespace — NOT AdministratorAccess, NOT a wildcard.
+  # NOTE: the full local-execution permission set is finalized in Phase 2 alongside
+  # the orchestration engine; tier-1 establishes the identity + trust direction.
+  MemberExecutionPermissions:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${RolePrefix}member-execution-permissions-${EnvironmentName}"
+      Description: Least-privilege permissions for PDE LOCAL (in-member) CFN execution.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: LocalCloudFormationStackOps
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:ListStackResources
+              - cloudformation:CreateChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:ValidateTemplate
+              - cloudformation:TagResource
+              - cloudformation:UntagResource
+            Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${RolePrefix}*/*"
+          - Sid: ReadOnlyDescribe
+            Effect: Allow
+            Action:
+              - cloudformation:ListStacks
+              - cloudformation:ListExports
+              - cloudformation:ListImports
+            Resource: "*"
+
+  # --- The member execution role the Hub orchestrator DIRECTS -----------------
+  MemberExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${RolePrefix}member-execution-${EnvironmentName}"
+      Description: >-
+        PDE member LOCAL execution role. Assumable/directable ONLY by the named
+        Pipeline-Hub orchestrator role, with the required ExternalId (RD-006
+        orchestrate-and-pull). The Hub directs; execution is local to this member.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: TrustSpecificHubOrchestratorRole
+            Effect: Allow
+            Principal:
+              # A SPECIFIC Hub role ARN — not arn:aws:iam::<hub>:root.
+              AWS: !Sub "arn:${AWS::Partition}:iam::${HubAccountId}:role/${HubOrchestratorRoleName}"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      ManagedPolicyArns:
+        - !Ref MemberExecutionPermissions
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "1.1" }
+        - { Key: Component, Value: trust-fabric }
+        - { Key: Model, Value: orchestrate-and-pull }
+        - { Key: Environment, Value: !Ref EnvironmentName }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  MemberExecutionRoleArn:
+    Description: ARN of the PDE member execution role (the Hub orchestrator directs this).
+    Value: !GetAtt MemberExecutionRole.Arn
+    Export:
+      Name: !Sub "pde-member-execution-role-arn-${EnvironmentName}"
+
+  MemberExecutionRoleName:
+    Description: Name of the PDE member execution role.
+    Value: !Ref MemberExecutionRole

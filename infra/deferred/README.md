@@ -26,6 +26,8 @@ as Story 1.1 (RD-005). Two ratified decisions changed that:
 |------|--------|-------|
 | `cloudtrail-org-baseline.yaml` | **deferred** | The as-built org-trail template from the original Story 1.1 — **root-hosted** model. At Story 4.1 it is adapted from root-hosted to **Hub-delegated** (RD-006) before deployment. 28-invariant offline proof passed at authoring time. |
 | `validate_cloudtrail_template.py` | **deferred** | Stdlib offline invariant checker for the template above. Still runnable in place: `python3 infra/deferred/validate_cloudtrail_template.py`. |
+| `spoke-execution-role.push-model.yaml` | **retired (wrong direction)** | The first trust-fabric attempt: a Spoke role trusting a Hub *deployer* so the **Hub pushes writes into the member**. Superseded by the RD-006 **orchestrate-and-pull amendment** — the Hub *directs* and the member *executes locally* (see `infra/member-execution-role.yaml`). Kept for historical reference only; **do not deploy.** |
+| `validate_spoke_push_model.py` | **retired** | The 19-invariant checker for the retired push-model template above. |
 
 ## When this gets picked up
 
