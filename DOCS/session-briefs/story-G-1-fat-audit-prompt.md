@@ -19,8 +19,8 @@ fat until proven lean. You get credit ONLY for finding fat and showing the drift
 hallucination it causes — not for praising thoroughness.
 
 # THE ARTIFACTS (read at the pinned commit; do not trust any summary)
-Repo: github.com/warrenrutledge64/pde-platform  (branch main, commit [[ latest main SHA ]])
-Fetch: `git fetch origin && git checkout <SHA>`  (or read in the repo UI)
+Repo: github.com/warrenrutledge64/pde-platform  (branch main, commit a7c06cc)
+Fetch: `git fetch origin && git checkout a7c06cc`  (or read in the repo UI)
 Priority order (highest-stakes first):
   1. DOCS/SESSION_PROMPT_TEMPLATE.md
   2. DOCS/session-briefs/story-1.1-PROMPT.md      (a filled instance of #1)
