@@ -1,159 +1,155 @@
-# Story 1.1 — LIVE Deploy & Validation Runbook (operator copy-paste)
+# Story 1.1 (re-scoped) — LIVE Deploy & Validation Runbook (operator copy-paste)
 
-> **Account context for EVERY block below:**
-> **AWS Organization MANAGEMENT / root account `467866449172`.**
-> This is the *only* account Story 1.1 touches. Run `aws sts get-caller-identity`
-> before each block and confirm `"Account": "467866449172"` — a banner comment does
-> not change your credentials.
+> **Story 1.1 is now the cross-account TRUST FABRIC** (RD-006), not the org-wide
+> CloudTrail. The CloudTrail work is deferred (RD-007) to Story 4.1 and preserved in
+> `infra/deferred/`. This runbook deploys the Spoke execution role into each Spoke
+> and validates a Hub→Spoke `AssumeRole`.
 >
-> **Region:** pick the home region for the trail (multi-region trail still has a
-> home region for the delivery). This runbook uses `us-east-1`; substitute if you
-> deploy elsewhere and record the choice in `governance/BOM.md`.
+> **Accounts in play:**
+> - **Spokes** (where the role is deployed): `Pipeline-Dev`, `Pipeline-Sandbox`,
+>   `Pipeline-Prod`.
+> - **Hub** (where the AssumeRole is *initiated*): `Pipeline-Hub` `641628980935`.
+> - **NOT** the management/root account (`467866449172`) — nothing here touches it.
 >
-> **Artifact:** `infra/cloudtrail-org-baseline.yaml` (offline-proven — 28 invariants
-> pass via `python3 infra/validate_template.py`). Story stays 🟡 until the gate
-> below returns a recorded pass.
+> Run `aws sts get-caller-identity` before each block and confirm the account. A
+> banner comment does not change your credentials.
+>
+> **Artifact:** `infra/spoke-execution-role.yaml` (offline-proven — 19 invariants via
+> `python3 infra/validate_trust_fabric.py`). Story 1.1 stays 🟡 (VD-2) until the
+> AssumeRole gate below returns a recorded pass.
 
 ---
 
-## STEP 0 — Preconditions (one-time, in the management account)
+## Inputs you need first
 
-```bash
-# CONTEXT: mgmt/root 467866449172
-aws sts get-caller-identity --query Account --output text   # expect 467866449172
-
-# Enable AWS Organizations trusted access for CloudTrail (required for an org trail):
-aws organizations enable-aws-service-access \
-  --service-principal cloudtrail.amazonaws.com
-
-# Capture your Organization ID (o-xxxxxxxxxx) — needed as a stack parameter:
-aws organizations describe-organization --query 'Organization.Id' --output text
-```
-
-> If `enable-aws-service-access` errors with AccessDenied, you are not in the
-> management account (or not a delegated administrator). Fix the context before
-> continuing — do NOT try to work around it.
+| Input | Value | Notes |
+|-------|-------|-------|
+| Hub account id | `641628980935` | The `Pipeline-Hub` shared control plane (RD-006). |
+| Dev / Sandbox / Prod account ids | _(fill in)_ | The three Spoke account ids. `aws organizations list-accounts` from the mgmt account lists them if needed. |
+| Hub deployer role name | `pde-hub-deployer` (default) | The specific Hub role allowed to assume the Spoke role. Created in Phase 2; the trust references it by name now (it need not exist yet). |
+| ExternalId | _(a strong shared secret)_ | Required on AssumeRole (confused-deputy protection). Store in Hub config; do NOT commit the real value. |
 
 ## STEP 1 — Offline proof (optional re-run; already green in the repo)
 
 ```bash
-python3 infra/validate_template.py    # expect: PASS — all 28 Story 1.1 invariants hold
+python3 infra/validate_trust_fabric.py    # expect: PASS — all 19 trust-fabric invariants hold
 ```
 
 > The full cfn-lint / cfn-guard / Checkov / Bandit static bar (Universal Criterion 3)
-> runs here in CloudShell / CI, where PyPI is reachable (the build sandbox has it
-> blocked). Suggested:
+> runs here in CloudShell / CI (the build sandbox has PyPI blocked):
 > ```bash
 > pip install cfn-lint checkov
-> cfn-lint infra/cloudtrail-org-baseline.yaml
-> checkov -f infra/cloudtrail-org-baseline.yaml
+> cfn-lint infra/spoke-execution-role.yaml
+> checkov -f infra/spoke-execution-role.yaml
 > ```
-> Resolve any findings before deploy.
 
-## STEP 2 — Deploy the trail stack (management account only)
+## STEP 2 — Deploy the Spoke execution role into EACH Spoke
+
+Run this block **three times — once per Spoke** — each time authenticated to that
+Spoke account and with the matching `EnvironmentName`.
 
 ```bash
-# CONTEXT: mgmt/root 467866449172, region us-east-1
-ORG_ID=$(aws organizations describe-organization --query 'Organization.Id' --output text)
-echo "Org: $ORG_ID"
+# CONTEXT: e.g. Pipeline-Dev  (repeat for Sandbox, then Prod)
+aws sts get-caller-identity --query Account --output text   # expect the SPOKE account id
+
+EXTERNAL_ID="<the-shared-secret>"     # same value the Hub deployer will present
 
 aws cloudformation deploy \
   --region us-east-1 \
-  --stack-name pde-org-cloudtrail-baseline \
-  --template-file infra/cloudtrail-org-baseline.yaml \
+  --stack-name pde-trust-fabric \
+  --template-file infra/spoke-execution-role.yaml \
   --parameter-overrides \
-      OrganizationId="$ORG_ID" \
-      ManagementAccountId=467866449172 \
-      LogBucketName=pde-org-cloudtrail-logs-467866449172 \
-      TrailName=pde-org-trail \
+      HubAccountId=641628980935 \
+      HubDeployerRoleName=pde-hub-deployer \
+      ExternalId="$EXTERNAL_ID" \
+      EnvironmentName=dev \
   --capabilities CAPABILITY_NAMED_IAM \
-  --tags Project=PDE Story=1.1 Component=governance-cloudtrail
+  --tags Project=PDE Story=1.1 Component=trust-fabric
+
+# For Sandbox: EnvironmentName=sandbox ; for Prod: EnvironmentName=prod
+# (deploy each in that Spoke account's own session)
 ```
 
-> `LogBucketName` must be globally unique. If it collides, pass a different name
-> (keep the `pde-` prefix) and record it.
+> **Chicken-and-egg note:** the Hub deployer role (`pde-hub-deployer`) does not exist
+> until Phase 2. That is fine — an IAM trust policy may name a principal ARN that
+> doesn't exist yet; the trust resolves at *assume-time*. Until the Hub role exists
+> you validate the role's *existence + trust shape* (STEP 3a); the full live
+> AssumeRole (STEP 3b) can be run once the Hub deployer role is created (Phase 2), or
+> with a temporary stand-in role you control in the Hub.
 
-## STEP 3 — VALIDATE (the Phase 1 gate, CloudTrail half)
-
-> The Phase 1 end-of-phase gate has two halves: this CloudTrail half (Story 1.1)
-> and the cross-account AssumeRole half (Story 1.2). Story 1.1's own DoD is the
-> CloudTrail half below.
+## STEP 3 — VALIDATE (the Phase 1 gate, AssumeRole half)
 
 ```bash
-# CONTEXT: mgmt/root 467866449172, region us-east-1
+# 3a. In EACH Spoke: confirm the role exists with the correct scoped trust.
+# CONTEXT: the Spoke account
+aws iam get-role --role-name pde-spoke-execution-dev \
+  --query 'Role.{Name:RoleName,Trust:AssumeRolePolicyDocument}'
+# EXPECT: trust Principal AWS = arn:aws:iam::641628980935:role/pde-hub-deployer,
+#         Condition sts:ExternalId present. (NOT :root.)
 
-# 3a. Trail is an active, org-wide, multi-region, log-file-validated trail:
-aws cloudtrail describe-trails --trail-name-list pde-org-trail \
-  --query 'trailList[0].{Org:IsOrganizationTrail,MultiRegion:IsMultiRegionTrail,LogValidation:LogFileValidationEnabled,KmsKeyId:KmsKeyId,Bucket:S3BucketName}'
-# EXPECT: Org=true, MultiRegion=true, LogValidation=true, KmsKeyId set, Bucket=pde-org-cloudtrail-logs-...
+# 3b. From the HUB, assume into each Spoke role and confirm the returned account id.
+# CONTEXT: Pipeline-Hub 641628980935 (as the Hub deployer principal)
+aws sts get-caller-identity --query Account --output text   # expect 641628980935
 
-# 3b. Trail is actively logging:
-aws cloudtrail get-trail-status --name pde-org-trail \
-  --query '{IsLogging:IsLogging,LatestDeliveryTime:LatestDeliveryTime,LatestDeliveryError:LatestDeliveryError}'
-# EXPECT: IsLogging=true; after a few minutes LatestDeliveryTime is populated and LatestDeliveryError is empty.
-
-# 3c. Log files are LANDING in the new bucket for the Pipeline-* (member) accounts.
-#     Org-trail objects are keyed AWSLogs/<orgId>/<accountId>/CloudTrail/<region>/...
-#     Give it 5-15 min after deploy, then list per Pipeline account id:
-aws s3 ls "s3://pde-org-cloudtrail-logs-467866449172/AWSLogs/$ORG_ID/" --recursive \
-  | grep CloudTrail | head -20
-# EXPECT: objects appearing under one or more member-account ids (the Pipeline-* accounts).
+for ENV in dev sandbox prod; do
+  ACCT=<the-matching-spoke-account-id>   # substitute per env
+  echo "== $ENV =="
+  aws sts assume-role \
+    --role-arn "arn:aws:iam::${ACCT}:role/pde-spoke-execution-${ENV}" \
+    --role-session-name pde-phase1-gate \
+    --external-id "$EXTERNAL_ID" \
+    --query 'AssumedRoleUser.Arn'
+done
+# EXPECT: each call returns an assumed-role ARN in the matching Spoke account id.
 ```
 
 **PASS criteria (all must hold):**
-1. `describe-trails` → `IsOrganizationTrail=true`, `IsMultiRegionTrail=true`, `LogFileValidationEnabled=true`, KMS key + bucket set.
-2. `get-trail-status` → `IsLogging=true`, a populated `LatestDeliveryTime`, empty `LatestDeliveryError`.
-3. `s3 ls` → CloudTrail log objects landing under the org-id prefix for the `Pipeline-*` accounts.
+1. In each Spoke, `get-role` shows the trust principal is the **specific Hub role**
+   (`arn:aws:iam::641628980935:role/pde-hub-deployer`), not `:root`, with the
+   `sts:ExternalId` condition present.
+2. From the Hub, `assume-role` into each Spoke role **succeeds** and returns an
+   assumed-role identity in that Spoke's account id.
+3. Assume **without** the correct `ExternalId` is **denied** (confused-deputy
+   protection working):
+   ```bash
+   aws sts assume-role --role-arn "arn:aws:iam::<spoke>:role/pde-spoke-execution-dev" \
+     --role-session-name no-extid    # EXPECT: AccessDenied (no external id)
+   ```
 
-Record the result in `governance/RUNBOOK.md` Story 1.1:
-`pass — org trail active (org/multi-region/log-validation) + logs landing for Pipeline-* accts, <date>, confirmed by <who>`.
+Record in `governance/RUNBOOK.md` Story 1.1:
+`pass — Spoke roles deployed in Dev/Sandbox/Prod; Hub→Spoke AssumeRole succeeds (correct ExternalId) and is denied without it, <date>, confirmed by <who>`.
 
 ## STEP 4 — Zero-Touch-Root check (Universal Criterion 1)
 
 ```bash
-# CONTEXT: mgmt/root 467866449172
-# Confirm this stack is the ONLY PDE footprint in the management account:
+# CONTEXT: management/root 467866449172
+aws sts get-caller-identity --query Account --output text   # expect 467866449172
 aws cloudformation list-stacks \
   --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
   --query "StackSummaries[?contains(StackName,'pde-')].StackName"
-# EXPECT: exactly ["pde-org-cloudtrail-baseline"] — no other pde-* stacks in root.
+# EXPECT: [] — Story 1.1 deploys NOTHING in the management account.
 ```
 
 ## Backout / rollback (clean-state, Universal Criterion 4)
 
-The log bucket is `DeletionPolicy: Retain`, so deleting the stack leaves the audit
-evidence intact. To fully tear down (deliberate):
+Per Spoke (deleting the stack removes the role + its managed policy; nothing is
+retained, no data to preserve):
 
 ```bash
-# CONTEXT: mgmt/root 467866449172, region us-east-1
-# 1. Delete the stack (removes trail, bucket policy, KMS key [scheduled], alias;
-#    the bucket is RETAINED because it holds audit evidence):
-aws cloudformation delete-stack --stack-name pde-org-cloudtrail-baseline
-aws cloudformation wait stack-delete-complete --stack-name pde-org-cloudtrail-baseline
-
-# 2. Only if you truly want the logs gone — empty ALL versions + delete markers,
-#    then delete the retained bucket (there is NO Object Lock, so this succeeds):
-BKT=pde-org-cloudtrail-logs-467866449172
-aws s3api delete-objects --bucket "$BKT" \
-  --delete "$(aws s3api list-object-versions --bucket "$BKT" \
-    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json)"
-aws s3api delete-objects --bucket "$BKT" \
-  --delete "$(aws s3api list-object-versions --bucket "$BKT" \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json)"
-aws s3api delete-bucket --bucket "$BKT"
+# CONTEXT: the Spoke account
+aws cloudformation delete-stack --stack-name pde-trust-fabric
+aws cloudformation wait stack-delete-complete --stack-name pde-trust-fabric
 ```
-
-> If a delete-objects call reports a null Objects list, that version class was
-> already empty — safe to ignore. The KMS key enters a pending-deletion window
-> (7-30 days) rather than deleting immediately; that is expected.
 
 ## Watch-items
 
-- **Wrong account** is the #1 failure: `enable-aws-service-access` and the deploy
-  MUST run in `467866449172`. Re-run `aws sts get-caller-identity` per block.
-- **Delivery latency:** first log objects can take 5-15 minutes; an empty `s3 ls`
-  immediately after deploy is not a failure — wait and re-check.
-- **`LatestDeliveryError`** populated (e.g. `KMS.AccessDenied` or `AccessDenied`)
-  means the KMS key policy or bucket policy is rejecting CloudTrail — capture the
-  exact error string; it names which policy to fix. Keep Story 1.1 🟡 and fix.
-- **Do NOT** add any other resource to the management account.
+- **Wrong account** is the #1 failure: STEP 2 runs in each **Spoke**; STEP 3b runs in
+  the **Hub**. Re-run `aws sts get-caller-identity` per block.
+- **`:root` in the trust** would be a scoping regression — the trust must name the
+  specific Hub deployer role ARN (RD-006). STEP 3a checks this.
+- **ExternalId** must match between the Spoke role and whatever the Hub presents; a
+  mismatch (or omission) correctly yields `AccessDenied` — that is the guardrail
+  working, not a bug.
+- **Hub deployer role not yet created** (pre-Phase-2): validate 3a now; run 3b once
+  the Hub role exists, or with a temporary Hub stand-in role you control.
+- **Do NOT** deploy the Spoke role into the management account.

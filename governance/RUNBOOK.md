@@ -120,16 +120,16 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 
 | Tier | Story | Depends on | Phase | Notes |
 |------|-------|-----------|-------|-------|
-| 1 | 1.1 | — | 1 | Foundation: clean Org-wide CloudTrail baseline. First story, no deps. |
-| 2 | 1.2 | 1.1 | 1 | Cross-account trust roles (Dev/Sandbox/Prod trust the Hub). |
-| 3 | 1.3 | 1.2 | 1 | CloudShell repo access for the bootstrap operator. |
-| 4 | 2.1 | Phase 1 gate | 2 | CodeBuild CFN templates (Lint + Deploy), ZTIE-safe prefixes. |
-| 4 | 2.2 | Phase 1 gate | 2 | Step Functions state machine (Dev→Sandbox→Prod + approval gates). |
-| 5 | 2.3 | 2.1, 2.2 | 2 | Bootstrap PDE infra into the Hub via CLI (tightly-scoped IAM). |
-| 6 | 3.1 | Phase 2 gate | 3 | Trivial zero-cost artifact (empty DynamoDB/SQS) in CFN. |
-| 7 | 3.2 | 3.1 | 3 | Commit artifact, trigger pipeline, deploy to Pipeline-Dev. |
-| 8 | 3.3 | 3.2 | 3 | Validate Dev, approve gate, promote to Pipeline-Sandbox. |
-| 9 | 3.4 | 3.3 | 3 | Split-brain validate Sandbox, approve final gate, release to Pipeline-Prod. |
+| 1 | 1.1 | — | 1 | Foundation: cross-account trust fabric (Spokes trust specific Hub roles, RD-006). First story, no deps. |
+| 2 | 1.2 | 1.1 | 1 | CloudShell repo access for the bootstrap operator. |
+| 3 | 2.1 | Phase 1 gate | 2 | CodeBuild CFN templates (Lint + Deploy), ZTIE-safe prefixes. |
+| 3 | 2.2 | Phase 1 gate | 2 | Step Functions state machine (Dev→Sandbox→Prod + approval gates). |
+| 4 | 2.3 | 2.1, 2.2 | 2 | Bootstrap PDE infra into the Hub via CLI (tightly-scoped IAM). |
+| 5 | 3.1 | Phase 2 gate | 3 | Trivial zero-cost artifact (empty DynamoDB/SQS) in CFN. |
+| 6 | 3.2 | 3.1 | 3 | Commit artifact, trigger pipeline, deploy to Pipeline-Dev. |
+| 7 | 3.3 | 3.2 | 3 | Validate Dev, approve gate, promote to Pipeline-Sandbox. |
+| 8 | 3.4 | 3.3 | 3 | Split-brain validate Sandbox, approve final gate, release to Pipeline-Prod. |
+| 9 | 4.1 | Phase 3 gate | 4 | **Governance cutover (deferred, RD-007):** switch on the org-wide CloudTrail as a Hub-delegated shared service; retire the audit debt (OD-002). |
 
 ## Validation Debt Register
 
@@ -142,11 +142,12 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 
 | # | Story | Debt (what is unproven) | Opened | State |
 |---|-------|-------------------------|--------|-------|
-| VD-1 | 1.1 | Org-wide CloudTrail CloudFormation authored + offline-proven, but NOT yet live-deployed/validated: trail is not yet confirmed active (`IsOrganizationTrail`/multi-region/log-file-validation) and log files not yet confirmed landing for the `Pipeline-*` accounts. | 2026-09-30 | OPEN |
+| ~~VD-1~~ | ~~1.1 (old)~~ | _Superseded 2026-09-30: Story 1.1 was re-scoped from the org-wide CloudTrail to the cross-account trust fabric (RD-006/RD-007). The old CloudTrail validation debt is retired; the org-trail work moved to Story 4.1. Replaced by VD-2._ | 2026-09-30 | SUPERSEDED |
+| VD-2 | 1.1 | Cross-account trust-fabric CloudFormation (`infra/spoke-execution-role.yaml`) authored + offline-proven (19 invariants), but NOT yet live-deployed/validated: the Spoke execution roles are not yet confirmed deployed in Dev/Sandbox/Prod, and a Hub→Spoke `sts:AssumeRole` has not yet been confirmed to succeed and return each Spoke's account id. | 2026-09-30 | OPEN |
 
-**Gate status:** **ARMED** — Story 1.1 is 🟡 built-not-yet-live-validated. No new
-feature story (a new tier / dependency layer) may begin until VD-1 clears on the
-recorded live pass. Reworking Story 1.1 itself is always allowed.
+**Gate status:** **ARMED** — Story 1.1 (re-scoped) is 🟡 built-not-yet-live-validated
+(VD-2). No new feature story (a new tier / dependency layer) may begin until VD-2
+clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 ## Operational Debt Register
 
@@ -160,6 +161,7 @@ recorded live pass. Reworking Story 1.1 itself is always allowed.
 | # | Item | State | Owner | Depends-on / Feeds | Clear-by / Resolution |
 |---|------|-------|-------|--------------------|-----------------------|
 | OD-001 | `check_docs.py` CHECK S false-positived: it read the first status glyph *anywhere* in a `\| <story-id> \|` row, so a glyph mentioned in **prose** in an auxiliary Ready-Now/Blocked/Build-Tier table (e.g. `1.1 not yet ✅`) was mis-read as that story's status. | **PAID** (2026-09-30) | executor | **Feeds:** the reusable OS layer. **Depends-on:** SDD-repo-kit PR #2 (source-of-truth fix). | Fixed at the source template ([SDD-repo-kit PR #2](https://github.com/warrenrutledge64/SDD-repo-kit/pull/2), new `_status_cell_glyph()` accepting a glyph only as a cell's sole token) **and paid down in-instance** the same day (Option B): the fixed `scripts/check_docs.py` + tests backported into this repo, so the instance gate is byte-identical to the corrected kit. A future re-sync of the kit's `scripts/` into this instance is therefore a **no-op**. Authoring rule retained: keep status glyphs out of Ready/Blocked/Tier prose cells; only phase summary tables + detail-block headers carry glyphs. |
+| OD-002 | **Deferred org-wide audit governance (declared debt, RD-007).** During PDE design/build (Phases 1–3) there is **no PDE-provided org-wide CloudTrail audit trail** on the cross-account deploys. This is a *deliberate, accepted* deferral (no interim baseline built) so the delivery engine is proven first — **not** a hidden gap. Accepted risk: activity in that window is not captured by a PDE org trail, and logs not collected in the gap are unrecoverable. | **OPEN** (accepted) | warrenrutledge64 | **Feeds:** Phase 4 governance. **Depends-on:** Phase 3 gate (engine proven first). | **Clear-by = Story 4.1** (Phase 4 — Governance Cutover): switch on the org-wide CloudTrail as a Hub-delegated shared control-plane service (RD-006), adapting `infra/deferred/cloudtrail-org-baseline.yaml` from root-hosted to Hub-delegated. On that story's recorded live pass, OD-002 flips PAID. The org-trail template + its 28-invariant proof are preserved in `infra/deferred/` for historical reference. |
 
 ## Ready-Now / Blocked / Default-Next-Action
 
@@ -167,36 +169,38 @@ recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 1.1 | 1 | No dependencies — the first foundation story. |
+| 1.1 | 1 | No dependencies — the trust-fabric foundation story (re-scoped). |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
 | 1.2 | 2 | Story 1.1 not yet validated |
-| 1.3 | 3 | Story 1.2 not yet validated |
-| 2.1, 2.2 | 4 | Phase 1 gate not yet passed |
-| 2.3 | 5 | Stories 2.1 + 2.2 not yet validated |
-| 3.1 | 6 | Phase 2 gate not yet passed |
-| 3.2 | 7 | Story 3.1 not yet validated |
-| 3.3 | 8 | Story 3.2 not yet validated |
-| 3.4 | 9 | Story 3.3 not yet validated |
+| 2.1, 2.2 | 3 | Phase 1 gate not yet passed |
+| 2.3 | 4 | Stories 2.1 + 2.2 not yet validated |
+| 3.1 | 5 | Phase 2 gate not yet passed |
+| 3.2 | 6 | Story 3.1 not yet validated |
+| 3.3 | 7 | Story 3.2 not yet validated |
+| 3.4 | 8 | Story 3.3 not yet validated |
+| 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 1.1 is 🟡 built + offline-proven** (`infra/cloudtrail-org-baseline.yaml`,
-28 invariants pass). The next action is the **live validation** (VD-1): the operator
-deploys the trail stack from the management account and confirms the org trail is
-active + logs land for the `Pipeline-*` accounts, per
+**Default next action:** **Story 1.1 (re-scoped to the trust fabric) is 🟡 built +
+offline-proven** (`infra/spoke-execution-role.yaml`, 19 invariants pass). The next
+action is the **live validation** (VD-2): the operator deploys the Spoke execution
+role into each of Dev/Sandbox/Prod and confirms a Hub→Spoke `sts:AssumeRole`
+succeeds and returns each Spoke's account id, per
 [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-On the recorded pass, flip 1.1 → ✅, clear VD-1, and Story 1.2 unblocks.
+On the recorded pass, flip 1.1 → ✅, clear VD-2, and Story 1.2 unblocks.
 
 ## Progress Summary
 
 | Phase | Scope | Gate | Status |
 |-------|-------|------|--------|
 | **0 — Bootstrap** | Author `PROJECT_PLAN.md` (planner) + derive `RUNBOOK.md`, `RESTORE.md`, `BOM.md`; validated. | `check_docs.py` PASSES **and** a human confirms the runbook faithfully mirrors the plan. | ✅ Done (2026-09-30) |
-| **1 — Governance Baseline & Trust Fabric** | Clean Org-wide CloudTrail baseline + cross-account IAM trust from Hub to Spokes + CloudShell bootstrap access. | CloudShell Boto3 script `AssumeRole`s into Dev/Sandbox/Prod (returns their Account IDs) AND the new CloudTrail bucket is receiving logs for those accounts. | ⬜ Not Started |
+| **1 — Trust Fabric** | Cross-account IAM trust from the Hub to the Spokes (Spokes trust specific Hub roles, RD-006) + CloudShell bootstrap access. _(Org-wide audit deferred to Phase 4 per RD-007.)_ | CloudShell Boto3 script `AssumeRole`s into Dev/Sandbox/Prod and returns their Account IDs. | ⬜ Not Started |
 | **2 — PDE Control Plane (The Hub)** | Greenfield serverless engine (Step Functions + CodeBuild) in the Hub, ZTIE-safe, doing cross-account CFN deploys. | The deployed Step Function, triggered with a dummy payload, reaches the "Awaiting Sandbox Approval" paused state with no IAM/config errors. | ⬜ Not Started |
 | **3 — The Golden Path Validation** | Prove end-to-end delivery by sending a real artifact through the pipeline. | The operator queries `Pipeline-Prod` and returns the deployed test artifact's metadata, proving a Hub-orchestrated cross-account production release. | ⬜ Not Started |
+| **4 — Governance Cutover** _(deferred, RD-007)_ | Switch on the org-wide CloudTrail as a Hub-delegated shared control-plane service (RD-006); retire the audit debt (OD-002). Executed after the engine is proven. | From the Hub (delegated CloudTrail admin), the org trail is active (org / multi-region / log-file validation) AND logs land for all `Pipeline-*` accounts. | ⬜ Not Started |
 
 ---
 
@@ -216,32 +220,25 @@ _Gate: `python3 scripts/check_docs.py` PASSES (no stray placeholders in living d
 
 ---
 
-## Phase 1 — Governance Baseline & Trust Fabric
+## Phase 1 — Trust Fabric
 
-_Gate: From an AWS CloudShell session in the Hub account, a human operator executes a Boto3 script that successfully performs an STS `AssumeRole` into Dev, Sandbox, and Prod sequentially (returning their Account IDs), AND verifies the new CloudTrail bucket has begun receiving log files for those accounts._
+_Gate: From an AWS CloudShell session in the Hub account, a human operator executes a Boto3 script that successfully performs an STS `AssumeRole` into Dev, Sandbox, and Prod sequentially, returning their Account IDs. (The original CloudTrail half of this gate is deferred to the Phase 4 governance gate per RD-007.)_
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 1.1 | Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts | — | 🟡 | | |
-| 1.2 | Cross-account IAM execution roles in Dev/Sandbox/Prod trusting the Hub | 1.1 | ⬜ | | |
-| 1.3 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.2 | ⬜ | | |
+| 1.1 | Cross-account trust fabric — Spoke execution roles trusting specific Hub roles (RD-006) | — | 🟡 | | |
+| 1.2 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.1 | ⬜ | | |
 
-**1.1 — Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts**  🟡 _In Progress_
-- Steps: author CloudFormation (YAML) for a new centralized S3 log bucket (block-public, versioned, SSE-KMS), a dedicated KMS CMK with a CloudTrail-scoped key policy, and an Organization-wide CloudTrail (`IsOrganizationTrail: true`, multi-region, log-file validation on) that captures all `Pipeline-*` accounts. Prove offline (cfn-lint / cfn-guard / Checkov). Deploy only from the management account (467866449172) — the sole permitted management-account resource per Universal Criterion 1.
-- **As built:** `infra/cloudtrail-org-baseline.yaml` (KMS CMK w/ rotation + CloudTrail-scoped key policy + org-scoped decrypt; hardened S3 bucket block-public/versioned/SSE-KMS/BucketOwnerEnforced/lifecycle, `DeletionPolicy: Retain`, **no** Object Lock; CloudTrail-service bucket policy + TLS-only deny; Org trail multi-region + log-file validation). Offline proof: `python3 infra/validate_template.py` — 28 invariants PASS (PyPI is blocked in the build sandbox, so cfn-lint / cfn-guard / Checkov run operator-side / CI). Live deploy + gate steps: [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-- **Validation Result:** _pending — deploy the trail stack from the management account per the LIVE-RUNBOOK; confirm the trail is an active org/multi-region/log-file-validated trail AND log files begin landing in the new bucket for the `Pipeline-*` accounts._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date).
-- **Advancement gate:** 1.2 (and all downstream cross-account work) cannot begin until the clean audit baseline is actively recording.
+**1.1 — Cross-account trust fabric — Spoke execution roles trusting specific Hub roles (RD-006)**  🟡 _In Progress_
+- Steps: author CloudFormation (YAML) for a least-privilege PDE execution role in each Spoke (Dev/Sandbox/Prod) whose trust policy names a **specific** `Pipeline-Hub` (`641628980935`) deployer role (never the Hub account root, RD-006) and requires an `sts:ExternalId`; permissions scoped to exactly the CloudFormation deploy actions on the `pde-` stack namespace. Prove offline. Deploy once per Spoke (or via a StackSet) — **not** into the management account. _(Re-scoped from the original org-wide CloudTrail per RD-007; that work is preserved at `infra/deferred/` and scheduled as Story 4.1.)_
+- **As built:** `infra/spoke-execution-role.yaml` (Spoke exec role; trust = specific Hub role ARN + `ExternalId` NoEcho; least-privilege managed policy scoped to `cloudformation:*` stack ops on `stack/${RolePrefix}*`, no AdministratorAccess, no wildcard action; per-env `dev`/`sandbox`/`prod`; exports the role ARN for the Hub). Offline proof: `python3 infra/validate_trust_fabric.py` — 19 invariants PASS (PyPI is blocked in the build sandbox, so cfn-lint / cfn-guard / Checkov run operator-side / CI). Live deploy + gate steps: [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
+- **Validation Result:** _pending — deploy the Spoke execution role into each of Dev/Sandbox/Prod per the LIVE-RUNBOOK; from the Hub, `sts:AssumeRole` into each Spoke role and confirm it succeeds and returns that Spoke's account id._
+- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), clear VD-2.
+- **Advancement gate:** 1.2 (and all downstream control-plane work) cannot begin until the trust fabric is proven assumable.
 
-**1.2 — Cross-account IAM execution roles in Dev/Sandbox/Prod trusting the Hub**  ⬜ _Not Started_
-- Steps: author CloudFormation (YAML) for an execution role in each Spoke account (Dev, Sandbox, Prod) whose trust policy explicitly trusts the Hub account for deployment operations, permissions least-privilege-scoped to exactly the CFN deploy actions required. Prove offline.
-- **Validation Result:** _pending — from the Hub, `AssumeRole` into each Spoke role and confirm the returned identity is the Spoke role._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date).
-- **Advancement gate:** 1.3 (and the Phase 1 gate) cannot begin until the trust roles exist and are assumable.
-
-**1.3 — Configure CloudShell environment with repo access for the bootstrap deploy**  ⬜ _Not Started_
-- Steps: document + configure the Hub-account CloudShell environment with token-authenticated repository access and the tooling (AWS CLI, Python 3 / Boto3, cfn-lint) needed for the initial bootstrap deployment.
-- **Validation Result:** _pending — from Hub CloudShell, clone the repo and run the Phase 1 gate Boto3 script end-to-end._
+**1.2 — Configure CloudShell environment with repo access for the bootstrap deploy**  ⬜ _Not Started_
+- Steps: document + configure the Hub-account CloudShell environment with token-authenticated repository access and the tooling (AWS CLI, Python 3 / Boto3, cfn-lint) needed for the initial bootstrap deployment; run the Phase 1 gate Boto3 `AssumeRole`-into-each-Spoke script end to end.
+- **Validation Result:** _pending — from Hub CloudShell, clone the repo and run the Phase 1 gate Boto3 script (AssumeRole into Dev/Sandbox/Prod, returning their account ids)._
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). This story closes Phase 1 — capture `restore/phase-1-green` + inventory row.
 - **Advancement gate:** Phase 2 (Control Plane) cannot begin until Phase 1's gate passes.
 
@@ -311,6 +308,22 @@ _Gate: The human operator queries the live AWS environment in `Pipeline-Prod` an
 - **Validation Result:** _pending — the operator queries `Pipeline-Prod` and returns the deployed artifact's metadata._
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). This story closes Phase 3 — capture `restore/phase-3-green` + inventory row.
 - **Advancement gate:** closes the project's Golden Path; future Control-Plane updates become self-hosted through the PDE itself.
+
+---
+
+## Phase 4 — Governance Cutover (deferred org-wide audit, RD-007)
+
+_Gate: From the Hub (as the delegated CloudTrail administrator), a human operator confirms the org-wide trail is active (`IsOrganizationTrail` / multi-region / log-file validation) AND log files are landing for all `Pipeline-*` accounts. (This is the original CloudTrail half of the old Phase 1 gate, moved here per RD-007.)_
+
+| Story | Title | Depends on | Status | Completed | Restore tag |
+|-------|-------|-----------|--------|-----------|-------------|
+| 4.1 | Switch on org-wide CloudTrail as a Hub-delegated shared service; retire the audit debt (OD-002) | Phase 3 gate | ⬜ | | |
+
+**4.1 — Switch on org-wide CloudTrail as a Hub-delegated shared service; retire the audit debt (OD-002)**  ⬜ _Not Started_
+- Steps: from the Organization root, `register-delegated-administrator` for `cloudtrail.amazonaws.com` to the Hub (`641628980935`) — root's sole, one-time governance action. Adapt the preserved template `infra/deferred/cloudtrail-org-baseline.yaml` from the root-hosted model to the **Hub-delegated** model (RD-006): deploy the org-wide CloudTrail + centralized S3 log bucket + KMS CMK **in the Hub** under a dedicated governance role (separate from the PDE deploy role). Re-prove offline.
+- **Validation Result:** _pending — deploy from the Hub as delegated admin; confirm the org trail is active (org/multi-region/log-file validation) AND logs land for all `Pipeline-*` accounts._
+- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), and flip **OD-002 → PAID** (the audit debt is retired). This story closes Phase 4 — capture `restore/phase-4-green` + inventory row.
+- **Advancement gate:** retires the RD-007 audit deferral; the program-wide shared audit service is live for all current and future Hub tenants.
 
 ---
 

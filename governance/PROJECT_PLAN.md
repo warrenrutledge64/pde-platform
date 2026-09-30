@@ -55,21 +55,23 @@ fully operational.
 > Ordered by dependency + reuse value. Pull genuine shared foundations forward and
 > build them once. Each phase has a single, live end-of-phase validation gate.
 
-### Phase 1 — Governance Baseline & Trust Fabric
-- **Goal:** Establish a fresh, untainted audit logging baseline across the
-  Organization, then deploy the foundational cross-account IAM trust relationships
-  from the Hub to the Spoke accounts.
+### Phase 1 — Trust Fabric
+- **Goal:** Deploy the foundational cross-account IAM trust relationships from the
+  Hub to the Spoke accounts, built to the RD-006 shared-control-plane charter
+  (Spokes trust *specific Hub roles*, least-privilege). *(Per RD-007, the org-wide
+  audit baseline that originally opened this phase is deferred in full to the
+  Phase 4 governance story — see RD-005/RD-006/RD-007.)*
 - **Gate:** From an AWS CloudShell session in the Hub account, a human operator
   executes a Boto3 script that successfully performs an STS `AssumeRole` into Dev,
-  Sandbox, and Prod sequentially, returning their Account IDs, **and** verifies the
-  new CloudTrail bucket has begun receiving log files for those accounts.
+  Sandbox, and Prod sequentially, returning their Account IDs. *(The original
+  CloudTrail half of this gate moves to the Phase 4 governance gate per RD-007.)*
 - **Stories:**
-  - **Story 1.1:** Deploy a net-new Organization-wide CloudTrail, including a new
-    centralized S3 logging bucket and KMS encryption key, ensuring all `Pipeline-*`
-    accounts are captured.
-  - **Story 1.2:** Deploy cross-account IAM execution roles in Dev, Sandbox, and
-    Prod that explicitly trust the Hub account for deployment operations.
-  - **Story 1.3:** Configure local AWS CloudShell environment with repository
+  - **Story 1.1:** Deploy cross-account IAM execution roles in Dev, Sandbox, and
+    Prod whose trust policy names specific `Pipeline-Hub` (`641628980935`) roles for
+    deployment operations (least-privilege; RD-006). *(Re-scoped from the deferred
+    org-wide CloudTrail — that work is preserved for historical reference in
+    `infra/deferred/` and scheduled as Story 4.1.)*
+  - **Story 1.2:** Configure local AWS CloudShell environment with repository
     access for the initial bootstrap deployment.
 
 ### Phase 2 — PDE Control Plane (The Hub)
@@ -104,30 +106,55 @@ fully operational.
   - **Story 3.4:** Perform split-brain validation on the Sandbox artifact, approve
     the final Step Function gate, and release to `Pipeline-Prod`.
 
+### Phase 4 — Governance Cutover (deferred org-wide audit)
+- **Goal:** Switch on the org-wide audit governance that RD-007 deferred, once the
+  delivery engine is proven. Stand up the Organization-wide CloudTrail as a shared
+  control-plane service administered by the Hub (RD-006), retiring the accepted
+  audit debt. This is executed "when it really matters," after Phase 3.
+- **Gate:** From the Hub (as the delegated CloudTrail administrator), a human
+  operator confirms the org-wide trail is active (org / multi-region / log-file
+  validation) **and** log files are landing for all `Pipeline-*` accounts — the
+  original CloudTrail half of the old Phase 1 gate, now here.
+- **Stories:**
+  - **Story 4.1:** Enable CloudTrail delegated administration to the Hub
+    (`register-delegated-administrator` from the Organization root — root's sole,
+    one-time governance action), then deploy the org-wide CloudTrail + centralized
+    S3 log bucket + KMS CMK **in the Hub** under a dedicated governance role
+    (RD-006), retiring the RD-007 audit debt. *(The as-built org-trail
+    CloudFormation from the original Story 1.1 is preserved at
+    `infra/deferred/cloudtrail-org-baseline.yaml` as the starting point; it is
+    adapted from root-hosted to Hub-delegated at this story.)*
+
 ## 4. Dependency Map
 
 **Hard dependencies (X cannot start until Y exists):**
-- **Phase 2 (Control Plane) ← Phase 1 (Governance & Trust).** The Hub cannot
-  orchestrate deployments until the Spoke accounts explicitly trust it, and no
-  actions should be taken until the new CloudTrail baseline is actively recording.
+- **Phase 2 (Control Plane) ← Phase 1 (Trust Fabric).** The Hub cannot orchestrate
+  deployments until the Spoke accounts explicitly trust specific Hub roles (RD-006).
 - **Phase 3 (Golden Path) ← Phase 2 (Control Plane).** The pipeline must be fully
   deployed and paused-state verified before a real artifact can traverse it.
-- **Story 1.2 (cross-account trust roles) ← Story 1.1 (CloudTrail baseline).** No
-  trust-fabric actions until the clean audit baseline is actively recording.
-- **Story 1.3 (CloudShell bootstrap access) ← Story 1.2 (trust roles exist to
+- **Story 1.2 (CloudShell bootstrap access) ← Story 1.1 (trust roles exist to
   assume).**
 - **Story 2.3 (bootstrap PDE infra) ← Stories 2.1 + 2.2 (the CodeBuild + Step
   Functions templates it deploys).**
 - **Story 3.2 ← Story 3.1** (artifact must exist before it is committed/deployed);
   **3.3 ← 3.2**, **3.4 ← 3.3** (promotion is strictly sequential Dev → Sandbox →
   Prod).
+- **Phase 4 (Governance Cutover) ← Phase 3.** Per RD-007 the org-wide audit is
+  switched on *after* the delivery engine is proven; Story 4.1 depends on the Hub
+  being an established control plane (Phase 2) and is scheduled after Phase 3.
 
 **Shared foundations pulled forward (multi-phase reuse):**
-- **The clean CloudTrail audit baseline (Story 1.1)** underpins every subsequent
-  cross-account action in Phases 2 and 3 — it is built once, first, so every later
-  deployment is captured from Day 1.
-- **The cross-account trust roles (Story 1.2)** are the reusable substrate the Hub
-  control plane assumes for *all* Dev/Sandbox/Prod deployments in Phases 2–3.
+- **The cross-account trust roles (Story 1.1)** are the reusable substrate the Hub
+  control plane assumes for *all* Dev/Sandbox/Prod deployments in Phases 2–3 —
+  built once, first (tier 1).
+- **The Hub as shared control plane (RD-006)** is the reusable platform capability
+  every current and future product consumes; org-wide audit (Story 4.1) is added to
+  it as a shared governance service.
+
+**Deferred (accepted, tracked debt — RD-007):**
+- **Org-wide audit (originally Story 1.1) → Phase 4 / Story 4.1.** Deferred in full,
+  no interim baseline; the delivery engine is proven first, then audit is switched
+  on. Tracked in the RUNBOOK Operational Debt Register.
 
 **Self-Hosting Re-entry:** Once Phase 3 is complete, future updates to Phase 2
 (Control Plane) components become dependent on the PDE itself, fulfilling the
@@ -144,7 +171,9 @@ fully operational.
 | **RD-002** | **Account Topology.** Reuse the existing `Pipeline-Hub`, `Pipeline-Dev`, `Pipeline-Sandbox`, and `Pipeline-Prod` accounts. | Stable account IDs exist and map perfectly to the pipeline. `Pipeline-Hub` will natively host PDE alongside ZTIE. | 2026-09-29 | Ratified |
 | **RD-003** | **Orchestration Tooling.** Deploy a fresh instance of AWS Step Functions and CodeBuild within the Hub account. | Meets AWS-native and Zero-EC2 constraints while providing native manual approval states for environment promotion. | 2026-09-29 | Ratified |
 | **RD-004** | **IaC Standardization.** Enforce standard CloudFormation (YAML) and Python 3 (Boto3). | Satisfies the requirement for a single, strict IaC tool to prevent fragmentation. | 2026-09-29 | Ratified |
-| **RD-005** | **Audit Baseline.** Establish a completely new Org-wide CloudTrail and logging bucket. | Ensures a clean, untainted governance boundary starting from Day 1 of the new platform. | 2026-09-29 | Ratified |
+| **RD-005** | **Audit Baseline.** Establish a completely new Org-wide CloudTrail and logging bucket. | Ensures a clean, untainted governance boundary starting from Day 1 of the new platform. | 2026-09-29 | Ratified — **amended by RD-006 & RD-007** (see below). The "Day 1" timing is superseded: org-wide audit is deferred (RD-007) and, when built, is administered by the Hub as a shared service (RD-006). Retained for historical reference. |
+| **RD-006** | **The Hub is the program-wide shared control plane.** `Pipeline-Hub` (`641628980935`) is a shared control-plane *service* consumed by all current and future products (ZTIE, PDE, and later products/services) — not owned by any one of them. Org-wide governance/audit administration, when enabled, is delegated to the Hub as a shared control-plane service rather than run from the Organization root. Within the Hub, each concern is a **separate, least-privilege role**: tenant *deploy/execution* roles (e.g. the PDE deployer) are distinct from *governance/audit* administration roles, with no path from a deploy role to the audit configuration. Cross-account trust from the Spokes names **specific Hub roles**, never the Hub account root. | The Hub was always intended as the shared control plane for the program, not a single-product box. Centralizing control-plane responsibilities (including governance administration) in the Hub is repeatable and reusable across products; role-level separation preserves audit/deploy separation-of-duties without a separate account. Deciding this now (at tier 1) makes the Phase 2 IAM/trust fabric correct-by-construction and avoids an expensive later rework of the trust model. | 2026-09-30 | Ratified |
+| **RD-007** | **Defer org-wide audit governance (no interim).** The org-wide CloudTrail audit baseline is deferred **in full** to a dedicated, scheduled governance story executed later ("switch it on when it really matters"), while PDE proves the delivery engine first. **No interim/throwaway audit baseline is built** — the absence of a PDE-provided org-wide audit trail during the design/build phases (1–3) is an **accepted, declared, tracked debt** (logged in the RUNBOOK Operational Debt Register), not a hidden gap. The org-wide CloudTrail is additive/non-destructive: enabling it later touches none of the delivery engine's trust roles or pipeline. The load-bearing decision (the Hub charter) is NOT deferred — that is fixed now by RD-006; only the additive audit layer is deferred. | The difficulty encountered on the "org path" was the control-plane charter, not CloudTrail itself; separating them lets the cheap, additive audit layer be deferred safely while the load-bearing charter is settled now. Deferring the audit *decision timing* to the last responsible moment means it is made with real information (after Phases 2–3 reveal how the Hub behaves). Accepted risk during design/build: no PDE org-wide audit trail for that window, and logs not captured in the gap are unrecoverable. | 2026-09-30 | Ratified |
 
 ## 6. Universal Acceptance Criteria
 

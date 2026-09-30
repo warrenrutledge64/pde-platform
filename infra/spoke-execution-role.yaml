@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 1.1 — Cross-account trust fabric (RD-006). Deploys a least-privilege
+  PDE deployment execution role into a Spoke account (Pipeline-Dev / Sandbox /
+  Prod). Its trust policy names a SPECIFIC Pipeline-Hub deployer role (never the
+  Hub account root) and requires an ExternalId, so only the PDE control plane in
+  the Hub can assume it. Deploy this stack ONCE PER SPOKE (or via a StackSet
+  targeting the three Spokes). Do NOT deploy into the Organization management
+  account.
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  HubAccountId:
+    Type: String
+    Description: The Pipeline-Hub (shared control plane) account ID (RD-006).
+    Default: "641628980935"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  HubDeployerRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Hub-side PDE deployer role that is allowed to assume
+      this Spoke role. Per RD-006 the Spoke trusts a specific Hub ROLE, not the
+      Hub account root. This role is created in the Hub during Phase 2; until then
+      the trust references it by name (the principal need not exist at role-create
+      time — the trust resolves at assume-time).
+    Default: pde-hub-deployer
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+
+  ExternalId:
+    Type: String
+    Description: >-
+      Shared secret required on sts:AssumeRole (confused-deputy protection). The
+      Hub deployer must present this exact value. Store it in the Hub's config;
+      do not commit the real value to source.
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 128
+
+  RolePrefix:
+    Type: String
+    Description: PDE naming prefix (ZTIE co-existence — avoid collisions).
+    Default: pde-
+    AllowedPattern: "^[a-z][a-z0-9-]{1,15}$"
+
+  EnvironmentName:
+    Type: String
+    Description: Which Spoke this role is being deployed into (for naming/tagging).
+    AllowedValues: [dev, sandbox, prod]
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Permissions the PDE deployer is allowed to use in this Spoke ---------
+  # Scoped to exactly what a cross-account CloudFormation deployment needs.
+  # NOT AdministratorAccess; NOT a wildcard on all services.
+  PdeDeployPermissions:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${RolePrefix}deploy-permissions-${EnvironmentName}"
+      Description: Least-privilege permissions for PDE cross-account CFN deployments.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # CloudFormation stack lifecycle — the core of a PDE deployment.
+          - Sid: CloudFormationStackOps
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:ListStackResources
+              - cloudformation:CreateChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:ValidateTemplate
+              - cloudformation:TagResource
+              - cloudformation:UntagResource
+            Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${RolePrefix}*/*"
+          # Read-only visibility CFN needs to plan/verify.
+          - Sid: ReadOnlyDescribe
+            Effect: Allow
+            Action:
+              - cloudformation:ListStacks
+              - cloudformation:ListExports
+              - cloudformation:ListImports
+            Resource: "*"
+
+  # --- The Spoke execution role the Hub deployer assumes --------------------
+  PdeSpokeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${RolePrefix}spoke-execution-${EnvironmentName}"
+      Description: >-
+        PDE cross-account deployment execution role. Assumable ONLY by the named
+        Pipeline-Hub deployer role, with the required ExternalId (RD-006).
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: TrustSpecificHubDeployerRole
+            Effect: Allow
+            Principal:
+              # A SPECIFIC Hub role ARN — not arn:aws:iam::<hub>:root.
+              AWS: !Sub "arn:${AWS::Partition}:iam::${HubAccountId}:role/${HubDeployerRoleName}"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      ManagedPolicyArns:
+        - !Ref PdeDeployPermissions
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "1.1" }
+        - { Key: Component, Value: trust-fabric }
+        - { Key: Environment, Value: !Ref EnvironmentName }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  SpokeExecutionRoleArn:
+    Description: ARN of the PDE Spoke execution role (the Hub assumes this).
+    Value: !GetAtt PdeSpokeExecutionRole.Arn
+    Export:
+      Name: !Sub "pde-spoke-execution-role-arn-${EnvironmentName}"
+
+  SpokeExecutionRoleName:
+    Description: Name of the PDE Spoke execution role.
+    Value: !Ref PdeSpokeExecutionRole
