@@ -1,0 +1,259 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 1.1 — Net-new Organization-wide CloudTrail audit baseline (RD-005).
+  Provisions a dedicated KMS CMK, a hardened centralized S3 log bucket, and an
+  Organization trail (multi-region, log-file validation) that captures every
+  account in the Organization — including all Pipeline-* accounts. Deploy ONLY
+  in the Organization management/root account (467866449172); this trail is the
+  sole resource permitted there per the PDE Zero-Touch-Root criterion.
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  OrganizationId:
+    Type: String
+    Description: >-
+      The AWS Organizations Organization ID (o-xxxxxxxxxx). Used to scope the
+      KMS key policy and S3 bucket policy to CloudTrail deliveries originating
+      from accounts within THIS organization only.
+    AllowedPattern: "^o-[a-z0-9]{10,32}$"
+    ConstraintDescription: Must be a valid AWS Organizations ID, e.g. o-abcde12345.
+
+  ManagementAccountId:
+    Type: String
+    Description: >-
+      The Organization management/root account ID that owns the trail. Must be
+      the account this stack is deployed into.
+    Default: "467866449172"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  LogBucketName:
+    Type: String
+    Description: >-
+      Globally-unique name for the centralized CloudTrail log bucket. Keep the
+      PDE naming prefix so it is unmistakably a PDE governance artifact.
+    Default: pde-org-cloudtrail-logs-467866449172
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    ConstraintDescription: Must be a valid S3 bucket name (lowercase, 3-63 chars).
+
+  TrailName:
+    Type: String
+    Description: Name of the Organization CloudTrail.
+    Default: pde-org-trail
+    AllowedPattern: "^[A-Za-z0-9._-]{3,128}$"
+
+  LogRetentionDays:
+    Type: Number
+    Description: >-
+      Days to retain log objects before expiration (lifecycle). Non-COMPLIANCE
+      lifecycle expiry only — NO Object Lock / WORM is configured on this bucket
+      by design, so the bucket stays cleanly deletable for rollback.
+    Default: 365
+    MinValue: 30
+    MaxValue: 3650
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- KMS customer-managed key for CloudTrail log encryption --------------
+  CloudTrailKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: PDE Org CloudTrail log encryption key (RD-005).
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: pde-org-cloudtrail-key-policy
+        Statement:
+          # Root of the management account retains full administrative control
+          # so the key is never orphaned (standard KMS safeguard).
+          - Sid: EnableManagementAccountAdmin
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${ManagementAccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          # CloudTrail may generate a data key to encrypt log files.
+          - Sid: AllowCloudTrailEncrypt
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action:
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "aws:SourceArn": !Sub "arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${ManagementAccountId}:trail/${TrailName}"
+              StringLike:
+                "kms:EncryptionContext:aws:cloudtrail:arn": !Sub "arn:${AWS::Partition}:cloudtrail:*:${ManagementAccountId}:trail/*"
+          # Any principal in the organization may DECRYPT the logs it is
+          # entitled to read (log delivery + authorized readers).
+          - Sid: AllowOrgDecrypt
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Action: kms:Decrypt
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "aws:PrincipalOrgID": !Ref OrganizationId
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "1.1" }
+        - { Key: Component, Value: governance-cloudtrail }
+        - { Key: ManagedBy, Value: cloudformation }
+
+  CloudTrailKmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/pde-org-cloudtrail
+      TargetKeyId: !Ref CloudTrailKmsKey
+
+  # --- Centralized, hardened S3 log bucket ---------------------------------
+  CloudTrailLogBucket:
+    Type: AWS::S3::Bucket
+    # Retain on stack delete so an accidental teardown never destroys audit
+    # evidence; the rollback runbook empties + deletes it deliberately.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref LogBucketName
+      # NO Object Lock (WORM) — deliberate: COMPLIANCE-mode locks make the
+      # bucket un-deletable for the retention window and break clean rollback.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref CloudTrailKmsKey
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-logs
+            Status: Enabled
+            ExpirationInDays: !Ref LogRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          - Id: abort-incomplete-multipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "1.1" }
+        - { Key: Component, Value: governance-cloudtrail }
+        - { Key: ManagedBy, Value: cloudformation }
+
+  # --- Least-privilege bucket policy scoped to the CloudTrail service ------
+  CloudTrailLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailLogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # CloudTrail checks the bucket ACL before writing.
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailLogBucket.Arn
+            Condition:
+              StringEquals:
+                "aws:SourceArn": !Sub "arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${ManagementAccountId}:trail/${TrailName}"
+          # CloudTrail writes org-trail log files under the org-id prefix for
+          # every member account; require bucket-owner-full-control.
+          - Sid: AWSCloudTrailWriteOrg
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${CloudTrailLogBucket.Arn}/AWSLogs/${OrganizationId}/*"
+            Condition:
+              StringEquals:
+                "s3:x-amz-acl": bucket-owner-full-control
+                "aws:SourceArn": !Sub "arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${ManagementAccountId}:trail/${TrailName}"
+          # Also allow the management account's own path (defense in depth for
+          # single-account writes / the org trail's home account).
+          - Sid: AWSCloudTrailWriteManagement
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${CloudTrailLogBucket.Arn}/AWSLogs/${ManagementAccountId}/*"
+            Condition:
+              StringEquals:
+                "s3:x-amz-acl": bucket-owner-full-control
+                "aws:SourceArn": !Sub "arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${ManagementAccountId}:trail/${TrailName}"
+          # Deny any non-TLS access to the audit logs.
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt CloudTrailLogBucket.Arn
+              - !Sub "${CloudTrailLogBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+  # --- The Organization CloudTrail -----------------------------------------
+  OrgTrail:
+    Type: AWS::CloudTrail::Trail
+    # The trail depends on the bucket policy + key being in place first.
+    DependsOn:
+      - CloudTrailLogBucketPolicy
+    Properties:
+      TrailName: !Ref TrailName
+      S3BucketName: !Ref CloudTrailLogBucket
+      KMSKeyId: !GetAtt CloudTrailKmsKey.Arn
+      IsLogging: true
+      IsOrganizationTrail: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "1.1" }
+        - { Key: Component, Value: governance-cloudtrail }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  TrailArn:
+    Description: ARN of the Organization CloudTrail.
+    Value: !GetAtt OrgTrail.Arn
+    Export:
+      Name: pde-org-trail-arn
+
+  LogBucketNameOut:
+    Description: Centralized CloudTrail log bucket name.
+    Value: !Ref CloudTrailLogBucket
+    Export:
+      Name: pde-org-cloudtrail-log-bucket
+
+  KmsKeyArn:
+    Description: ARN of the CloudTrail log-encryption KMS CMK.
+    Value: !GetAtt CloudTrailKmsKey.Arn
+    Export:
+      Name: pde-org-cloudtrail-kms-key-arn

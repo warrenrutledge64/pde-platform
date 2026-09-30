@@ -13,8 +13,9 @@
 - **Environment / target:** Multi-account AWS Organization — management/root
   account `467866449172` (governance/CloudTrail only), `Pipeline-Hub` (PDE control
   plane, co-resident with ZTIE), `Pipeline-Dev`, `Pipeline-Sandbox`,
-  `Pipeline-Prod` (deployment targets). Region: to be pinned at Story 1.1.
-- **Last updated:** pending first phase
+  `Pipeline-Prod` (deployment targets). **Home region: `us-east-1`** (pinned at
+  Story 1.1; the org trail is multi-region but delivers to this home region).
+- **Last updated:** 2026-09-30 (Story 1.1 authored; awaiting live validation)
 - **Current restore point:** none yet
 
 ---
@@ -23,6 +24,8 @@
 
 | Component | Type | Version | Notes |
 |-----------|------|---------|-------|
+| `infra/spoke-execution-role.yaml` | CloudFormation template | Story 1.1 | Cross-account trust fabric — Spoke exec role trusting a specific Hub role (RD-006). Offline-proven (19 invariants). Not yet deployed. |
+| `infra/deferred/cloudtrail-org-baseline.yaml` | CloudFormation template (deferred) | Story 4.1 | Org-wide CloudTrail baseline — **deferred** per RD-007; preserved for historical reference; adapted to Hub-delegated at Phase 4. |
 | AWS CloudFormation | IaC engine | YAML (native) | Sole IaC standard (RD-004); no Terraform. |
 | Python | runtime | 3 (Boto3) | Bootstrap + validation scripting (RD-004). |
 | cfn-lint | static analysis | pinned at first use | CloudFormation linting (Universal Criterion 3). |

@@ -1,158 +1,99 @@
-# Session Brief — Story 1.1: Net-new Org-wide CloudTrail (audit baseline)
+# Session Brief — Story 1.1 (re-scoped): Cross-account trust fabric (Hub → Spokes)
 
 > One brief per story, populated from [`RUNBOOK.md`](../../governance/RUNBOOK.md).
-> This is the human-facing story spec; it doubles as the change record + audit
-> artifact for Story 1.1.
+> **Re-scoped 2026-09-30:** Story 1.1 was changed from the org-wide CloudTrail
+> (deferred to Story 4.1 per RD-007) to the cross-account trust fabric (RD-006).
 
-## Story 1.1 — Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts
+## Story 1.1 — Cross-account trust fabric: Spoke execution roles trusting specific Hub roles (RD-006)
 
 | Field | Value |
 |-------|-------|
-| **Phase** | 1 — Governance Baseline & Trust Fabric |
+| **Phase** | 1 — Trust Fabric |
 | **Build tier** | 1 (foundation — no dependencies) |
 | **Date** | 2026-09-30 |
-| **Status** | Not Started |
-| **Builds from restore point** | none yet (Phase 0 baseline; first live infrastructure story) |
-| **Session goal** | Author + offline-prove the CloudFormation for a clean Org-wide CloudTrail (new centralized S3 log bucket + KMS CMK) that captures every `Pipeline-*` account, and hand the operator the live deploy + validation runbook. |
+| **Status** | In Progress (🟡 — built + offline-proven, awaiting live validation) |
+| **Builds from restore point** | Phase 0 baseline (first live-infrastructure story) |
+| **Session goal** | Author + offline-prove the CloudFormation for a least-privilege Spoke execution role that trusts a specific Hub deployer role, and hand the operator the Hub→Spoke AssumeRole validation runbook. |
 
 ---
 
 ### Background & Context
 
-PDE's Phase 0 (governance baseline) is complete: `PROJECT_PLAN.md` + `RUNBOOK.md` +
-`RESTORE.md` + `BOM.md` are stood up and pass `check_docs.py`. Story 1.1 is the
-**first live-infrastructure story** and the **root of the entire dependency graph**
-(build tier 1). Per RD-005, PDE establishes a *completely new* Org-wide CloudTrail
-so every cross-account action from Day 1 of the platform is captured under a clean,
-untainted audit boundary — nothing else in Phases 1–3 should run until this baseline
-is actively recording.
+Two ratified decisions reshaped Phase 1: **RD-006** (Pipeline-Hub `641628980935` is
+the program-wide shared control plane; Spokes trust *specific Hub roles*) and
+**RD-007** (the org-wide audit baseline is deferred in full to Phase 4 / Story 4.1 —
+no interim, tracked as declared debt OD-002). So Story 1.1 is now the **trust
+fabric** — the reusable substrate the Hub control plane assumes to deploy into every
+Spoke. It is build tier 1, the root of the dependency graph.
 
 ### Objective & Value
 
-- **Objective:** a CloudFormation (YAML) template (plus any Python/Boto3 helpers)
-  defining (a) a new centralized S3 log bucket (block-public, versioned, SSE-KMS,
-  a least-privilege bucket policy scoped to the CloudTrail service), (b) a dedicated
-  KMS customer-managed key with a CloudTrail-scoped key policy, and (c) an
-  Organization-wide CloudTrail (`IsOrganizationTrail: true`, multi-region,
-  log-file validation enabled) that captures all `Pipeline-*` accounts.
-- **Why it matters:** it is the clean audit baseline (RD-005) and the hard
-  dependency for Story 1.2 and every later cross-account deployment. Without it,
-  nothing downstream may begin (advancement gate).
+- **Objective:** a CloudFormation (YAML) template (deployed once per Spoke) defining
+  a least-privilege PDE execution role whose **trust policy names a specific
+  `Pipeline-Hub` deployer role** (never the Hub account root) and requires an
+  `sts:ExternalId`, with permissions scoped to exactly the CloudFormation deploy
+  actions on the `pde-` stack namespace.
+- **Why it matters:** without explicit Spoke→Hub trust, the Hub cannot orchestrate
+  any deployment. It is the hard dependency for the Phase 1 gate and all of Phase 2–3.
 
 ### Scope, Dependencies & Position
 
-- **In scope:** the CloudTrail + S3 bucket + KMS CMK CloudFormation; offline static
-  proof (cfn-lint, cfn-guard, Checkov); the operator's live deploy + gate-validation
-  runbook.
-- **Out of scope:** the cross-account IAM trust roles (Story 1.2); any control-plane
-  or pipeline resources (Phase 2); anything in the management account beyond the
-  Org-wide CloudTrail configuration itself.
-- **Depends on:** Phase 0 (governance baseline) ✅. No infrastructure dependencies.
-- **Unblocks:** Story 1.2 (cross-account trust roles) and, transitively, all of
-  Phases 1–3.
-- **Roadmap position:** first story of Phase 1; tier 1; opens the live build.
+- **In scope:** the Spoke execution-role template (trust + scoped permissions),
+  offline proof, the Hub→Spoke AssumeRole validation runbook.
+- **Out of scope:** the Hub-side deployer role / control plane (Phase 2); the
+  org-wide CloudTrail (deferred, Story 4.1); anything in the management account.
+- **Depends on:** Phase 0 ✅. No infrastructure dependencies.
+- **Unblocks:** Story 1.2 (CloudShell bootstrap) + the Phase 1 gate; then all of Phase 2.
+- **Roadmap position:** first story of Phase 1; tier 1; the trust-fabric foundation.
 
 ### Approach & Constraints
 
-- **Approach:** (1) author the CloudFormation YAML; (2) run it through cfn-lint /
-  cfn-guard / Checkov offline and fix findings; (3) write the exact copy-paste
-  deploy sequence + the Phase 1-gate validation checks for the operator.
+- **Approach:** (1) author the Spoke role CloudFormation; (2) offline invariant proof
+  (`infra/validate_trust_fabric.py`) + cfn-lint/cfn-guard/Checkov operator-side;
+  (3) write the per-Spoke deploy + Hub→Spoke AssumeRole validation runbook.
 - **Hard constraints:**
-  - **Root-Governance-Only:** the trail is the **sole** permitted management-account
-    (467866449172) resource — deploy the Org trail from the management account, and
-    put **nothing else** there (Universal Criterion 1).
-  - **Single IaC standard:** CloudFormation YAML + Python 3 / Boto3 only — no
-    Terraform (RD-004).
-  - **Production-quality:** real bucket policy, real KMS key policy, encryption,
-    log-file validation on — no placeholders.
-  - **Static security passed:** must clear cfn-lint / cfn-guard / Checkov before
-    deploy (Universal Criterion 3).
-
-### Validation Rationale & Compliance Mapping (optional)
-
-- **Rationale:** establishes the immutable, encrypted, org-wide audit trail — the
-  evidentiary foundation for every later validation and the platform's governance
-  posture.
-- **Candidate control mappings** *(proposed, pending ratification):*
-
-| Framework | Control ID | Control Name | Rationale | Status |
-|-----------|-----------|--------------|-----------|--------|
-| NIST SP 800-53 Rev 5 | AU-2 | Event Logging | Org-wide trail captures account activity. | Proposed |
-| NIST SP 800-53 Rev 5 | AU-9 | Protection of Audit Information | SSE-KMS + log-file validation + block-public bucket. | Proposed |
-| NIST SP 800-53 Rev 5 | SC-28 | Protection of Information at Rest | KMS CMK encryption of log objects. | Proposed |
-| NIST CSF | DE.AE-3 | Event data aggregated/correlated | Centralized multi-account log bucket. | Proposed |
-| ISO/IEC 27001:2022 | A.8.15 | Logging | Centralized, tamper-evident logging. | Proposed |
-
-- **Audit evidence produced:** the deployed trail's `describe-trails` /
-  `get-trail-status` output and the first log objects landing in the new bucket.
-
-### Change & Rollback
-
-- **Change type:** normal (creates the org-wide audit baseline).
-- **Restore point this builds from:** Phase 0 baseline (no prior infra tag).
-- **Backout plan:** delete the CloudTrail stack (trail + bucket policy + KMS key
-  scheduled for deletion) from the management account; because it is a
-  single, self-contained stack with no dependents yet, teardown is clean. Document
-  the exact delete sequence in the story's runbook.
+  - **Least Privilege & Zero-Trust (RD-006):** trust a specific Hub role ARN (not
+    root) + require an ExternalId; permissions scoped to CFN deploy on `pde-*`, no
+    wildcard, no AdministratorAccess.
+  - **Single IaC standard:** CloudFormation YAML + Python 3 / Boto3 only.
+  - **Static security passed** before deploy (Universal Criterion 3).
+  - Roles live in the **Spokes** — never the management account.
 
 ### Definition of Done / Validation Gate
 
-> A **pass/fail gate**, not a description. The user validates live; the executor
-> records the result; only a recorded pass flips the status.
-
-- **Done means:** the CloudFormation deploys cleanly from the management account;
-  `aws cloudtrail get-trail-status` shows the trail logging + `IsOrganizationTrail`
-  true + multi-region + log-file-validation enabled; and **log files begin landing
-  in the new S3 bucket for the `Pipeline-*` accounts** (the Phase 1 gate's
-  CloudTrail half). Offline: cfn-lint / cfn-guard / Checkov clean.
-- **Validated by:** the human operator, live in the AWS management account.
-- **Validation Result:** `pending` — until validated.
-- **On pass (and only then):** record the dated Validation Result, flip Story 1.1 →
-  ✅ in the runbook. (Story 1.1 does **not** close Phase 1 — Story 1.3 does — so no
-  restore tag here.)
-- **On fail:** story stays 🟡; the next session re-focuses on fixing +
-  re-validating THIS story before Story 1.2.
-- **Advancement gate:** Story 1.2 (and all downstream cross-account work) cannot
-  start until Story 1.1 is ✅.
+- **Done means:** the Spoke role template deploys into each of Dev/Sandbox/Prod; from
+  the Hub, `sts:AssumeRole` into each Spoke role succeeds (with the correct
+  ExternalId) and returns that Spoke's account id, and is denied without the
+  ExternalId. Offline: 19-invariant check + cfn-lint/cfn-guard/Checkov clean.
+- **Validated by:** the human operator, live (Hub → each Spoke).
+- **Validation Result:** `pending` (VD-2 open).
+- **On pass:** record it, flip 1.1 → ✅, clear VD-2. (1.1 does **not** close Phase 1 —
+  Story 1.2 does.)
+- **On fail:** stays 🟡; re-focus on tightening trust/permission scoping.
+- **Advancement gate:** 1.2 + the Phase 1 gate cannot complete until 1.1 is ✅.
 
 ### Risks & Watch-Items
 
-- **Zero-touch root discipline:** it is easy to accidentally create incidental
-  resources in the management account — deploy *only* the trail stack there and
-  verify nothing else was added.
-- **KMS key policy correctness:** the CloudTrail service principal must be granted
-  `kms:GenerateDataKey*` / `kms:DescribeKey` or trail creation fails; the S3 bucket
-  policy must allow `cloudtrail.amazonaws.com` `s3:GetBucketAcl` +
-  `s3:PutObject` with the `bucket-owner-full-control` condition.
-- **Org-trail prerequisites:** creating an Organization trail requires the
-  management account (or a delegated administrator) and that trusted access for
-  CloudTrail is enabled in AWS Organizations — check this before deploy.
-- **Region pinning:** pin the home region for the trail + bucket and record it in
-  `BOM.md` (currently "to be pinned at Story 1.1").
-- **Do NOT enable S3 Object Lock in COMPLIANCE mode** on the log bucket (a prior
-  lesson: 365-day WORM makes the bucket un-deletable and blocks clean rollback).
+- **Chicken-and-egg with the Hub deployer role:** the trust names `pde-hub-deployer`,
+  which is created in Phase 2. IAM allows naming a not-yet-existent principal; the
+  trust resolves at assume-time. Validate the trust *shape* now; run the full live
+  AssumeRole once the Hub role exists (or with a temporary Hub stand-in).
+- **Trust scoping:** must be the specific Hub role ARN + ExternalId — never `:root`.
+- **Verify the DEPLOYED role** (`get-role` + live `assume-role`), not just the YAML.
+- **Wrong account:** deploy in the Spokes, initiate AssumeRole from the Hub.
 
-### Lessons Learned / Carry-Forward *(authored at the end of Phase 0 / Story 0.1)*
+### Lessons Learned / Carry-Forward *(authored during Story 1.1 / the re-scope)*
 
-- **What went well:** the `pde-platform` repo already shipped a mature, un-instantiated
-  OS-layer scaffold (a superset of `project-os-starter`, with a working
-  `check_docs.py` gate). Instantiating it — rather than clobbering it — preserved the
-  gate and the independent-validator protocol.
-- **What went wrong / surprised us:** `check_docs.py` CHECK S false-positived because
-  its summary-table regex matches **any** line beginning `| <story-id> |` and takes
-  the **first** status glyph it sees for that id. Auxiliary tables (Blocked / Ready /
-  Tiers) that key on a story id and contain a `✅` in prose (e.g. "1.1 not yet ✅")
-  poisoned the real status. **Rule for this project:** only the phase summary tables
-  and the detail-block headers may carry status glyphs; keep glyphs out of the
-  Blocked/Ready/Tier tables (say "not yet validated", not "not yet ✅").
-- **Current true state:** Phase 0 governance baseline authored + `check_docs.py`
-  PASS + `test_check_docs`/`test_repo_map` 15 tests OK, on branch
-  `feature/story-0-bootstrap` (PR open). **Nothing is deployed to AWS yet** — no
-  live infrastructure exists. Story 0.1 stays 🟡 until the human confirms the
-  runbook faithfully mirrors the plan (Phase 0 gate).
-- **Must-know / must-avoid for this session:** PLAN is authoritative — do not invent
-  scope. Deploy **only** the trail to the management account. Prove offline before
-  asking the operator to deploy. Verify the *deployed* trail (get-trail-status), not
-  just that the template lints. Give the operator the full copy-paste sequence with
-  the real region + account values substituted.
+- **What went well:** the `infra/validate_*.py` stdlib invariant pattern is a solid
+  offline proof bar (PyPI is blocked in the sandbox, so cfn-lint/cfn-guard/Checkov
+  are operator/CI). Carry it forward per template.
+- **Checker gotcha (fixed):** the invariant validator initially false-failed on
+  explanatory comments (`NOT AdministratorAccess`, `not :root`) — strip YAML comment
+  lines before asserting invariants so the check tests the *template*, not the prose.
+- **The re-scope itself:** the org path added design difficulty; the resolution was
+  to fix the load-bearing charter now (RD-006, Hub = shared control plane) and defer
+  only the additive audit layer (RD-007), with the org-trail work preserved in
+  `infra/deferred/` for Story 4.1. Declared debt OD-002 tracks the deferral.
+- **Current true state:** Story 1.1 (trust fabric) is 🟡 — built + offline-proven
+  (19 invariants), **not deployed.** VD-2 OPEN, gate ARMED. Nothing on AWS yet.
 - **User notes:** _(open for the user)_
