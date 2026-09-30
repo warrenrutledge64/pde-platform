@@ -11,6 +11,10 @@
 > **Written during the prior session:** authored at the END of the preceding
 > story while context is fresh, so its Lessons Learned section reflects what
 > actually just happened.
+>
+> **KEEP IT LEAN — fat causes drift and hallucination (baseline discipline, RD-008 /
+> METHODOLOGY §7).** Load-bearing content only; don't restate what the RUNBOOK/plan
+> already hold — link them. On re-scope, re-trim rather than append.
 
 ---
 

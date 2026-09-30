@@ -9,6 +9,14 @@
 >
 > **How to use.** Copy the block below, fill every `{{...}}`, delete these
 > instruction lines, and paste it as the first message of the new session.
+>
+> **KEEP IT LEAN — fat causes drift and hallucination (baseline discipline, RD-008 /
+> METHODOLOGY §7).** Carry load-bearing instruction ONLY; move reference/background
+> to linked docs and point at them, don't inline. Keep the must-not-miss guardrails
+> (validate-live/don't-self-certify, don't-push-to-main, honor-scope, warm-handoff)
+> early and unmissable. Don't duplicate content the brief already holds — link it.
+> On any re-scope, **re-trim, don't just append.** A reusable template is
+> independently audited for fat before it is relied on (§4a).
 
 ---
 

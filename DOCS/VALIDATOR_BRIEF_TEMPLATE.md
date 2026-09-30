@@ -19,6 +19,11 @@
 >    and let it seal PASS / FAIL / INCONCLUSIVE.
 > 5. Hand the sealed verdict to the executor, who records it in the RUNBOOK and (only
 >    on PASS) flips the status.
+>
+> **KEEP IT LEAN — fat causes drift and hallucination (baseline discipline, RD-008 /
+> METHODOLOGY §7).** Give the validator the requirement + a pointer to the raw change,
+> not a fat curated packet. This template (like the prompt/brief templates) is itself
+> independently audited for fat before being relied on (§4a).
 
 ---
 
