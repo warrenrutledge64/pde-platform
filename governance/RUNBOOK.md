@@ -147,6 +147,19 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 **Gate status:** **DISARMED** — the register is empty. Story 1.1 (tier 1, first
 story) is clear to begin.
 
+## Operational Debt Register
+
+> The single source of truth for **operational / tooling debt** (ITIL known-error
+> style): defects, workarounds, and reusable-OS-vs-instance gaps that are not story
+> validation debt but still must be tracked, owned, and cleared — never left as a
+> scattered note. Each item carries an explicit **Depends-on / Feeds** edge so up-
+> and down-stream relationships are visible. `OPEN` items are carried; `PAID` items
+> are retained (not deleted) as the audit trail of what was resolved and how.
+
+| # | Item | State | Owner | Depends-on / Feeds | Clear-by / Resolution |
+|---|------|-------|-------|--------------------|-----------------------|
+| OD-001 | `check_docs.py` CHECK S false-positived: it read the first status glyph *anywhere* in a `\| <story-id> \|` row, so a glyph mentioned in **prose** in an auxiliary Ready-Now/Blocked/Build-Tier table (e.g. `1.1 not yet ✅`) was mis-read as that story's status. | **PAID** (2026-09-30) | executor | **Feeds:** the reusable OS layer. **Depends-on:** SDD-repo-kit PR #2 (source-of-truth fix). | Fixed at the source template ([SDD-repo-kit PR #2](https://github.com/warrenrutledge64/SDD-repo-kit/pull/2), new `_status_cell_glyph()` accepting a glyph only as a cell's sole token) **and paid down in-instance** the same day (Option B): the fixed `scripts/check_docs.py` + tests backported into this repo, so the instance gate is byte-identical to the corrected kit. A future re-sync of the kit's `scripts/` into this instance is therefore a **no-op**. Authoring rule retained: keep status glyphs out of Ready/Blocked/Tier prose cells; only phase summary tables + detail-block headers carry glyphs. |
+
 ## Ready-Now / Blocked / Default-Next-Action
 
 **Ready now (all `Depends on` are ✅, or none):**
