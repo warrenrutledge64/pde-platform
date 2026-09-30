@@ -130,6 +130,15 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | 7 | 3.3 | 3.2 | 3 | Validate Dev, approve gate, promote to Pipeline-Sandbox. |
 | 8 | 3.4 | 3.3 | 3 | Split-brain validate Sandbox, approve final gate, release to Pipeline-Prod. |
 | 9 | 4.1 | Phase 3 gate | 4 | **Governance cutover (deferred, RD-007):** switch on the org-wide CloudTrail as a Hub-delegated shared service; retire the audit debt (OD-002). |
+| G | G-1 | — | Governance | Independent adversarial **fat-audit** of the prompt/handoff templates (RD-008 / §4a; AI RMF MEASURE-2.7). No pipeline dep; runs now. |
+| G | G-2 | G-1 | Governance | **Trim** templates to the audit findings + record the **lean pass** (satisfies the RD-008/§4a gate). Gates Story 1.1's live validation (which uses the audited validator handover). |
+
+> **Governance (`G-`) series.** Tooling/OS-quality stories, tracked separately from the
+> pipeline phases (they are not gate-enforced by `check_docs`, which tracks only
+> `N.N` IDs — the human tracks G-status). Current governance thread: **G-1 → G-2**,
+> which must complete **before Story 1.1's live validation** (Story 1.1 uses the
+> validator-handover template G-1/G-2 audit + trim). Story 1.1 may stay 🟡 meanwhile;
+> its *live pass* waits on G-2.
 
 ## Validation Debt Register
 
@@ -171,12 +180,14 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 1.1 | 1 | No dependencies — the trust-fabric foundation story (re-scoped). |
+| G-1 | G | No dependencies — the fat-audit of the templates; runs now (gates Story 1.1's live validation). |
+| 1.1 | 1 | Trust-fabric build is done + offline-proven; its BUILD needs nothing more. (Its LIVE validation waits on G-2 — see the G-series note.) |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
+| G-2 | G | G-1 (the audit findings) not yet delivered |
 | 1.2 | 2 | Story 1.1 not yet validated |
 | 2.1, 2.2 | 3 | Phase 1 gate not yet passed |
 | 2.3 | 4 | Stories 2.1 + 2.2 not yet validated |
@@ -186,14 +197,16 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 1.1 (orchestrate-and-pull trust fabric) is 🟡 built +
-offline-proven** (`infra/member-execution-role.yaml`, 21 invariants pass). The next
-action is the **live validation** (VD-3): the operator deploys the member execution
-role into each of Dev/Sandbox/Prod and confirms a Hub→member `sts:AssumeRole` (the
-Hub orchestrator directing the member, with the correct ExternalId) succeeds and
-returns each member's account id, per
+**Default next action:** **Story G-1 — run the independent fat-audit of the prompt/
+handoff templates** (RD-008/§4a; AI RMF MEASURE-2.7), using the ready-to-paste audit
+prompt at [`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md).
+Then **G-2** trims to the findings + records the lean pass. Only after G-2 does
+**Story 1.1's LIVE validation** run (VD-3): deploy `infra/member-execution-role.yaml`
+into each of Dev/Sandbox/Prod and confirm a Hub→member `sts:AssumeRole` (correct
+ExternalId) succeeds + is denied without it, per
 [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-On the recorded pass, flip 1.1 → ✅, clear VD-3, and Story 1.2 unblocks.
+Order: **G-1 → G-2 → Story 1.1 (live)**. Story 1.1's build is done; only its live pass
+waits on the audited templates.
 
 ## Progress Summary
 
@@ -327,6 +340,29 @@ _Gate: From the Hub (as the delegated CloudTrail administrator), a human operato
 - **Validation Result:** _pending — deploy from the Hub as delegated admin; confirm the org trail is active (org/multi-region/log-file validation) AND logs land for all `Pipeline-*` accounts._
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), and flip **OD-002 → PAID** (the audit debt is retired). This story closes Phase 4 — capture `restore/phase-4-green` + inventory row.
 - **Advancement gate:** retires the RD-007 audit deferral; the program-wide shared audit service is live for all current and future Hub tenants.
+
+---
+
+## Governance (G-) series — OS-quality / tooling stories
+
+_Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` (which tracks only `N.N` IDs); the human tracks G-status. Current thread: **G-1 → G-2**, which must complete before Story 1.1's LIVE validation (Story 1.1 uses the validator-handover template being audited/trimmed)._
+
+| Story | Title | Depends on | Status | Completed |
+|-------|-------|-----------|--------|-----------|
+| G-1 | Independent adversarial fat-audit of the prompt/handoff templates | — | ⬜ | |
+| G-2 | Trim templates to the audit findings + record the lean pass | G-1 | ⬜ | |
+
+**G-1 — Independent adversarial fat-audit of the prompt/handoff templates**  ⬜ _Not Started_
+- Steps: paste the ready-to-paste bloat-focused audit prompt ([`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md)) to an **independent** validator (fresh chat / Gemini — not the author). The auditor authors its own rubric under the axiom **fat causes drift and hallucination**, attacks the templates (`SESSION_PROMPT_TEMPLATE`, `SESSION_BRIEF_TEMPLATE`, `VALIDATOR_BRIEF_TEMPLATE` + the Story-1.1 filled instances), and returns findings + a **measurably tighter rewrite proposal**. Optionally add the `SDD-repo-kit` upstream copies to the read-list.
+- **Validation Result:** _pending — the independent auditor delivers a sealed findings report + a proposed tighter rewrite (with a quantified reduction and zero load-bearing loss)._
+- **On pass (and only then):** record the dated result + the auditor's verdict; set G-1 ✅. (RD-008/§4a: the author does not self-certify leanness; this is the recorded independent pass.)
+- **Advancement gate:** G-2 cannot begin until G-1's findings exist. Story 1.1's LIVE validation should not run until G-2 is ✅.
+
+**G-2 — Trim templates to the audit findings + record the lean pass**  ⬜ _Not Started_
+- Steps: apply the audit's accepted findings — trim the templates to load-bearing-only, move reference material to linked docs, put must-not-miss guardrails early, de-duplicate across brief/prompt/handover. Mirror the accepted trims **upstream** into `SDD-repo-kit` (reusable-OS). Re-prove offline (`check_docs` + tests).
+- **Validation Result:** _pending — trimmed templates on `main` (instance + upstream) AND a recorded lean pass (the RD-008/§4a gate satisfied; AI RMF MEASURE-2.7 evidence)._
+- **On pass (and only then):** record the dated result; set G-2 ✅. This clears the "prompts are optimized" gate — Story 1.1's LIVE validation may now run against the audited/trimmed validator-handover template.
+- **Advancement gate:** Story 1.1's live validation (VD-3) proceeds only after G-2 is ✅.
 
 ---
 
