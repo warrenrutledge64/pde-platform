@@ -36,8 +36,11 @@ PDE is a validation-gated multi-account AWS delivery platform. Pipeline-Hub
 - **OUT (Phase 2 / deferred):** the Hub orchestrator role, Step Functions, the intake
   data-contract, the signed-token machinery; the org-wide CloudTrail (Story 4.1); the
   management account (467866449172).
-- **DONE WHEN:** offline invariants pass AND the USER returns raw STDOUT proving
-  `sts:AssumeRole` from the Hub SUCCEEDS with the ExternalId and is DENIED without it.
+- **DONE WHEN (Path A):** offline invariants pass AND the USER returns raw `get-role`
+  STDOUT from each member proving the trust names the specific Hub orchestrator role
+  (`arn:aws:iam::641628980935:role/pde-hub-orchestrator`, NOT `:root`) + requires
+  `sts:ExternalId`. The full live Hub→member `sts:AssumeRole` (succeeds-with / denied-without)
+  is DEFERRED to Phase 2 (the Hub role does not exist until then).
 
 # THE SPLIT-BRAIN EXECUTION LOOP
 1. **BUILD:** work `infra/member-execution-role.yaml` (the invariant checker strips YAML
