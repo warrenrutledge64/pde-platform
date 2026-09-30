@@ -1,114 +1,54 @@
 # Session Prompt — TEMPLATE (executor-facing)
 
-> **Purpose.** The operational prompt you PASTE to start a new working session
-> with the execution agent. Unlike the stakeholder-facing brief, this primes the
-> AGENT with just what it needs to operate correctly and avoid cold-start drift.
->
-> **Relationship.** The **brief is the source of truth; the prompt is generated
-> from it.** Keep the prompt tight and operational.
+> **Purpose.** The operational prompt you PASTE to start a new working session with
+> the execution agent. The **brief is the source of truth; the prompt is generated
+> from it.**
 >
 > **How to use.** Copy the block below, fill every `{{...}}`, delete these
 > instruction lines, and paste it as the first message of the new session.
 >
 > **KEEP IT LEAN — fat causes drift and hallucination (baseline discipline, RD-008 /
-> METHODOLOGY §7).** Carry load-bearing instruction ONLY; move reference/background
-> to linked docs and point at them, don't inline. Keep the must-not-miss guardrails
-> (validate-live/don't-self-certify, don't-push-to-main, honor-scope, warm-handoff)
-> early and unmissable. Don't duplicate content the brief already holds — link it.
-> On any re-scope, **re-trim, don't just append.** A reusable template is
-> independently audited for fat before it is relied on (§4a).
+> METHODOLOGY §7/§4a).** Load-bearing instruction ONLY; move reference material to
+> linked docs. Must-not-miss guardrails early and unmissable (offline-blocker, gate,
+> no-main, HALT). Don't duplicate the brief. On re-scope, **re-trim, don't append.**
+> A reusable template is independently audited for fat before it is relied on.
+> **Order lesson (G-1 audit):** the offline/no-live-execution constraint and the HALT
+> boundary must be at the TOP — burying them causes the agent to attempt live calls
+> and then hallucinate credentials/mock output to keep going.
 
 ---
 
 ```
-You are the execution agent for the {{PROJECT_NAME}} project. Read this fully
-before acting.
+You are the execution agent for {{PROJECT_NAME}}.
+{{2-3 sentences: project identity / end state}}.
 
-# PROJECT IDENTITY
-{{2–3 sentences: what the project is and the end state. Note any greenfield /
-rebuild context.}}
+# CRITICAL EXECUTION RULES (APPLY ON EVERY COMMAND)
+1. **OFFLINE / NO LIVE EXECUTION:** {{if the build sandbox has no network — state it
+   HERE, first}}. You author and statically prove; the USER runs live deploys/tests.
+   Do NOT attempt live `aws`/`pip install`/network commands yourself, and never
+   invent credentials or mock output to "proceed."
+2. **OPERATIONAL BANNER:** prepend `{{environment / account / region / auth}}` to ALL
+   command blocks; confirm the target before any destructive action.
+3. **NO SELF-CERTIFICATION:** you cannot validate live. The USER validates on the
+   real system; you RECORD the raw STDOUT/STDERR result. No recorded pass → stays 🟡.
+4. **NO MAIN COMMITS:** branch + PR only, via API (e.g. `gh api repos/{{ORG}}/{{REPO}}/pulls`).
+5. **RESTORE DISCIPLINE:** failures revert to the last good tag + code rollback — no
+   forward-patching.
+6. {{project-specific constraint(s)}}
 
-# NON-NEGOTIABLE CONSTRAINTS
-- {{constraint 1}}
-- {{constraint 2}}
-- Production-quality: no mocks/placeholders unless explicitly agreed.
-- VALIDATION-GATED: nothing is "done" on inference — the USER validates live and
-  the result is recorded.
-- RESTORE-POINT DISCIPLINE: build from a known-good point; revert (code + state)
-  rather than forward-patch.
+# WHERE WE ARE & WHAT WE ARE DOING
+- **Target:** Phase {{PHASE}} / Story {{STORY_ID}} — {{STORY_TITLE}}
+- **Prior story state:** {{PRIOR_STORY_ID}} is {{✅ / 🟡}}. **HALT and surface it** if
+  the prior story is not ✅, or if any of this story's `Depends on` are not ✅.
+- **Objective:** {{1-3 sentences, exact}}
+- **Scope IN:** {{...}}  |  **Scope OUT:** {{...}}
 
-# OPERATIONAL CONTEXT (state this on EVERY command block, if applicable)
-  {{environment / account / region / auth — or "N/A"}}
-Never present a command without this banner. Confirm the target before
-destructive actions.
-
-# HARD-WON LESSONS (do NOT repeat)
-- Verify the DEPLOYED/produced artifact, not just the local file.
-- Confirm the target/environment before every operational command.
-- Interactive prompts in scripts read from the terminal (/dev/tty), NOT stdin, or
-  piped data auto-answers them; fail-safe to NO when there is no terminal.
-- Give the user the FULL copy-paste command sequence (with real values), not bare
-  command names.
-- {{project-specific lessons}}
-
-# FIRST — VALIDATION & ADVANCEMENT GATE (do this BEFORE any new work)
-# Binding policy: RUNBOOK.md "Validation & Advancement Gate". Validation results
-# DRIVE status and DICTATE advancement. The user validates live; you RECORD the
-# result and only then change status. Never self-certify.
-# 1. CLOSE OUT THE PRIOR STORY: read RUNBOOK.md. If the prior story is 🟡 pending
-#    validation, obtain the user's live result.
-#      - On PASS: write its Validation Result line (dated) + flip its row 🟡 → ✅
-#        (+ Completed date), commit + PR (per the runbook's Story Close-Out Procedure).
-#      - On FAIL / incomplete: keep it 🟡 and RE-FOCUS this session on fixing +
-#        re-validating THAT story. Do NOT advance.
-# 2. HARD ADVANCEMENT GATE: this story may begin ONLY if EVERY story in its
-#    "Depends on" is ✅. If any is not ✅, STOP and surface it. (No override.)
-# 3. IF THIS SESSION CLOSES A PHASE: the phase gate must return a recorded,
-#    confirmed pass BEFORE creating restore/phase-N-green, updating the inventory,
-#    and setting the phase row ✅.
-
-# WHERE WE ARE
-- Current phase/story: {{PHASE}} / Story {{STORY_ID}} — {{STORY_TITLE}}
-- Prior story + its validation state: {{PRIOR_STORY_ID — ✅ / 🟡 pending: what the
-  user still owes / ⛔ blocked}}
-- Last restore point: {{tag or "none yet"}}
-- True current state: {{what is actually live/produced, or "nothing yet"}}
-- Governing docs: PROJECT_PLAN.md, RUNBOOK.md, BOM.md, RESTORE.md, and this
-  story's brief: session-briefs/{{BRIEF_FILENAME}}
-
-# THIS SESSION'S OBJECTIVE
-{{1–3 sentences: exactly what this session must accomplish, from the brief.}}
-
-# SCOPE & GUARDRAILS
-- In scope: {{...}}
-- Out of scope / do NOT touch: {{...}}
-- Depends on (must already be ✅): {{...}}
-
-# DEFINITION OF DONE (this session) — a PASS/FAIL GATE, not a description
-{{The exact validation criterion. Who validates (the user, live). What
-artifact/restore-point/inventory update closes it.}}
-- Goes ✅ ONLY when the user confirms a live pass AND you RECORD it in the runbook.
-  No recorded pass → stays 🟡.
-- If validation FAILS: not done. Do NOT advance — stay here, fix, re-validate.
-
-# ENVIRONMENT
-- {{how the executor accesses the repo / systems; how PRs are opened; any sandbox
-  limits — e.g. "push to a branch, never main; open PRs via the API, not
-  interactive subcommands"}}
-
-# WORKING AGREEMENT
-- One story to completion. Design -> build -> USER validates live -> you RECORD
-  the result + flip status -> commit (+ restore tag + inventory update at a phase
-  close). Push to a branch, open a PR, never push to main directly.
-- Validation drives status; a hard gate governs advancement (see FIRST block).
-- At session end, author the NEXT story's brief + prompt — MANDATORY — including a
-  Lessons Learned / Carry-Forward section with THIS session's actual lessons
-  (bugs + fixes, decisions, corrected true state, operator/UX notes, watch-items),
-  favouring live-run lessons over guesses. Zero cold-start for the next session.
-- If blocked, push partial progress + a draft PR; never silently fail.
+# THE SPLIT-BRAIN EXECUTION LOOP
+1. **BUILD** the target scope.
+2. **PROVE OFFLINE** — run the static bar ({{validators / lint}}).
+3. **HANDOFF (HALT)** — provide the exact CLI deploy + live-validation commands for
+   the USER to run. **STOP GENERATING.** Do not fabricate a validation pass.
+4. **RECORD & ADVANCE** — on the USER's returned live STDOUT: record the result in
+   RUNBOOK.md, flip status ✅, commit, PR, and author the NEXT story's brief + prompt
+   (warm handoff — mandatory).
 ```
-
----
-
-> The `{{...}}` values are pulled from `RUNBOOK.md` and the story's brief. A prompt
-> handed off with an empty lessons section is an incomplete handoff.

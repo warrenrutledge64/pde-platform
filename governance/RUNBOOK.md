@@ -135,7 +135,8 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 
 > **Governance (`G-`) series.** Tooling/OS-quality stories, tracked separately from the
 > pipeline phases (they are not gate-enforced by `check_docs`, which tracks only
-> `N.N` IDs — the human tracks G-status). Current governance thread: **G-1 → G-2**,
+> `N.N` IDs — the human tracks G-status). Governance thread **G-1 → G-2 both ✅**
+> (2026-09-30) — templates audited + trimmed. Original framing kept for context: **G-1 → G-2**,
 > which must complete **before Story 1.1's live validation** (Story 1.1 uses the
 > validator-handover template G-1/G-2 audit + trim). Story 1.1 may stay 🟡 meanwhile;
 > its *live pass* waits on G-2.
@@ -180,14 +181,12 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| G-1 | G | No dependencies — the fat-audit of the templates; runs now (gates Story 1.1's live validation). |
-| 1.1 | 1 | Trust-fabric build is done + offline-proven; its BUILD needs nothing more. (Its LIVE validation waits on G-2 — see the G-series note.) |
+| 1.1 | 1 | G-1 + G-2 ✅ (templates audited + trimmed); trust-fabric build is done + offline-proven. Its **LIVE validation** is now the ready action (VD-3). |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| G-2 | G | G-1 (the audit findings) not yet delivered |
 | 1.2 | 2 | Story 1.1 not yet validated |
 | 2.1, 2.2 | 3 | Phase 1 gate not yet passed |
 | 2.3 | 4 | Stories 2.1 + 2.2 not yet validated |
@@ -197,16 +196,14 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story G-1 — run the independent fat-audit of the prompt/
-handoff templates** (RD-008/§4a; AI RMF MEASURE-2.7), using the ready-to-paste audit
-prompt at [`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md).
-Then **G-2** trims to the findings + records the lean pass. Only after G-2 does
-**Story 1.1's LIVE validation** run (VD-3): deploy `infra/member-execution-role.yaml`
-into each of Dev/Sandbox/Prod and confirm a Hub→member `sts:AssumeRole` (correct
-ExternalId) succeeds + is denied without it, per
+**Default next action:** **Story 1.1 — LIVE validation (VD-3).** G-1 (fat-audit) and
+G-2 (trim + lean pass) are ✅ — the prompts are audited + trimmed (offline-blocker at
+Rule #1, HALT boundary in the loop), so the "prompts are optimized" gate is cleared.
+The live action: deploy `infra/member-execution-role.yaml` into each of
+Dev/Sandbox/Prod and confirm a Hub→member `sts:AssumeRole` (correct ExternalId)
+succeeds + is denied without it, per
 [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-Order: **G-1 → G-2 → Story 1.1 (live)**. Story 1.1's build is done; only its live pass
-waits on the audited templates.
+On the recorded pass, flip 1.1 → ✅, clear VD-3, and Story 1.2 unblocks.
 
 ## Progress Summary
 
@@ -349,20 +346,18 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 
 | Story | Title | Depends on | Status | Completed |
 |-------|-------|-----------|--------|-----------|
-| G-1 | Independent adversarial fat-audit of the prompt/handoff templates | — | ⬜ | |
-| G-2 | Trim templates to the audit findings + record the lean pass | G-1 | ⬜ | |
+| G-1 | Independent adversarial fat-audit of the prompt/handoff templates | — | ✅ | 2026-09-30 |
+| G-2 | Trim templates to the audit findings + record the lean pass | G-1 | ✅ | 2026-09-30 |
 
-**G-1 — Independent adversarial fat-audit of the prompt/handoff templates**  ⬜ _Not Started_
-- Steps: paste the ready-to-paste bloat-focused audit prompt ([`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md)) to an **independent** validator (fresh chat / Gemini — not the author). The auditor authors its own rubric under the axiom **fat causes drift and hallucination**, attacks the templates (`SESSION_PROMPT_TEMPLATE`, `SESSION_BRIEF_TEMPLATE`, `VALIDATOR_BRIEF_TEMPLATE` + the Story-1.1 filled instances), and returns findings + a **measurably tighter rewrite proposal**. Optionally add the `SDD-repo-kit` upstream copies to the read-list.
-- **Validation Result:** _pending — the independent auditor delivers a sealed findings report + a proposed tighter rewrite (with a quantified reduction and zero load-bearing loss)._
-- **On pass (and only then):** record the dated result + the auditor's verdict; set G-1 ✅. (RD-008/§4a: the author does not self-certify leanness; this is the recorded independent pass.)
-- **Advancement gate:** G-2 cannot begin until G-1's findings exist. Story 1.1's LIVE validation should not run until G-2 is ✅.
+**G-1 — Independent adversarial fat-audit of the prompt/handoff templates**  ✅ _Done (validated)_
+- Steps: paste the ready-to-paste bloat-focused audit prompt ([`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md)) to an **independent** validator (Gemini — not the author). The auditor authors its own rubric under the axiom **fat causes drift and hallucination**, attacks the templates, and returns findings + a **measurably tighter rewrite**.
+- **Validation Result:** pass — independent auditor (Gemini) authored its own rubric and sealed a verdict + two tighter rewrites (~50% reduction, 0 load-bearing lines lost), 2026-09-30, confirmed by warrenrutledge64. Verdict on the templates = **MUST-BE-TRIMMED, do not run as-is**, on two fatal flaws: (1) the offline-sandbox blocker was buried at the bottom → agent would attempt live calls then hallucinate credentials/mock output; (2) no HALT boundary in the build→validate→commit loop → agent would fabricate a mock validation pass to reach the commit step. G-1's own DoD (deliver an independent audit + rewrite) is MET; the FAIL is the finding on the templates — the valuable output that feeds G-2.
+- **Advancement gate:** the two findings feed G-2 (the trim).
 
-**G-2 — Trim templates to the audit findings + record the lean pass**  ⬜ _Not Started_
-- Steps: apply the audit's accepted findings — trim the templates to load-bearing-only, move reference material to linked docs, put must-not-miss guardrails early, de-duplicate across brief/prompt/handover. Mirror the accepted trims **upstream** into `SDD-repo-kit` (reusable-OS). Re-prove offline (`check_docs` + tests).
-- **Validation Result:** _pending — trimmed templates on `main` (instance + upstream) AND a recorded lean pass (the RD-008/§4a gate satisfied; AI RMF MEASURE-2.7 evidence)._
-- **On pass (and only then):** record the dated result; set G-2 ✅. This clears the "prompts are optimized" gate — Story 1.1's LIVE validation may now run against the audited/trimmed validator-handover template.
-- **Advancement gate:** Story 1.1's live validation (VD-3) proceeds only after G-2 is ✅.
+**G-2 — Trim templates to the audit findings + record the lean pass**  ✅ _Done (validated)_
+- Steps: apply the audit's accepted findings — offline-blocker to Rule #1, explicit HANDOFF (HALT) boundary, load-bearing-only, guardrails early. Mirror upstream into `SDD-repo-kit` (reusable-OS). Re-prove offline (`check_docs` + tests).
+- **Validation Result:** pass — applied Gemini's two tighter rewrites to `DOCS/SESSION_PROMPT_TEMPLATE.md` (generic) + `DOCS/session-briefs/story-1.1-PROMPT.md` (instance): offline/no-live-execution constraint is now Rule #1, an explicit **HANDOFF (HALT) — STOP GENERATING** step sits in the execution loop, ~50% leaner with all load-bearing markers preserved (ExternalId, orchestrate-and-pull, member-execution-role, validate_trust_fabric, gh api, Phase-2/CloudTrail/mgmt-account scope-out, least-privilege, no-Terraform, warm-handoff). Mirrored upstream to `SDD-repo-kit`. `check_docs` PASS, 2026-09-30, confirmed by warrenrutledge64 (rewrites authored by the independent auditor, not self-certified). This clears the "prompts are optimized" gate.
+- **Advancement gate:** Story 1.1's LIVE validation (VD-3) may now run against the trimmed prompts.
 
 ---
 
