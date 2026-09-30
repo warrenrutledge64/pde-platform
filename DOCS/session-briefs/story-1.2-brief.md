@@ -19,11 +19,11 @@
 
 ### Background & Context
 
-Story 1.1 (the trust fabric) is validated ✅ — the Spoke execution roles exist and
-are assumable from the Hub. Story 1.2 stands up the operator's **bootstrap
-environment**: the Hub-account CloudShell with repo access and tooling, and runs the
-**Phase 1 gate** end to end (the AssumeRole-into-each-Spoke Boto3 script). This story
-**closes Phase 1**.
+Story 1.1 (the orchestrate-and-pull trust fabric) is validated ✅ — the member
+execution roles exist and are directable (assumable) by the Hub orchestrator. Story
+1.2 stands up the operator's **bootstrap environment**: the Hub-account CloudShell
+with repo access and tooling, and runs the **Phase 1 gate** end to end (the
+Hub→member AssumeRole Boto3 script). This story **closes Phase 1**.
 
 ### Objective & Value
 
@@ -38,7 +38,7 @@ environment**: the Hub-account CloudShell with repo access and tooling, and runs
 
 - **In scope:** CloudShell setup docs, the Phase-1-gate Boto3 script, running it live.
 - **Out of scope:** the control plane (Phase 2); the org-wide CloudTrail (Story 4.1).
-- **Depends on:** Story 1.1 ✅ (trust fabric assumable).
+- **Depends on:** Story 1.1 ✅ (member execution roles directable by the Hub).
 - **Unblocks:** Phase 2.
 - **Roadmap position:** closes Phase 1 → capture `restore/phase-1-green`.
 
@@ -46,8 +46,8 @@ environment**: the Hub-account CloudShell with repo access and tooling, and runs
 
 - **Approach:** (1) document the Hub CloudShell bootstrap (token-auth clone per the
   HTTPS-token convention, tooling); (2) author a Boto3 gate script that loops
-  Dev/Sandbox/Prod, assumes each Spoke role with the ExternalId, prints the returned
-  account id; (3) run it live from Hub CloudShell.
+  Dev/Sandbox/Prod, assumes each member execution role with the ExternalId, prints
+  the returned account id; (3) run it live from Hub CloudShell.
 - **Hard constraints:** AWS-native tooling; the gate script is Python 3 / Boto3;
   least-privilege (uses the trust fabric, adds no new broad permissions).
 
@@ -78,10 +78,10 @@ environment**: the Hub-account CloudShell with repo access and tooling, and runs
 - **Story 1.1 was re-scoped** to the trust fabric (RD-006) with the org-wide audit
   deferred (RD-007, tracked as OD-002). If Story 1.1's live validation surfaced any
   trust/ExternalId lessons, fold them in here.
-- **Current true state at handoff:** Story 1.1 was 🟡 (built + offline-proven, 19
-  invariants), pending the operator's live Hub→Spoke AssumeRole pass. **Confirm 1.1 is
-  ✅ and VD-2 cleared before starting 1.2** (hard advancement gate).
-- **The Hub deployer role** (`pde-hub-deployer`) referenced by the trust fabric is
-  created in Phase 2 — the gate script may need a temporary Hub principal to run the
+- **Current true state at handoff:** Story 1.1 was 🟡 (built + offline-proven, 21
+  invariants), pending the operator's live Hub→member AssumeRole pass. **Confirm 1.1 is
+  ✅ and VD-3 cleared before starting 1.2** (hard advancement gate).
+- **The Hub orchestrator role** (`pde-hub-orchestrator`) referenced by the trust fabric
+  is created in Phase 2 — the gate script may need a temporary Hub principal to run the
   AssumeRole if Phase 2 hasn't started; note whatever was actually used.
 - **User notes:** _(open for the user)_

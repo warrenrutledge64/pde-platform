@@ -120,7 +120,7 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 
 | Tier | Story | Depends on | Phase | Notes |
 |------|-------|-----------|-------|-------|
-| 1 | 1.1 | — | 1 | Foundation: cross-account trust fabric (Spokes trust specific Hub roles, RD-006). First story, no deps. |
+| 1 | 1.1 | — | 1 | Foundation: orchestrate-and-pull trust fabric — a member execution role the Hub *invokes* (RD-006 amended). First story, no deps. |
 | 2 | 1.2 | 1.1 | 1 | CloudShell repo access for the bootstrap operator. |
 | 3 | 2.1 | Phase 1 gate | 2 | CodeBuild CFN templates (Lint + Deploy), ZTIE-safe prefixes. |
 | 3 | 2.2 | Phase 1 gate | 2 | Step Functions state machine (Dev→Sandbox→Prod + approval gates). |
@@ -142,11 +142,12 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 
 | # | Story | Debt (what is unproven) | Opened | State |
 |---|-------|-------------------------|--------|-------|
-| ~~VD-1~~ | ~~1.1 (old)~~ | _Superseded 2026-09-30: Story 1.1 was re-scoped from the org-wide CloudTrail to the cross-account trust fabric (RD-006/RD-007). The old CloudTrail validation debt is retired; the org-trail work moved to Story 4.1. Replaced by VD-2._ | 2026-09-30 | SUPERSEDED |
-| VD-2 | 1.1 | Cross-account trust-fabric CloudFormation (`infra/spoke-execution-role.yaml`) authored + offline-proven (19 invariants), but NOT yet live-deployed/validated: the Spoke execution roles are not yet confirmed deployed in Dev/Sandbox/Prod, and a Hub→Spoke `sts:AssumeRole` has not yet been confirmed to succeed and return each Spoke's account id. | 2026-09-30 | OPEN |
+| ~~VD-1~~ | ~~1.1 (old)~~ | _Superseded 2026-09-30: Story 1.1 re-scoped from the org-wide CloudTrail to the trust fabric (RD-006/RD-007). Org-trail work moved to Story 4.1. Replaced by VD-2._ | 2026-09-30 | SUPERSEDED |
+| ~~VD-2~~ | ~~1.1 (Hub-pushes)~~ | _Superseded 2026-09-30: the trust-fabric direction was corrected from Hub-pushes-into-Spoke to the RD-006 **orchestrate-and-pull** model (Hub invokes; member executes locally). The push-model template is retired to `infra/deferred/`. Replaced by VD-3._ | 2026-09-30 | SUPERSEDED |
+| VD-3 | 1.1 | Orchestrate-and-pull trust fabric (`infra/member-execution-role.yaml`) authored + offline-proven (21 invariants), but NOT yet live-deployed/validated: the member execution roles are not yet confirmed deployed in Dev/Sandbox/Prod, and a Hub→member `sts:AssumeRole` (Hub orchestrator directing the member, correct ExternalId) has not yet been confirmed to succeed and return each member's account id. | 2026-09-30 | OPEN |
 
-**Gate status:** **ARMED** — Story 1.1 (re-scoped) is 🟡 built-not-yet-live-validated
-(VD-2). No new feature story (a new tier / dependency layer) may begin until VD-2
+**Gate status:** **ARMED** — Story 1.1 (orchestrate-and-pull) is 🟡 built-not-yet-live-validated
+(VD-3). No new feature story (a new tier / dependency layer) may begin until VD-3
 clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 ## Operational Debt Register
@@ -185,13 +186,14 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 1.1 (re-scoped to the trust fabric) is 🟡 built +
-offline-proven** (`infra/spoke-execution-role.yaml`, 19 invariants pass). The next
-action is the **live validation** (VD-2): the operator deploys the Spoke execution
-role into each of Dev/Sandbox/Prod and confirms a Hub→Spoke `sts:AssumeRole`
-succeeds and returns each Spoke's account id, per
+**Default next action:** **Story 1.1 (orchestrate-and-pull trust fabric) is 🟡 built +
+offline-proven** (`infra/member-execution-role.yaml`, 21 invariants pass). The next
+action is the **live validation** (VD-3): the operator deploys the member execution
+role into each of Dev/Sandbox/Prod and confirms a Hub→member `sts:AssumeRole` (the
+Hub orchestrator directing the member, with the correct ExternalId) succeeds and
+returns each member's account id, per
 [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-On the recorded pass, flip 1.1 → ✅, clear VD-2, and Story 1.2 unblocks.
+On the recorded pass, flip 1.1 → ✅, clear VD-3, and Story 1.2 unblocks.
 
 ## Progress Summary
 
@@ -223,19 +225,19 @@ _Gate: `python3 scripts/check_docs.py` PASSES (no stray placeholders in living d
 
 ## Phase 1 — Trust Fabric
 
-_Gate: From an AWS CloudShell session in the Hub account, a human operator executes a Boto3 script that successfully performs an STS `AssumeRole` into Dev, Sandbox, and Prod sequentially, returning their Account IDs. (The original CloudTrail half of this gate is deferred to the Phase 4 governance gate per RD-007.)_
+_Gate: From an AWS CloudShell session in the Hub account, a human operator (as the Hub orchestrator principal) performs an STS `AssumeRole` into the **member execution role** in Dev, Sandbox, and Prod sequentially, returning their Account IDs — proving the Hub can direct a member function and the orchestrate-and-pull trust direction is correct. (The original CloudTrail half of this gate is deferred to the Phase 4 governance gate per RD-007.)_
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 1.1 | Cross-account trust fabric — Spoke execution roles trusting specific Hub roles (RD-006) | — | 🟡 | | |
+| 1.1 | Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended) | — | 🟡 | | |
 | 1.2 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.1 | ⬜ | | |
 
-**1.1 — Cross-account trust fabric — Spoke execution roles trusting specific Hub roles (RD-006)**  🟡 _In Progress_
-- Steps: author CloudFormation (YAML) for a least-privilege PDE execution role in each Spoke (Dev/Sandbox/Prod) whose trust policy names a **specific** `Pipeline-Hub` (`641628980935`) deployer role (never the Hub account root, RD-006) and requires an `sts:ExternalId`; permissions scoped to exactly the CloudFormation deploy actions on the `pde-` stack namespace. Prove offline. Deploy once per Spoke (or via a StackSet) — **not** into the management account. _(Re-scoped from the original org-wide CloudTrail per RD-007; that work is preserved at `infra/deferred/` and scheduled as Story 4.1.)_
-- **As built:** `infra/spoke-execution-role.yaml` (Spoke exec role; trust = specific Hub role ARN + `ExternalId` NoEcho; least-privilege managed policy scoped to `cloudformation:*` stack ops on `stack/${RolePrefix}*`, no AdministratorAccess, no wildcard action; per-env `dev`/`sandbox`/`prod`; exports the role ARN for the Hub). Offline proof: `python3 infra/validate_trust_fabric.py` — 19 invariants PASS (PyPI is blocked in the build sandbox, so cfn-lint / cfn-guard / Checkov run operator-side / CI). Live deploy + gate steps: [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-- **Validation Result:** _pending — deploy the Spoke execution role into each of Dev/Sandbox/Prod per the LIVE-RUNBOOK; from the Hub, `sts:AssumeRole` into each Spoke role and confirm it succeeds and returns that Spoke's account id._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), clear VD-2.
-- **Advancement gate:** 1.2 (and all downstream control-plane work) cannot begin until the trust fabric is proven assumable.
+**1.1 — Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended)**  🟡 _In Progress_
+- Steps: author CloudFormation (YAML) for a least-privilege PDE **member execution role** in each member (Dev/Sandbox/Prod) whose trust policy names a **specific** `Pipeline-Hub` (`641628980935`) **orchestrator** role (never the Hub account root, RD-006) and requires an `sts:ExternalId`; permissions scoped to the CloudFormation actions the member's **local** execution needs on the `pde-` stack namespace (execution is local to the member — the Hub directs, it does not push writes in). Prove offline. Deploy once per member (or via a StackSet) — **not** into the management account. _(Tight tier-1 scope: the orchestration engine, the results intake data-contract, and the Hub-signed decision-token machinery are Phase 2. Re-scoped twice — from the deferred org-wide CloudTrail (→ `infra/deferred/`, Story 4.1), then from the initial Hub-pushes shape to this orchestrate-and-pull direction; the retired push-model template is preserved in `infra/deferred/`.)_
+- **As built:** `infra/member-execution-role.yaml` (member exec role; trust = specific Hub **orchestrator** role ARN + `ExternalId` NoEcho; least-privilege managed policy scoped to `cloudformation:*` stack ops on this member's `stack/${RolePrefix}*`, no AdministratorAccess, no wildcard; per-env `dev`/`sandbox`/`prod`; exports the role ARN). Offline proof: `python3 infra/validate_trust_fabric.py` — 21 invariants PASS (PyPI is blocked in the build sandbox, so cfn-lint / cfn-guard / Checkov run operator-side / CI). Live deploy + gate steps: [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
+- **Validation Result:** _pending — deploy the member execution role into each of Dev/Sandbox/Prod per the LIVE-RUNBOOK; from the Hub (orchestrator principal), `sts:AssumeRole` into each member role and confirm it succeeds (with the correct ExternalId) and returns that member's account id, and is denied without the ExternalId._
+- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), clear VD-3.
+- **Advancement gate:** 1.2 (and all downstream control-plane work) cannot begin until the trust fabric is proven directable by the Hub.
 
 **1.2 — Configure CloudShell environment with repo access for the bootstrap deploy**  ⬜ _Not Started_
 - Steps: document + configure the Hub-account CloudShell environment with token-authenticated repository access and the tooling (AWS CLI, Python 3 / Boto3, cfn-lint) needed for the initial bootstrap deployment; run the Phase 1 gate Boto3 `AssumeRole`-into-each-Spoke script end to end.

@@ -24,37 +24,38 @@ management account. Greenfield, run on the project-os operating model.
 
 # OPERATIONAL CONTEXT (state on EVERY command block)
   This story runs from Pipeline-Hub 641628980935 CloudShell. The Phase 1 gate script
-  assumes INTO the Spokes (Dev/Sandbox/Prod). Region us-east-1. Run
-  `aws sts get-caller-identity` before each block.
+  assumes (as the Hub orchestrator) INTO the member execution roles (Dev/Sandbox/Prod).
+  Region us-east-1. Run `aws sts get-caller-identity` before each block.
 
 # HARD-WON LESSONS (do NOT repeat)
 - HTTPS token-embedded clone URL in CloudShell; ROTATE any token that leaks to output.
 - /tmp is wiped on CloudShell session recycle — regenerate staged files, don't assume.
 - Feed CloudShell commands ONE LINE AT A TIME; multi-line pastes mis-feed.
 - The gate script's assume-role calls need the ExternalId that matches the Story 1.1
-  Spoke-role trust condition.
-- The Hub deployer role pde-hub-deployer is created in Phase 2; if it doesn't exist
-  yet, the gate may need a temporary Hub principal to run the AssumeRole — note what
-  was used.
-- Verify the DEPLOYED reality (live assume-role returns the Spoke account id), not the
+  member-role trust condition.
+- The Hub orchestrator role pde-hub-orchestrator is created in Phase 2; if it doesn't
+  exist yet, the gate may need a temporary Hub principal to run the AssumeRole — note
+  what was used.
+- Verify the DEPLOYED reality (live assume-role returns the member account id), not the
   script's intent.
 
 # FIRST — VALIDATION & ADVANCEMENT GATE (before any new work)
 # Binding policy: governance/RUNBOOK.md "Validation & Advancement Gate".
-# 1. CLOSE OUT STORY 1.1: read RUNBOOK.md + the Validation Debt Register. If VD-2
-#    (Story 1.1, trust fabric) is OPEN / 1.1 is 🟡, obtain the operator's live
-#    Hub->Spoke AssumeRole result. On PASS: record 1.1's dated Validation Result +
-#    flip 🟡 -> ✅, clear VD-2 (own small commit/PR). On FAIL: fix + re-validate 1.1.
-#    Do NOT start 1.2.
+# 1. CLOSE OUT STORY 1.1: read RUNBOOK.md + the Validation Debt Register. If VD-3
+#    (Story 1.1, orchestrate-and-pull trust fabric) is OPEN / 1.1 is 🟡, obtain the
+#    operator's live Hub->member AssumeRole result. On PASS: record 1.1's dated
+#    Validation Result + flip 🟡 -> ✅, clear VD-3 (own small commit/PR). On FAIL: fix
+#    + re-validate 1.1. Do NOT start 1.2.
 # 2. HARD ADVANCEMENT GATE: Story 1.2 depends on 1.1. Begin only once 1.1 is ✅ and
-#    VD-2 cleared. (No override.)
+#    VD-3 cleared. (No override.)
 
 # WHERE WE ARE
 - Current phase/story: Phase 1 / Story 1.2 — CloudShell bootstrap (closes Phase 1).
-- Prior story + state: 1.1 (trust fabric) — was 🟡 built + offline-proven (19
-  invariants) at handoff; VD-2 OPEN pending the operator's Hub->Spoke AssumeRole pass.
+- Prior story + state: 1.1 (orchestrate-and-pull trust fabric) — was 🟡 built +
+  offline-proven (21 invariants) at handoff; VD-3 OPEN pending the operator's
+  Hub->member AssumeRole pass.
 - Last restore point: none yet (Phase 1 tag is cut when THIS story closes Phase 1).
-- True current state: the trust-fabric template exists (infra/spoke-execution-role.yaml);
+- True current state: the trust-fabric template exists (infra/member-execution-role.yaml);
   deployment status depends on 1.1's live validation — CONFIRM before proceeding.
 - Governing docs: governance/PROJECT_PLAN.md, RUNBOOK.md, BOM.md, RESTORE.md, and this
   story's brief: session-briefs/story-1.2-brief.md
