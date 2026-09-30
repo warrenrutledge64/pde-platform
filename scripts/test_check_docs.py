@@ -46,6 +46,42 @@ DRIFTING_RUNBOOK = CONSISTENT_RUNBOOK.replace(
     "| 1.2 | Configure tables | 1.1 | \u2b1c | | |",
 )
 
+# A runbook whose real summary table + detail headers agree, but which ALSO has
+# an auxiliary "Blocked" table keyed on the same story ids that mentions a glyph in
+# PROSE (e.g. "1.1 not yet ✅"). The prose glyph must NOT be read as story status.
+AUX_TABLE_PROSE_GLYPH_RUNBOOK = """# Runbook
+
+## Ready-Now / Blocked
+
+| Story | Tier | Blocked on |
+|-------|------|------------|
+| 1.2 | 2 | 1.1 not yet \u2705 |
+| 1.3 | 3 | 1.2 not yet \u2705 |
+
+## Build Tiers
+
+| Tier | Story | Depends on |
+|------|-------|-----------|
+| 1 | 1.1 | \u2014 |
+
+## Phase 1
+
+| Story | Title | Depends on | Status | Completed | Restore tag |
+|-------|-------|-----------|--------|-----------|-------------|
+| 1.1 | Initialize repo | \u2014 | \u2b1c | | |
+| 1.2 | Configure tables | 1.1 | \U0001f7e1 | | |
+| 1.3 | Ingestion API | 1.2 | \u2b1c | | |
+
+**1.1 \u2014 Initialize repo**  \u2b1c _Not Started_
+- Steps: stand up the skeleton.
+
+**1.2 \u2014 Configure tables**  \U0001f7e1 _In Progress_
+- Steps: define schema.
+
+**1.3 \u2014 Ingestion API**  \u2b1c _Not Started_
+- Steps: build the API.
+"""
+
 # Header carrying a trailing suffix after the status label (as Story 4.4 does).
 SUFFIXED_HEADER_RUNBOOK = """# Runbook
 
@@ -78,6 +114,20 @@ class StatusConsistencyTests(unittest.TestCase):
             self.assertEqual(len(violations), 1, violations)
             self.assertEqual(violations[0].check, "CHECK S")
             self.assertIn("1.2", violations[0].detail)
+
+    def test_prose_glyph_in_auxiliary_table_is_not_read_as_status(self) -> None:
+        """Regression (PDE Story 0.1): a glyph mentioned in PROSE inside a
+        Ready-Now/Blocked/Build-Tier table — which is keyed on the same story id
+        as the summary table — must not be mistaken for that story's status.
+
+        Before the fix, ``| 1.2 | 2 | 1.1 not yet ✅ |`` injected a ✅ as story
+        1.2's 'table status', which then falsely disagreed with 1.2's 🟡 detail
+        header. The real summary table + headers here are fully consistent, so the
+        check must report NO violations.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), AUX_TABLE_PROSE_GLYPH_RUNBOOK)
+            self.assertEqual(check_docs.check_s_status_consistency(gov), [])
 
     def test_suffix_after_status_label_is_tolerated(self) -> None:
         """A trailing '*(proposed ...)*' after the glyph must not break parsing."""
@@ -119,6 +169,21 @@ class GlyphHelperTests(unittest.TestCase):
 
     def test_first_glyph_none_when_absent(self) -> None:
         self.assertIsNone(check_docs._first_glyph("no glyphs here"))
+
+    def test_status_cell_glyph_reads_a_sole_token_cell(self) -> None:
+        self.assertEqual(
+            check_docs._status_cell_glyph("| 1.1 | Title | \u2014 | \u2b1c | | |"),
+            "\u2b1c",
+        )
+
+    def test_status_cell_glyph_ignores_prose_glyph(self) -> None:
+        """A glyph sharing a cell with words is prose, not a status cell."""
+        self.assertIsNone(
+            check_docs._status_cell_glyph("| 1.2 | 2 | 1.1 not yet \u2705 |")
+        )
+
+    def test_status_cell_glyph_none_when_no_glyph(self) -> None:
+        self.assertIsNone(check_docs._status_cell_glyph("| 1 | 1.1 | \u2014 |"))
 
 
 if __name__ == "__main__":

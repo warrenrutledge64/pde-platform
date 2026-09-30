@@ -108,6 +108,29 @@ def _first_glyph(text: str) -> str | None:
     return best
 
 
+def _status_cell_glyph(row: str) -> str | None:
+    """Return the status glyph of a summary-table row, or None.
+
+    A story's status lives in its own **cell** of the phase summary table (e.g.
+    ``| 1.1 | Title | deps | ⬜ | ... |``). Other tables in the runbook — the
+    Ready-Now / Blocked / Build-Tier tables — are *also* keyed on a story id and
+    may legitimately mention a glyph inside *prose* (e.g. ``| 1.2 | 2 | 1.1 not
+    yet ✅ |``). Those prose mentions are not the story's status and must not be
+    read as one.
+
+    The discriminator: a real status cell contains a glyph as its **sole
+    significant token** (only the glyph, ignoring surrounding whitespace). A prose
+    cell mixes the glyph with words. So we split the row into pipe-delimited cells
+    and accept a glyph only from a cell whose stripped content *is* exactly that
+    glyph. If several cells qualify (they should not), the leftmost wins.
+    """
+    for cell in row.split("|"):
+        stripped = cell.strip()
+        if stripped in STATUS_GLYPHS:
+            return stripped
+    return None
+
+
 def check_s_status_consistency(gov_dir: Path) -> list[Violation]:
     """A story's summary-table glyph must match its detail-block header glyph.
 
@@ -127,9 +150,11 @@ def check_s_status_consistency(gov_dir: Path) -> list[Violation]:
     for line in lines:
         m = STORY_ROW_RE.match(line)
         if m:
-            # Status is the first glyph in the row's cells after the id cell.
-            after_id = line.split("|", 2)[2] if line.count("|") >= 2 else line
-            g = _first_glyph(after_id)
+            # Status is the glyph that is the SOLE content of one of the row's
+            # cells (a real status cell) -- NOT a glyph embedded in prose in an
+            # auxiliary table (Ready-Now / Blocked / Build-Tier), which is keyed
+            # on the same story id but is not a status statement.
+            g = _status_cell_glyph(line)
             if g is not None:
                 # First row for an id wins (defensive against duplicate ids).
                 table_status.setdefault(m.group(1), g)
