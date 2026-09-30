@@ -190,7 +190,7 @@ deploy + validation runbook for the Phase 1 gate.
 
 | Phase | Scope | Gate | Status |
 |-------|-------|------|--------|
-| **0 — Bootstrap** | Author `PROJECT_PLAN.md` (planner) + derive `RUNBOOK.md`, `RESTORE.md`, `BOM.md`; validated. | `check_docs.py` PASSES **and** a human confirms the runbook faithfully mirrors the plan. | 🟡 In Progress |
+| **0 — Bootstrap** | Author `PROJECT_PLAN.md` (planner) + derive `RUNBOOK.md`, `RESTORE.md`, `BOM.md`; validated. | `check_docs.py` PASSES **and** a human confirms the runbook faithfully mirrors the plan. | ✅ Done (2026-09-30) |
 | **1 — Governance Baseline & Trust Fabric** | Clean Org-wide CloudTrail baseline + cross-account IAM trust from Hub to Spokes + CloudShell bootstrap access. | CloudShell Boto3 script `AssumeRole`s into Dev/Sandbox/Prod (returns their Account IDs) AND the new CloudTrail bucket is receiving logs for those accounts. | ⬜ Not Started |
 | **2 — PDE Control Plane (The Hub)** | Greenfield serverless engine (Step Functions + CodeBuild) in the Hub, ZTIE-safe, doing cross-account CFN deploys. | The deployed Step Function, triggered with a dummy payload, reaches the "Awaiting Sandbox Approval" paused state with no IAM/config errors. | ⬜ Not Started |
 | **3 — The Golden Path Validation** | Prove end-to-end delivery by sending a real artifact through the pipeline. | The operator queries `Pipeline-Prod` and returns the deployed test artifact's metadata, proving a Hub-orchestrated cross-account production release. | ⬜ Not Started |
@@ -203,13 +203,13 @@ _Gate: `python3 scripts/check_docs.py` PASSES (no stray placeholders in living d
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 0.1 | Author the foundational documents (PLAN + RUNBOOK) | — | 🟡 | | |
+| 0.1 | Author the foundational documents (PLAN + RUNBOOK) | — | ✅ | 2026-09-30 | |
 
-**0.1 — Author the foundational documents (PLAN + RUNBOOK)**  🟡 _In Progress_
+**0.1 — Author the foundational documents (PLAN + RUNBOOK)**  ✅ _Done (validated)_
 - Steps: (1) drop the planner's finalized `PROJECT_PLAN.md`; (2) derive this RUNBOOK from it (master table + build tiers + Validation Debt Register + all stories ⬜, gate sections kept verbatim); (3) tailor `RESTORE.md` + `BOM.md` to PDE's technology (CloudFormation stacks + IAM roles + CloudTrail as "state"); (4) resolve `METHODOLOGY.md` placeholders; (5) author Story 1.1's brief + prompt (warm handoff); (6) `git config core.hooksPath .githooks`.
-- **Validation Result:** _pending — run `python3 scripts/check_docs.py`; confirm the runbook faithfully mirrors the plan._
-- **On pass (and only then):** record the Validation Result line (dated, confirmed), set this row ✅ (+ Completed date) per the Story Close-Out Procedure. Phase 0 is a bootstrap phase; capturing a `restore/phase-0-green` tag is optional.
-- **Advancement gate:** Story 1.1 and everything after depend on this baseline. Nothing can be sequenced, validated, or tracked until Phase 0 is ✅.
+- **Validation Result:** pass — `check_docs.py` PASS + full suite 19 tests OK on `main`; PLAN's 10 feature stories (1.1–3.4) map exactly to the RUNBOOK master table; human reviewed the plan↔runbook and confirmed the runbook faithfully mirrors the plan, 2026-09-30, confirmed by warrenrutledge64.
+- **Outcome:** Phase 0 baseline validated. (Phase 0 is a bootstrap phase; a `restore/phase-0-green` tag is optional and not cut.)
+- **Advancement gate:** Story 1.1 and everything after depended on this baseline; it is now ✅, so Story 1.1 is clear to begin.
 
 ---
 
