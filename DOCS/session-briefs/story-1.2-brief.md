@@ -73,15 +73,55 @@ Hub→member AssumeRole Boto3 script). This story **closes Phase 1**.
 - **ExternalId** must be supplied to the gate script's assume-role calls (matches the
   Story 1.1 trust condition).
 
-### Lessons Learned / Carry-Forward *(authored at the end of Story 1.1)*
+### Lessons Learned / Carry-Forward *(authored at the end of Story 1.1 — actual live lessons)*
 
-- **Story 1.1 was re-scoped** to the trust fabric (RD-006) with the org-wide audit
-  deferred (RD-007, tracked as OD-002). If Story 1.1's live validation surfaced any
-  trust/ExternalId lessons, fold them in here.
-- **Current true state at handoff:** Story 1.1 was 🟡 (built + offline-proven, 21
-  invariants), pending the operator's live Hub→member AssumeRole pass. **Confirm 1.1 is
-  ✅ and VD-3 cleared before starting 1.2** (hard advancement gate).
-- **The Hub orchestrator role** (`pde-hub-orchestrator`) referenced by the trust fabric
-  is created in Phase 2 — the gate script may need a temporary Hub principal to run the
-  AssumeRole if Phase 2 hasn't started; note whatever was actually used.
+- **Current true state at handoff:** Story 1.1 is ✅ (sealed PASS by the independent
+  validator, VD-3a, 2026-09-30). The member execution roles `pde-member-execution-{dev,
+  sandbox,prod}` are deployed in Dev `946509368326` / Sandbox `586917955591` / Prod
+  `466494951534`, each trusting `arn:aws:iam::641628980935:role/pde-hub-orchestrator`
+  (no `:root`, no wildcard) with an `sts:ExternalId` condition; management `467866449172`
+  is zero-touch. The Validation Debt Register is empty and the gate is DISARMED, so 1.2
+  is properly unblocked.
+- **⚠ The `pde-hub-orchestrator` role does NOT exist yet** — it's Phase 2 work. So the
+  1.1 DoD deferred the full live Hub→member `sts:AssumeRole` as **VD-3b (Phase 2)** and
+  passed on trust-*shape* (Path A). **1.2's Phase-1 gate has the same chicken-and-egg:**
+  you cannot assume the member role *as* `pde-hub-orchestrator` because it isn't created.
+  Resolve at 1.2 start with the stakeholder — either (A) the gate script assumes each
+  member role using the **operator's own Hub principal temporarily added to the trust**
+  (or a temporary Hub stand-in role), proving reachability now; or (B) treat the
+  full-assume as the deferred VD-3b and have 1.2's gate prove Hub-CloudShell reachability
+  + tooling + repo access without the assume. Note which was chosen and why.
+- **THE dominant operator lesson (repeated 3× live, cost multiple cycles): per-account
+  copy-paste of a hardcoded `EnvironmentName=` (or any per-account literal) is the #1
+  failure mode.** Deploys succeeded but created wrong-named roles in the wrong accounts
+  (e.g. `pde-member-execution-sandbox` landed in Prod). **Durable fix — derive the
+  per-account value FROM the live account, never hand-edit it:**
+  ```bash
+  ACCT=$(aws sts get-caller-identity --query Account --output text)
+  case "$ACCT" in 946509368326) ENV=dev;; 586917955591) ENV=sandbox;; 466494951534) ENV=prod;; *) ENV="";; esac
+  echo "Account $ACCT -> $ENV"   # eyeball BEFORE the mutating command; empty ENV = STOP (not a PDE member)
+  ```
+  Use this derive-from-account pattern in the 1.2 gate script/commands so a wrong-account
+  paste is self-correcting or fail-safe.
+- **Trust the `get-caller-identity` OUTPUT, not a banner/comment label** — the operator
+  was repeatedly in a different account than the comment claimed. Run it before every
+  mutating block and match parameters to the *printed* account.
+- **NEVER dump a trust document to inspect it — it leaks the ExternalId.** `aws iam
+  get-role ...` returns the full `AssumeRolePolicyDocument`, which includes the
+  `sts:ExternalId` condition value; it printed the secret to the transcript twice, forcing
+  a rotation. **Inspect with a projection instead:** `--query 'Role.RoleName'`, or a
+  presence boolean `--query 'AssumeRolePolicyDocument.Statement[0].Condition.StringEquals."sts:ExternalId" != ``null```. Never echo the secret.
+- **ExternalId hygiene:** it's `NoEcho` in the template (good) but leaks via `get-role`
+  output; rotate immediately if exposed and use the SAME rotated value across all three
+  members (Phase-2's `pde-hub-orchestrator` must present exactly that value). Long-term
+  home = Hub Secrets Manager / SSM SecureString (Phase 2).
+- **Environment gap that blocked STEP 2 initially:** the validator's CloudShell didn't
+  have the repo, so `--template-file infra/member-execution-role.yaml` failed with
+  `Invalid template path`. This is literally 1.2's job — **1.2 must document the
+  token-auth clone as the first step** so the template is on disk before any deploy.
+- **Split-brain discipline held and paid off:** the builder never authored the
+  validator's rubric; the independent validator (blind, from the pinned repo) authored
+  its own DoD, caught the FAIL twice, and only sealed PASS on the corrected state. Keep
+  using `DOCS/session-briefs/story-1.1-VALIDATOR-HANDOVER.md` unchanged for any 1.2 live
+  gate — do NOT relay operator history to the validator.
 - **User notes:** _(open for the user)_
