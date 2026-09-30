@@ -171,6 +171,15 @@ go deeper for the higher-stakes story.
 > DoD, and by reading the raw live output yourself. The rule that always holds:
 > **the party that built it does not get to frame how it's judged.**
 
+**This independence applies to the reusable templates themselves.** The prompt,
+brief, and validator templates are execution infrastructure reused on every story,
+so they are audited the same way code is — by an independent reviewer, not the
+author. In particular, **leanness is audited independently** (fat causes drift and
+hallucination — see §7): the author does not get to self-certify that a template is
+lean enough. The audit must return a *measurably* tighter rewrite that loses zero
+load-bearing instruction, and a reusable template is not relied on for real work
+until that independent leanness pass is recorded.
+
 ---
 
 ## 5. The session ritual
@@ -234,6 +243,19 @@ inventory; if it's in the inventory, it maps to a restore point.*
   terminal.
 - **Give the operator the full copy-paste sequence** — every step, in order, with
   real values substituted — not bare command names that assume context.
+- **Keep prompts and templates LEAN — fat causes drift and hallucination.** A
+  prompt/handoff/template is load-bearing execution infrastructure, and its
+  leanness is a **correctness and safety requirement, not a style preference.** A
+  prompt that is too long, repetitive, or buries its guardrails makes an executor
+  *drift* (skim past a must-not-miss instruction) and *hallucinate* (invent content
+  to fill gaps or reconcile half-absorbed contradictions). So: carry **load-bearing
+  instruction only** (move reference/background to linked docs the prompt points
+  at, don't inline it); put the **must-not-miss guardrails early and unmissable**;
+  **don't duplicate** content across brief/prompt/handover (one canonical copy,
+  linked); and on every re-scope **re-trim, don't just append** — accreted "one
+  more justified paragraph" is how fat enters. A reusable prompt/handoff template is
+  **independently audited for fat before it is relied on** (see §4a — the author
+  does not self-certify leanness). This is a standing baseline discipline.
 
 ---
 
