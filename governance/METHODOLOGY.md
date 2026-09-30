@@ -1,10 +1,12 @@
-# The Project Operating System — Methodology
+# Platform Delivery Engine (PDE) — The Project Operating System — Methodology
 
 > A repeatable, disciplined way to run a build project with an AI execution
 > partner. This document is the **why and how**; the other files in this repo
 > (`PROJECT_PLAN.md`, `RUNBOOK.md`, `BOM.md`, `RESTORE.md`, and the `DOCS/`
-> templates) are the **ready-to-fill what**. Start a new project by creating a repo
-> from this template ("Use this template"), then fill in the `{{placeholders}}`.
+> templates) are the **ready-to-fill what**. This is the reusable OS layer,
+> instantiated here for the Platform Delivery Engine (PDE); a new project starts
+> by creating a repo from the starter template and filling in the per-project
+> placeholders.
 
 This is not a coding style guide. It is a **way of working** — how work is
 planned, executed, validated, and carried from one working session to the next so
@@ -237,9 +239,9 @@ inventory; if it's in the inventory, it maps to a restore point.*
 
 ## 8. The document set
 
-These ship in this template (blank, with `{{placeholders}}`) and are filled in per
-project. Together they *are* the persistent memory of the project — the system has
-no memory outside these files.
+These ship in the starter template (blank, with double-brace placeholder tokens)
+and are filled in per project. Together they *are* the persistent memory of the
+project — the system has no memory outside these files.
 
 | Document | Role |
 |----------|------|
@@ -255,8 +257,8 @@ no memory outside these files.
 
 ## 9. How to start a new project with this kit
 
-1. **Create a new repo from this template** ("Use this template" on GitHub), then
-   replace every `{{PROJECT_NAME}}` placeholder with your project's name.
+1. **Create a new repo from the starter template** ("Use this template" on GitHub),
+   then replace every project-name placeholder token with your project's name.
 2. **Fill `PROJECT_PLAN.md`** — scope, phases, the ordered story list, acceptance
    criteria. Keep the Universal Acceptance Criteria that apply to every story.
 3. **Seed `RUNBOOK.md`** from the plan — one row per story, dependencies set, all
