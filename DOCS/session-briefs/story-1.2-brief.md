@@ -29,10 +29,13 @@ Hub→member AssumeRole Boto3 script). This story **closes Phase 1**.
 
 - **Objective:** a documented, reproducible Hub CloudShell setup (token-auth repo
   clone, AWS CLI, Python 3 / Boto3, cfn-lint) **and** a committed Phase-1-gate Boto3
-  script that assumes into Dev/Sandbox/Prod sequentially and returns their account ids.
-- **Why it matters:** it's the operator's launch pad for the Phase 2 bootstrap deploy,
-  and running the gate script proves the trust fabric works end to end from the real
-  bootstrap context.
+  script that (when run in Phase 2, as `pde-hub-orchestrator`) assumes into
+  Dev/Sandbox/Prod sequentially and returns their account ids. **Per Option B, the
+  script is authored + committed in 1.2 but its live cross-account run is VD-3b (Phase
+  2)**; 1.2's own live proof is Hub-CloudShell reachability + tooling + repo access.
+- **Why it matters:** it's the operator's launch pad for the Phase 2 bootstrap deploy;
+  the committed gate script is the exact artifact that will validate the real trust
+  fabric end-to-end the moment `pde-hub-orchestrator` exists.
 
 ### Scope, Dependencies & Position
 
@@ -53,15 +56,21 @@ Hub→member AssumeRole Boto3 script). This story **closes Phase 1**.
 
 ### Definition of Done / Validation Gate
 
-- **Done means:** from Hub CloudShell, the Boto3 gate script assumes into
-  Dev/Sandbox/Prod sequentially and returns each account id — the Phase 1 gate. Story
-  1.2 closes Phase 1.
-- **Validated by:** the human operator, live from Hub CloudShell.
+- **Done means (Option B):** from Hub CloudShell, the operator has (1) token-auth repo
+  access + tooling (AWS CLI, Python 3 / Boto3, cfn-lint) working, proven live, and (2)
+  the Phase-1-gate Boto3 script authored + committed (targeting `pde-hub-orchestrator`,
+  ExternalId-parameterised, using the derive-from-account pattern). The **live
+  cross-account `AssumeRole` run is NOT part of 1.2's DoD** — it is the deferred **VD-3b**,
+  run in Phase 2 once `pde-hub-orchestrator` exists.
+- **Validated by:** the human operator, live from Hub CloudShell (reachability + tooling
+  + repo access); the committed script is reviewed for correctness (offline).
 - **Validation Result:** `pending`.
 - **On pass:** record it, flip 1.2 → ✅; **close Phase 1** — capture
   `restore/phase-1-green`, add the inventory row, flip the Phase 1 Progress row ✅.
+  Phase 1 closes on reachability + tooling + committed gate script; the live assume is
+  carried into Phase 2 as VD-3b.
 - **On fail:** stays 🟡; fix and re-run.
-- **Advancement gate:** Phase 2 cannot begin until the Phase 1 gate passes.
+- **Advancement gate:** Phase 2 cannot begin until the Phase 1 gate (Option B) passes.
 
 ### Risks & Watch-Items
 
@@ -84,13 +93,18 @@ Hub→member AssumeRole Boto3 script). This story **closes Phase 1**.
   is properly unblocked.
 - **⚠ The `pde-hub-orchestrator` role does NOT exist yet** — it's Phase 2 work. So the
   1.1 DoD deferred the full live Hub→member `sts:AssumeRole` as **VD-3b (Phase 2)** and
-  passed on trust-*shape* (Path A). **1.2's Phase-1 gate has the same chicken-and-egg:**
+  passed on trust-*shape* (Path A). **1.2's Phase-1 gate had the same chicken-and-egg:**
   you cannot assume the member role *as* `pde-hub-orchestrator` because it isn't created.
-  Resolve at 1.2 start with the stakeholder — either (A) the gate script assumes each
-  member role using the **operator's own Hub principal temporarily added to the trust**
-  (or a temporary Hub stand-in role), proving reachability now; or (B) treat the
-  full-assume as the deferred VD-3b and have 1.2's gate prove Hub-CloudShell reachability
-  + tooling + repo access without the assume. Note which was chosen and why.
+  **RESOLVED — Option B (stakeholder-chosen, 2026-09-30):** do NOT stand up a temporary
+  Hub principal / stand-in role. 1.2's Phase-1 gate proves **Hub-CloudShell reachability
+  + tooling + token-auth repo access**, and the Boto3 gate script is **authored +
+  committed now** (targeting the real `pde-hub-orchestrator`) but **run in Phase 2**; the
+  full live cross-account `AssumeRole` stays the deferred **VD-3b**. Rationale: A would
+  build the exact throwaway trust surface Path A deliberately deferred, in three live
+  accounts, to prove a synthetic (stand-in) result that isn't the real orchestrator
+  anyway — weak evidence + non-zero teardown risk + a duplicate live cycle. B keeps the
+  1.1/1.2 reasoning coherent and validates the *real* assume once, in Phase 2, when the
+  genuine principal exists. _(The rejected Option A is retained here for the record.)_
 - **THE dominant operator lesson (repeated 3× live, cost multiple cycles): per-account
   copy-paste of a hardcoded `EnvironmentName=` (or any per-account literal) is the #1
   failure mode.** Deploys succeeded but created wrong-named roles in the wrong accounts
