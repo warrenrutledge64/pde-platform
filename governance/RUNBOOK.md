@@ -142,10 +142,11 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 
 | # | Story | Debt (what is unproven) | Opened | State |
 |---|-------|-------------------------|--------|-------|
-| — | — | _(empty — no open validation debt; gate DISARMED)_ | — | — |
+| VD-1 | 1.1 | Org-wide CloudTrail CloudFormation authored + offline-proven, but NOT yet live-deployed/validated: trail is not yet confirmed active (`IsOrganizationTrail`/multi-region/log-file-validation) and log files not yet confirmed landing for the `Pipeline-*` accounts. | 2026-09-30 | OPEN |
 
-**Gate status:** **DISARMED** — the register is empty. Story 1.1 (tier 1, first
-story) is clear to begin.
+**Gate status:** **ARMED** — Story 1.1 is 🟡 built-not-yet-live-validated. No new
+feature story (a new tier / dependency layer) may begin until VD-1 clears on the
+recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 ## Operational Debt Register
 
@@ -181,10 +182,12 @@ story) is clear to begin.
 | 3.3 | 8 | Story 3.2 not yet validated |
 | 3.4 | 9 | Story 3.3 not yet validated |
 
-**Default next action:** Execute **Story 1.1** — author the net-new Org-wide
-CloudTrail CloudFormation (centralized S3 logging bucket + KMS key), prove it
-offline (cfn-lint / cfn-guard / Checkov), and hand the human operator the live
-deploy + validation runbook for the Phase 1 gate.
+**Default next action:** **Story 1.1 is 🟡 built + offline-proven** (`infra/cloudtrail-org-baseline.yaml`,
+28 invariants pass). The next action is the **live validation** (VD-1): the operator
+deploys the trail stack from the management account and confirms the org trail is
+active + logs land for the `Pipeline-*` accounts, per
+[`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
+On the recorded pass, flip 1.1 → ✅, clear VD-1, and Story 1.2 unblocks.
 
 ## Progress Summary
 
@@ -219,13 +222,14 @@ _Gate: From an AWS CloudShell session in the Hub account, a human operator execu
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 1.1 | Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts | — | ⬜ | | |
+| 1.1 | Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts | — | 🟡 | | |
 | 1.2 | Cross-account IAM execution roles in Dev/Sandbox/Prod trusting the Hub | 1.1 | ⬜ | | |
 | 1.3 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.2 | ⬜ | | |
 
-**1.1 — Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts**  ⬜ _Not Started_
+**1.1 — Net-new Org-wide CloudTrail (centralized S3 bucket + KMS key), capturing all `Pipeline-*` accounts**  🟡 _In Progress_
 - Steps: author CloudFormation (YAML) for a new centralized S3 log bucket (block-public, versioned, SSE-KMS), a dedicated KMS CMK with a CloudTrail-scoped key policy, and an Organization-wide CloudTrail (`IsOrganizationTrail: true`, multi-region, log-file validation on) that captures all `Pipeline-*` accounts. Prove offline (cfn-lint / cfn-guard / Checkov). Deploy only from the management account (467866449172) — the sole permitted management-account resource per Universal Criterion 1.
-- **Validation Result:** _pending — deploy the trail stack; confirm the trail is an active Org trail and log files begin landing in the new bucket for the `Pipeline-*` accounts._
+- **As built:** `infra/cloudtrail-org-baseline.yaml` (KMS CMK w/ rotation + CloudTrail-scoped key policy + org-scoped decrypt; hardened S3 bucket block-public/versioned/SSE-KMS/BucketOwnerEnforced/lifecycle, `DeletionPolicy: Retain`, **no** Object Lock; CloudTrail-service bucket policy + TLS-only deny; Org trail multi-region + log-file validation). Offline proof: `python3 infra/validate_template.py` — 28 invariants PASS (PyPI is blocked in the build sandbox, so cfn-lint / cfn-guard / Checkov run operator-side / CI). Live deploy + gate steps: [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
+- **Validation Result:** _pending — deploy the trail stack from the management account per the LIVE-RUNBOOK; confirm the trail is an active org/multi-region/log-file-validated trail AND log files begin landing in the new bucket for the `Pipeline-*` accounts._
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date).
 - **Advancement gate:** 1.2 (and all downstream cross-account work) cannot begin until the clean audit baseline is actively recording.
 
