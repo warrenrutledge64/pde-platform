@@ -154,11 +154,12 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 |---|-------|-------------------------|--------|-------|
 | ~~VD-1~~ | ~~1.1 (old)~~ | _Superseded 2026-09-30: Story 1.1 re-scoped from the org-wide CloudTrail to the trust fabric (RD-006/RD-007). Org-trail work moved to Story 4.1. Replaced by VD-2._ | 2026-09-30 | SUPERSEDED |
 | ~~VD-2~~ | ~~1.1 (Hub-pushes)~~ | _Superseded 2026-09-30: the trust-fabric direction was corrected from Hub-pushes-into-Spoke to the RD-006 **orchestrate-and-pull** model (Hub invokes; member executes locally). The push-model template is retired to `infra/deferred/`. Replaced by VD-3._ | 2026-09-30 | SUPERSEDED |
-| VD-3 | 1.1 | Orchestrate-and-pull trust fabric (`infra/member-execution-role.yaml`) authored + offline-proven (21 invariants), but NOT yet live-validated. **Validation is split (Path A, stakeholder-chosen):** VD-3a = the member roles are deployed in Dev/Sandbox/Prod and `get-role` confirms each trusts the *specific* Hub orchestrator role (not `:root`) + requires `sts:ExternalId` — **provable now**; VD-3b = the full live Hub→member `sts:AssumeRole` (succeeds with ExternalId / denied without) — **deferred to Phase 2** because the `pde-hub-orchestrator` Hub role does not exist until then. Story 1.1 flips ✅ on VD-3a (trust correct-by-construction); VD-3b is tracked as a Phase-2 confirmation, not a 1.1 blocker. | 2026-09-30 | OPEN (VD-3a) |
+| ~~VD-3~~ | ~~1.1 (VD-3a)~~ | Orchestrate-and-pull trust fabric (`infra/member-execution-role.yaml`) authored + offline-proven (21 invariants), but NOT yet live-validated. **Validation is split (Path A, stakeholder-chosen):** VD-3a = the member roles are deployed in Dev/Sandbox/Prod and `get-role` confirms each trusts the *specific* Hub orchestrator role (not `:root`) + requires `sts:ExternalId` — **provable now**; VD-3b = the full live Hub→member `sts:AssumeRole` (succeeds with ExternalId / denied without) — **deferred to Phase 2** because the `pde-hub-orchestrator` Hub role does not exist until then. Story 1.1 flips ✅ on VD-3a (trust correct-by-construction); VD-3b is tracked as a Phase-2 confirmation, not a 1.1 blocker. **CLEARED 2026-09-30** on the independent validator's sealed PASS (all four VD-3a DoD conditions met). VD-3b remains a Phase-2 item (created with the `pde-hub-orchestrator` role), NOT open 1.1 debt. | 2026-09-30 | CLEARED (VD-3a); VD-3b → Phase 2 |
 
-**Gate status:** **ARMED** — Story 1.1 (orchestrate-and-pull) is 🟡 built-not-yet-live-validated
-(VD-3). No new feature story (a new tier / dependency layer) may begin until VD-3
-clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
+**Gate status:** **DISARMED** — the Validation Debt Register is empty. Story 1.1
+(orchestrate-and-pull) is ✅ (VD-3a sealed PASS, 2026-09-30); its VD-3b (live Hub→member
+`sts:AssumeRole`) is a Phase-2 confirmation, not open debt. Story 1.2 is now unblocked and
+is the next tier-2 work.
 
 ## Operational Debt Register
 
@@ -181,13 +182,12 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 1.1 | 1 | G-1 + G-2 ✅ (templates audited + trimmed); trust-fabric build is done + offline-proven. Its **LIVE validation** is now the ready action (VD-3). |
+| 1.2 | 2 | Story 1.1 is validated (sealed PASS, 2026-09-30); its only dependency is met. Configure Hub CloudShell repo access + run the Phase-1 gate Boto3 AssumeRole-into-each-member script. Closes Phase 1. |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| 1.2 | 2 | Story 1.1 not yet validated |
 | 2.1, 2.2 | 3 | Phase 1 gate not yet passed |
 | 2.3 | 4 | Stories 2.1 + 2.2 not yet validated |
 | 3.1 | 5 | Phase 2 gate not yet passed |
@@ -196,14 +196,17 @@ clears on the recorded live pass. Reworking Story 1.1 itself is always allowed.
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 1.1 — LIVE validation (VD-3).** G-1 (fat-audit) and
-G-2 (trim + lean pass) are ✅ — the prompts are audited + trimmed (offline-blocker at
-Rule #1, HALT boundary in the loop), so the "prompts are optimized" gate is cleared.
-The live action: deploy `infra/member-execution-role.yaml` into each of
-Dev/Sandbox/Prod and confirm a Hub→member `sts:AssumeRole` (correct ExternalId)
-succeeds + is denied without it, per
-[`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-On the recorded pass, flip 1.1 → ✅, clear VD-3, and Story 1.2 unblocks.
+**Default next action:** **Story 1.2 — CloudShell environment + Phase-1 gate.** Story
+1.1 (orchestrate-and-pull trust fabric) is ✅ — the member execution roles are deployed
+in Dev/Sandbox/Prod with the correct scoped trust (sealed PASS, VD-3a, 2026-09-30), so
+the gate is disarmed and 1.2 is unblocked. The next action: configure the Hub-account
+CloudShell with token-authenticated repo access + tooling, then run the Phase-1 gate
+Boto3 script (AssumeRole into Dev/Sandbox/Prod, returning their account IDs) end to end
+per [`../DOCS/session-briefs/story-1.2-brief.md`](../DOCS/session-briefs/story-1.2-brief.md).
+1.2 closes Phase 1 (capture `restore/phase-1-green` + inventory row on its recorded pass).
+_(Note: the full live Hub→member `sts:AssumeRole` deferred from 1.1 as VD-3b — the
+`pde-hub-orchestrator` role — is created in Phase 2; 1.2's gate uses the operator's own
+Hub principal to prove reachability, per its brief.)_
 
 ## Progress Summary
 
@@ -239,13 +242,14 @@ _Gate: From an AWS CloudShell session in the Hub account, a human operator (as t
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 1.1 | Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended) | — | 🟡 | | |
+| 1.1 | Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended) | — | ✅ | 2026-09-30 | |
 | 1.2 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.1 | ⬜ | | |
 
-**1.1 — Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended)**  🟡 _In Progress_
+**1.1 — Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended)**  ✅ _Done (validated)_
 - Steps: author CloudFormation (YAML) for a least-privilege PDE **member execution role** in each member (Dev/Sandbox/Prod) whose trust policy names a **specific** `Pipeline-Hub` (`641628980935`) **orchestrator** role (never the Hub account root, RD-006) and requires an `sts:ExternalId`; permissions scoped to the CloudFormation actions the member's **local** execution needs on the `pde-` stack namespace (execution is local to the member — the Hub directs, it does not push writes in). Prove offline. Deploy once per member (or via a StackSet) — **not** into the management account. _(Tight tier-1 scope: the orchestration engine, the results intake data-contract, and the Hub-signed decision-token machinery are Phase 2. Re-scoped twice — from the deferred org-wide CloudTrail (→ `infra/deferred/`, Story 4.1), then from the initial Hub-pushes shape to this orchestrate-and-pull direction; the retired push-model template is preserved in `infra/deferred/`.)_
 - **As built:** `infra/member-execution-role.yaml` (member exec role; trust = specific Hub **orchestrator** role ARN + `ExternalId` NoEcho; least-privilege managed policy scoped to `cloudformation:*` stack ops on this member's `stack/${RolePrefix}*`, no AdministratorAccess, no wildcard; per-env `dev`/`sandbox`/`prod`; exports the role ARN). Offline proof: `python3 infra/validate_trust_fabric.py` — 21 invariants PASS (PyPI is blocked in the build sandbox, so cfn-lint / cfn-guard / Checkov run operator-side / CI). Live deploy + gate steps: [`../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.1-LIVE-RUNBOOK.md).
-- **Validation Result:** _pending — **Path A (stakeholder-chosen):** deploy the member execution role into each of Dev/Sandbox/Prod per the LIVE-RUNBOOK; `get-role` in each member confirms the trust names the specific Hub orchestrator role `arn:aws:iam::641628980935:role/pde-hub-orchestrator` (NOT `:root`) and requires `sts:ExternalId` (VD-3a). The full live Hub→member `sts:AssumeRole` (succeeds-with-ExternalId / denied-without) is **deferred to Phase 2** (VD-3b), when `pde-hub-orchestrator` exists. 1.1 flips ✅ on VD-3a._
+- **Validation Result:** _pass — Story 1.1 trust shape (member roles deployed, explicit hub principal, external-id enforced, mgmt untouched), 2026-09-30, confirmed by Independent Validator. Sealed PASS on all four Path-A (VD-3a) DoD conditions: (1) `pde-member-execution-{dev,sandbox,prod}` exist in 946509368326 / 586917955591 / 466494951534; (2) trust `Principal.AWS` = `arn:aws:iam::641628980935:role/pde-hub-orchestrator` (no `:root`, no wildcard) in all three; (3) `sts:ExternalId` `StringEquals` condition enforced in all three; (4) adversarial zero-touch check — management account 467866449172 has no role (`NoSuchEntity`) and no `pde-` stacks (`[]`). The full live Hub→member `sts:AssumeRole` (succeeds-with-ExternalId / denied-without) remains **deferred to Phase 2** (VD-3b), when `pde-hub-orchestrator` exists — not a 1.1 blocker._
+- **History:** _An earlier validator run sealed FAIL (roles missing in Sandbox+Prod, then a wrong-env role name in Prod — an operator `EnvironmentName` copy-paste error, not a template defect; offline invariants stayed 21/21). Remediated operator-side (derive-`EnvironmentName`-from-account deploy pattern) + the ExternalId rotated after it was exposed in a `get-role` full-document dump, then re-validated blind to the PASS above. Interim FAIL recorded at PR #14 (superseded by this PASS)._
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), clear VD-3.
 - **Advancement gate:** 1.2 (and all downstream control-plane work) cannot begin until the trust fabric is proven directable by the Hub.
 
