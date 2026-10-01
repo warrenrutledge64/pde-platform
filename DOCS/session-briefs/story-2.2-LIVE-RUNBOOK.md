@@ -58,8 +58,16 @@ cd ~/pde-platform                                           # the cloned GitHub 
 git remote -v                                               # expect github.com/warrenrutledge64/pde-platform (NOT codecommit / pde-hub)
 git fetch origin
 git checkout feature/story-2.2                              # this story's branch
+git reset --hard origin/feature/story-2.2                   # pin EXACTLY the remote tip (no stale local commit)
 git rev-parse --abbrev-ref HEAD                             # expect: feature/story-2.2
 git log --oneline -1                                        # pin this SHA as <HEAD-SHA>
+
+# TARGET-LOCK — you MUST be on the FIXED commit, or STOP (attempt-4 validated the stale
+# pre-fix commit 36cbdb9 and re-found an already-fixed finding — the deploy-gap class).
+# The SNS at-rest-encryption fix (CKV_AWS_26) lives in 5f2b3b2+; prove it is on disk:
+grep -q 'KmsMasterKeyId' infra/state-machine.yaml \
+  || { echo "TARGET-LOCK FAIL: KmsMasterKeyId absent — you are on a STALE pre-fix commit, STOP"; exit 1; }
+echo "TARGET-LOCK PASS: on the fixed commit (SNS SSE present)"
 
 # FAIL-LOUD VERIFY — the target files MUST exist, or STOP (bad checkout / full disk).
 # Do NOT use a bare `|| echo CLEAN` anywhere — a missing file must never read as a pass.
@@ -69,8 +77,9 @@ done
 echo "VERIFY PASS: Story 2.2 target files present"
 ```
 
-> If VERIFY fails, STOP — you are on the wrong branch/commit or out of disk. Do not
-> evaluate downstream output from a launch pad on the wrong code (the 2.1 lesson).
+> If TARGET-LOCK or VERIFY fails, STOP — you are on the wrong commit/branch or out of disk.
+> Do not evaluate downstream output from a launch pad on stale/wrong code (the attempt-4
+> lesson: a FAIL sealed against the pre-fix commit is a target-lock miss, not a defect).
 
 ## STEP 1 — Offline invariant checker (no network)
 

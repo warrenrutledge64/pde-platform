@@ -78,6 +78,13 @@ verdict from the raw output I run for you. Do not rubber-stamp.
   pad) — it is NOT a CodeCommit repo and is NOT named `pde-hub`. Clone:
     git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git && cd pde-platform
     git remote -v   # confirm github.com/warrenrutledge64/pde-platform (NOT codecommit, NOT pde-hub)
+- TARGET-LOCK (attempt 4 validated a STALE commit — reject that on sight): the fix for the
+  attempt-3 CKV_AWS_26 FAIL (SNS at-rest encryption) is in commit `5f2b3b2`+. Your run MUST
+  be on the branch tip, not an earlier commit. After checkout, require BOTH:
+    git reset --hard origin/feature/story-2.2
+    git log --oneline -1                                   # MUST be 5f2b3b2 or later (NOT 36cbdb9)
+    grep -q KmsMasterKeyId infra/state-machine.yaml && echo "FIX PRESENT" || echo "STALE — STOP"
+  If the Target-Lock commit is behind the tip, SEAL INCONCLUSIVE (stale checkout), not FAIL.
 - Get on the right code FIRST and pin the head commit:
     git fetch origin
     git checkout feature/story-2.2
