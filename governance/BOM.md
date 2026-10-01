@@ -17,8 +17,8 @@
   Story 1.1; the org trail is multi-region but delivers to this home region).
 - **PDE Hub namespace:** **`pdlv-`** (RD-009). The `pde-*` namespace in the Hub is
   **ZTIE's**, not PDE's — see §2.1 Known co-occupants.
-- **Last updated:** 2026-10-01 (Story 1.2 authored + offline-proven; RD-009 ratified — PDE Hub prefix `pdlv-`; ZTIE Hub footprint recorded in §2.1; awaiting live Option-B validation)
-- **Current restore point:** none yet (`restore/phase-1-green` is cut when Story 1.2's live pass closes Phase 1)
+- **Last updated:** 2026-10-01 (Phase 1 CLOSED — Story 1.2 sealed PASS; `restore/phase-1-green` cut; RD-009 ratified `pdlv-`; ZTIE Hub footprint recorded in §2.1)
+- **Current restore point:** `restore/phase-1-green` — the validated Phase-1 close (Story 1.2 operator launch pad proven live + the orchestrate-and-pull trust fabric from Story 1.1). Git SHA pinned in §4.
 
 ---
 
@@ -50,7 +50,15 @@
 
 | Artifact | Type | Name / ID | Phase | Restore point |
 |----------|------|-----------|-------|---------------|
-| _(none PDE-owned yet — pending Phase 1 close; Story 1.1 member roles deploy in the member accounts, recorded at the Phase-1 restore point)_ | | | | |
+| PDE member execution role (Dev) | IAM role (CFN stack `pde-trust-fabric`) | `pde-member-execution-dev` in `946509368326` | 1 | `restore/phase-1-green` |
+| PDE member execution role (Sandbox) | IAM role (CFN stack `pde-trust-fabric`) | `pde-member-execution-sandbox` in `586917955591` | 1 | `restore/phase-1-green` |
+| PDE member execution role (Prod) | IAM role (CFN stack `pde-trust-fabric`) | `pde-member-execution-prod` in `466494951534` | 1 | `restore/phase-1-green` |
+| Hub operator launch pad (CloudShell) | Documented environment (not a deployed resource) | Pipeline-Hub `641628980935` CloudShell — token-auth clone + tooling + committed Phase-1 gate script | 1 | `restore/phase-1-green` |
+
+> The three member roles trust the specific Hub role `pde-hub-orchestrator` + an
+> `sts:ExternalId` (Story 1.1, RD-006). They retain the `pde-member-execution-<env>`
+> names (member accounts, not the Hub — no `pdlv-` rename needed; RD-009). The Hub
+> orchestrator role itself is Phase-2 work (then VD-3b runs the gate script live).
 
 > Track here the resource classes relevant to PDE: CloudFormation stacks, the
 > Org-wide CloudTrail + its S3 log bucket + KMS CMK, cross-account IAM execution
@@ -79,7 +87,7 @@
 
 | Tag | Phase | Date | Code (git SHA) | State manifest | Notes |
 |-----|-------|------|----------------|----------------|-------|
-| _(none yet — first tag at the Phase 1 gate)_ | | | | | |
+| `restore/phase-1-green` | 1 | 2026-10-01 | `7bd6358` (validated commit; annotated tag) | _live-state manifest to be captured by the operator via the RESTORE.md read-only Boto3 capture from Hub CloudShell (Dev/Sandbox/Prod member-role projections + Hub launch-pad); path recorded here on capture_ | Phase 1 close — Story 1.2 sealed PASS (operator launch pad proven live) + Story 1.1 trust fabric. Live cross-account `AssumeRole` deferred (VD-3b, Phase 2). | |
 
 ---
 
