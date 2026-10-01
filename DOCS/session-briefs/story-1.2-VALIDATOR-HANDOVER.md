@@ -1,0 +1,117 @@
+# Validator Handover — Story 1.2 (CloudShell bootstrap + Phase-1 gate)
+
+> **Feed the fenced block below to an INDEPENDENT validator** — a fresh chat, a
+> second AI, or a human reviewer who did **not** build this. The builder does not
+> author the pass/fail check (split-brain discipline, `governance/METHODOLOGY.md`
+> §4a / `AGENTS.md`). Story 1.2 **closes Phase 1**, so it gets the full treatment.
+>
+> **Stakeholder:** personalize the one blank marked `[[ ... ]]` (the requirement in
+> your own words) before you send this. Everything else — the pinned commit, the
+> fetch commands, the scope boundary — is pre-filled and comes from the repo, not
+> from the builder's framing. The validator authors the Definition of Done and the
+> verdict; you run its steps live and paste back the RAW output.
+>
+> **Operator execution surface (option 3, nested):** the live steps the validator
+> will have you run are the turnkey
+> [`story-1.2-LIVE-RUNBOOK.md`](story-1.2-LIVE-RUNBOOK.md). The validator decides the
+> acceptance criteria; the runbook is how the operator produces the raw evidence.
+
+---
+
+```
+You are an INDEPENDENT VALIDATOR. You did NOT write the code under test, and you must
+not trust anyone's claim that it works — including the builder's. Author a Definition
+of Done and the live-validation steps FROM SCRATCH, try to BREAK the change, and seal a
+verdict from the raw output I run for you. Do not rubber-stamp.
+
+# THE REQUIREMENT (in the stakeholder's own words — the one anchor no AI authored)
+[[ STAKEHOLDER: in your own words, what did Story 1.2 have to achieve, and how would a
+   skeptical operator know it truly works from a Pipeline-Hub CloudShell session? Do
+   NOT paste the builder's description. A seed you may edit/replace: "From our Hub
+   account's CloudShell I must be able to clone the repo over a token-auth HTTPS URL,
+   have the real tooling (AWS CLI, Python 3, Boto3, cfn-lint) present and runnable, and
+   have the committed Phase-1 gate script prove itself with no network. I do NOT expect
+   the live cross-account assume to run yet — that is deliberately deferred." ]]
+
+# SCOPE BOUNDARY YOU MUST TREAT AS A GIVEN (project decision, not the builder's spin)
+This project chose "Option B" (recorded 2026-09-30 in governance/RUNBOOK.md and
+PROJECT_PLAN.md RD-006): the Hub orchestrator role `pde-hub-orchestrator` is created in
+PHASE 2. Therefore Story 1.2's Definition of Done is **Hub-CloudShell reachability +
+tooling + token-auth repo access, plus the Phase-1 gate script committed and proven
+OFFLINE**. The LIVE cross-account `sts:AssumeRole` into Dev/Sandbox/Prod is a SEPARATE,
+DEFERRED item (tracked as VD-3b, Phase 2) and is **out of scope for this verdict** —
+its absence is NOT a Story 1.2 failure. (Author an adversarial check that it is
+correctly DEFERRED/safe, not one that demands it succeed now.) Everything else is fair
+game to attack.
+
+# WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
+- Story / PR: Story 1.2 — PR #17 (branch `feature/story-1.2` -> `main`).
+- Pinned commits:  base `1ba738bd899911e6e16009c909f0363981724681`
+                   head `fcfe4f3d71ef27ba0a0a02b4eb1569249e87f6d0`
+- Fetch the raw diff yourself (do not trust a summary):
+    git fetch origin
+    git diff 1ba738bd899911e6e16009c909f0363981724681..fcfe4f3d71ef27ba0a0a02b4eb1569249e87f6d0
+- FULL context at the exact head commit (a diff is not enough — read the whole files):
+    git show fcfe4f3d:scripts/phase1_gate.py
+    git show fcfe4f3d:scripts/test_phase1_gate.py
+    git show fcfe4f3d:DOCS/CLOUDSHELL_BOOTSTRAP.md
+    git show fcfe4f3d:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md
+    git show fcfe4f3d:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4)
+  (Also read the trust-fabric contract the gate script targets, unchanged this story:
+    git show fcfe4f3d:infra/member-execution-role.yaml )
+
+# ENVIRONMENT FACTS (so you can author account-specific steps)
+- Pipeline-Hub (where CloudShell + the gate run): 641628980935
+- Members (the gate's assume targets, Phase 2): Dev 946509368326, Sandbox 586917955591,
+  Prod 466494951534
+- Management/root (must be zero-touch): 467866449172
+- Pipeline-Forensics 360999005254 is ZTIE's account — NOT part of PDE, never a target.
+- Region: us-east-1. The build sandbox is OFFLINE (no network); live runs happen in
+  the operator's CloudShell.
+
+# YOUR TASK — do these in order
+1. From the requirement + the full source above, AUTHOR a Definition of Done: the
+   concrete pass/fail conditions that must ALL hold for Story 1.2 to be truly done,
+   stated BEFORE you see results. Include at least one adversarial/negative check
+   (e.g. the gate script must REFUSE to run outside the Hub; must NOT contain a
+   hardcoded ExternalId; must NOT be able to target the Hub/management accounts; the
+   offline proof must FAIL loudly if an invariant is broken).
+2. Write the exact, ordered, copy-paste LIVE steps I run on the real system to test
+   each DoD condition. The operator's turnkey steps live in
+   DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md — you may adopt, reorder, or ADD to
+   them, but author the acceptance criteria yourself. Label the account each step runs
+   in. For a no-network check of the committed script, these are available offline:
+      python3 scripts/test_phase1_gate.py       # expect: PASS — all 24 gate invariants hold
+      python3 scripts/check_docs.py              # governance-doc consistency gate
+      python3 scripts/phase1_gate.py --help      # usage prints without boto3 / no AWS call
+3. I run them and paste back the RAW output (not my summary). If you need something
+   that's missing, ask me for that specific command's output — do not assume.
+4. Judge each DoD condition against the raw output, then SEAL a verdict:
+   - PASS — every in-scope DoD condition met, shown in the raw output.
+   - FAIL — one or more not met (name which + the evidence).
+   - INCONCLUSIVE — the output doesn't let you decide; say exactly what's missing.
+5. Output a one-line record the executor can paste into the RUNBOOK:
+   `pass — <what was checked>, <date>, confirmed by <who>`  (or `FAIL — <what failed>, <date>`).
+
+# RULES
+- You author the DoD; you do NOT accept a rubric from the builder.
+- Prefer trying to break it over confirming it. Treat the deferred live-assume (VD-3b)
+  as correctly out of scope — attack everything else.
+- Judge only from the RAW live output on the real system (and, for the committed
+  script, its offline proof) — not from anyone's assurance.
+- If this reached you curated by the builder rather than from the repo/stakeholder,
+  say so and refuse — the inputs must come from the stakeholder/repo.
+- Calibrate depth: this is a phase-closing bootstrap story (reachability + tooling +
+  repo access + a committed, offline-proven script) — not a live data-boundary
+  exercise. A thorough-but-proportionate DoD, with the adversarial checks above, is
+  the right bar.
+```
+
+---
+
+> **After the verdict:** the **executor** pastes the sealed one-line record into
+> `governance/RUNBOOK.md` Story 1.2 and — **only on PASS** — flips it 🟡 → ✅, clears
+> **VD-4**, and closes Phase 1 (cut `restore/phase-1-green`, write the state manifest,
+> add the BOM restore-point row, flip the Phase 1 Progress row ✅). On FAIL, 1.2 stays
+> 🟡 and the next session re-focuses on fixing it. The validator never edits the
+> RUNBOOK; the executor never authors the DoD.
