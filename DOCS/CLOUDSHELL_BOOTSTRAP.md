@@ -72,6 +72,34 @@ pip install --user cfn-guard-rules checkov bandit   # policy-as-code + IaC/py sc
 
 ## 2. Token-authenticated repository access (clone PDE)
 
+### 2.0 Create the fine-grained PAT (first time / when it expires)
+
+`pde-platform` is a **private** repo, so the clone needs a token. Create a
+**fine-grained** PAT (least privilege, not a classic token):
+
+**GitHub → Settings → Developer settings → Personal access tokens → Fine-grained
+tokens → Generate new token.**
+
+| Field | Choose | Why |
+|-------|--------|-----|
+| **Token name** | e.g. `pde-cloudshell` | so you can find + revoke it |
+| **Resource owner** | **`warrenrutledge64`** | must own `pde-platform`, or the token can't see it |
+| **Expiration** | short (e.g. 7 days) | it only needs to live for the live run |
+| **Repository access** | **Only select repositories → `pde-platform`** | least privilege (not "All repositories") |
+| **Repository permissions → Contents** | **Read-only** | the ONE permission a `git clone`/`fetch` needs |
+
+Leave everything else at **No access** (Metadata auto-sets to read-only — expected).
+**Generate token**, copy the `github_pat_…` value, and paste it ONCE at the silent
+`GitHub PAT:` prompt below. Only grant **Contents: Write** if you later *push* from
+CloudShell (not needed for Story 1.2 — read-only).
+
+> **Org-owned caveat:** if the repo ever lives under a GitHub **organization**, the
+> org may require fine-grained tokens to be *approved* before they work (org Settings
+> → Third-party Access → Personal access tokens). A 403/404 on clone *with* a valid
+> token points here. For `warrenrutledge64`-owned repos this does not apply.
+
+### 2.1 Clone with the credential helper (token NEVER in the URL)
+
 GitHub is **source control only** (PDE constraint). CloudShell has no SSH keys, so
 authenticate over HTTPS — but **never embed the token in the clone URL**. Hand the
 PAT to git ONCE via a credential helper, so it lands only in `~/.git-credentials`
