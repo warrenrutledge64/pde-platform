@@ -154,12 +154,14 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 |---|-------|-------------------------|--------|-------|
 | ~~VD-1~~ | ~~1.1 (old)~~ | _Superseded 2026-09-30: Story 1.1 re-scoped from the org-wide CloudTrail to the trust fabric (RD-006/RD-007). Org-trail work moved to Story 4.1. Replaced by VD-2._ | 2026-09-30 | SUPERSEDED |
 | ~~VD-2~~ | ~~1.1 (Hub-pushes)~~ | _Superseded 2026-09-30: the trust-fabric direction was corrected from Hub-pushes-into-Spoke to the RD-006 **orchestrate-and-pull** model (Hub invokes; member executes locally). The push-model template is retired to `infra/deferred/`. Replaced by VD-3._ | 2026-09-30 | SUPERSEDED |
+| VD-4 | 1.2 (CloudShell bootstrap + Phase-1 gate) | The Hub CloudShell bootstrap (`DOCS/CLOUDSHELL_BOOTSTRAP.md`) + the Phase-1 gate script (`scripts/phase1_gate.py`) are authored + offline-proven (24 invariants via `scripts/test_phase1_gate.py`), but 1.2's **live Option-B proof** — Hub-CloudShell reachability + tooling (AWS CLI / Python 3 / Boto3 / cfn-lint) + token-auth repo access, from Pipeline-Hub `641628980935` — is NOT yet recorded. On that live pass 1.2 flips ✅ and **closes Phase 1** (restore tag + inventory). _(The gate script's live cross-account `AssumeRole` run is the separate deferred **VD-3b**, Phase 2 — not this debt.)_ | 2026-10-01 | OPEN |
 | ~~VD-3~~ | ~~1.1 (VD-3a)~~ | Orchestrate-and-pull trust fabric (`infra/member-execution-role.yaml`) authored + offline-proven (21 invariants), but NOT yet live-validated. **Validation is split (Path A, stakeholder-chosen):** VD-3a = the member roles are deployed in Dev/Sandbox/Prod and `get-role` confirms each trusts the *specific* Hub orchestrator role (not `:root`) + requires `sts:ExternalId` — **provable now**; VD-3b = the full live Hub→member `sts:AssumeRole` (succeeds with ExternalId / denied without) — **deferred to Phase 2** because the `pde-hub-orchestrator` Hub role does not exist until then. Story 1.1 flips ✅ on VD-3a (trust correct-by-construction); VD-3b is tracked as a Phase-2 confirmation, not a 1.1 blocker. **CLEARED 2026-09-30** on the independent validator's sealed PASS (all four VD-3a DoD conditions met). VD-3b remains a Phase-2 item (created with the `pde-hub-orchestrator` role), NOT open 1.1 debt. | 2026-09-30 | CLEARED (VD-3a); VD-3b → Phase 2 |
 
-**Gate status:** **DISARMED** — the Validation Debt Register is empty. Story 1.1
-(orchestrate-and-pull) is ✅ (VD-3a sealed PASS, 2026-09-30); its VD-3b (live Hub→member
-`sts:AssumeRole`) is a Phase-2 confirmation, not open debt. Story 1.2 is now unblocked and
-is the next tier-2 work.
+**Gate status:** **ARMED** — VD-4 is OPEN: Story 1.2 (CloudShell bootstrap + Phase-1
+gate) is 🟡 built + offline-proven (24 invariants) but awaiting its live Option-B pass
+from Hub CloudShell. No new feature story / new tier may begin until VD-4 is cleared by a
+recorded live pass. (Reworking 1.2 itself is always allowed.) Story 1.1 remains ✅; its
+VD-3b (live Hub→member `sts:AssumeRole`) is a Phase-2 confirmation, not open 1.2 debt.
 
 ## Operational Debt Register
 
@@ -182,7 +184,7 @@ is the next tier-2 work.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 1.2 | 2 | Story 1.1 is validated (sealed PASS, 2026-09-30); its only dependency is met. Configure Hub CloudShell repo access + run the Phase-1 gate Boto3 AssumeRole-into-each-member script. Closes Phase 1. |
+| 1.2 | 2 | 🟡 **in progress** — built + offline-proven (24 invariants); its only dependency (1.1) is ✅. Awaiting the live Option-B pass (Hub-CloudShell reachability + tooling + token-auth repo access). Closes Phase 1. _(No other story is Ready: the gate is ARMED on VD-4.)_ |
 
 **Blocked (waiting on an unmet dependency):**
 
@@ -196,17 +198,18 @@ is the next tier-2 work.
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 1.2 — CloudShell environment + Phase-1 gate.** Story
-1.1 (orchestrate-and-pull trust fabric) is ✅ — the member execution roles are deployed
-in Dev/Sandbox/Prod with the correct scoped trust (sealed PASS, VD-3a, 2026-09-30), so
-the gate is disarmed and 1.2 is unblocked. The next action: configure the Hub-account
-CloudShell with token-authenticated repo access + tooling, then run the Phase-1 gate
-Boto3 script (AssumeRole into Dev/Sandbox/Prod, returning their account IDs) end to end
-per [`../DOCS/session-briefs/story-1.2-brief.md`](../DOCS/session-briefs/story-1.2-brief.md).
-1.2 closes Phase 1 (capture `restore/phase-1-green` + inventory row on its recorded pass).
-_(Note: the full live Hub→member `sts:AssumeRole` deferred from 1.1 as VD-3b — the
-`pde-hub-orchestrator` role — is created in Phase 2; 1.2's gate uses the operator's own
-Hub principal to prove reachability, per its brief.)_
+**Default next action:** **Story 1.2 — run its live Option-B gate (then close Phase 1).**
+1.2 is 🟡 built + offline-proven; the gate is ARMED on **VD-4**. The next action is the
+**live validation** per
+[`../DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md):
+from Pipeline-Hub `641628980935` CloudShell, prove reachability + tooling (AWS CLI /
+Python 3 / Boto3 / cfn-lint) + token-auth repo access, with the committed gate script
+([`../scripts/phase1_gate.py`](../scripts/phase1_gate.py)) passing its offline proof. On
+the recorded pass, flip 1.2 ✅ and **close Phase 1** — capture `restore/phase-1-green`,
+write the state manifest, add the BOM inventory row, flip the Phase 1 Progress row ✅.
+_(The full live Hub→member `sts:AssumeRole` — the committed gate script's cross-account
+run — is the deferred **VD-3b**, run in Phase 2 once `pde-hub-orchestrator` exists; it is
+not part of 1.2's DoD.)_
 
 ## Progress Summary
 
@@ -243,7 +246,7 @@ _Gate: From an AWS CloudShell session in the Hub account, a human operator (as t
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
 | 1.1 | Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended) | — | ✅ | 2026-09-30 | |
-| 1.2 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.1 | ⬜ | | |
+| 1.2 | Configure CloudShell environment with repo access for the bootstrap deploy | 1.1 | 🟡 | | |
 
 **1.1 — Orchestrate-and-pull trust fabric — member execution roles the Hub invokes (RD-006 amended)**  ✅ _Done (validated)_
 - Steps: author CloudFormation (YAML) for a least-privilege PDE **member execution role** in each member (Dev/Sandbox/Prod) whose trust policy names a **specific** `Pipeline-Hub` (`641628980935`) **orchestrator** role (never the Hub account root, RD-006) and requires an `sts:ExternalId`; permissions scoped to the CloudFormation actions the member's **local** execution needs on the `pde-` stack namespace (execution is local to the member — the Hub directs, it does not push writes in). Prove offline. Deploy once per member (or via a StackSet) — **not** into the management account. _(Tight tier-1 scope: the orchestration engine, the results intake data-contract, and the Hub-signed decision-token machinery are Phase 2. Re-scoped twice — from the deferred org-wide CloudTrail (→ `infra/deferred/`, Story 4.1), then from the initial Hub-pushes shape to this orchestrate-and-pull direction; the retired push-model template is preserved in `infra/deferred/`.)_
@@ -253,8 +256,9 @@ _Gate: From an AWS CloudShell session in the Hub account, a human operator (as t
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), clear VD-3.
 - **Advancement gate:** 1.2 (and all downstream control-plane work) cannot begin until the trust fabric is proven directable by the Hub.
 
-**1.2 — Configure CloudShell environment with repo access for the bootstrap deploy**  ⬜ _Not Started_
+**1.2 — Configure CloudShell environment with repo access for the bootstrap deploy**  🟡 _In Progress_
 - Steps: document + configure the Hub-account CloudShell environment with token-authenticated repository access and the tooling (AWS CLI, Python 3 / Boto3, cfn-lint) needed for the initial bootstrap deployment; author + commit the Phase-1 gate Boto3 `AssumeRole`-into-each-member script (targeting `pde-hub-orchestrator`, ExternalId-parameterised, derive-`EnvironmentName`-from-account). _**Option B (2026-09-30):** the script's live cross-account run is deferred to Phase 2 (VD-3b) — no temporary Hub stand-in is stood up; 1.2 proves reachability + tooling + repo access live and commits the gate script._
+- **As built:** [`DOCS/CLOUDSHELL_BOOTSTRAP.md`](../DOCS/CLOUDSHELL_BOOTSTRAP.md) (reproducible Hub-CloudShell setup — zero-touch account check, tooling check + `--user` cfn-lint, token-auth clone with token-scrub, `read -rs` ExternalId as an env var, gate-script run guidance); [`scripts/phase1_gate.py`](../scripts/phase1_gate.py) (the committed Phase-1 gate — Boto3, targets the real `pde-hub-orchestrator`, walks Dev→Sandbox→Prod, presents `PDE_EXTERNAL_ID`/`--external-id` never a hardcoded literal, fixed account→env table so no per-account literal is hand-edited, confirms the landed account from the assumed-role ARN, refuses to run outside the Hub and to target the Hub/management accounts, uses only `sts:AssumeRole` + `sts:GetCallerIdentity`); [`scripts/test_phase1_gate.py`](../scripts/test_phase1_gate.py) (offline proof bar — 24 source + behaviour invariants against a fake STS stub, no AWS/network). Offline proof: `python3 scripts/test_phase1_gate.py` → PASS (24 invariants); `ruff` clean. Live steps: [`../DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md).
 - **Validation Result:** _pending — **Option B:** from Hub CloudShell, prove token-auth repo access + tooling (AWS CLI, Python 3 / Boto3, cfn-lint) working live, and commit the Phase-1 gate Boto3 script (targeting the real `pde-hub-orchestrator`). The live `AssumeRole` into Dev/Sandbox/Prod (returning their account ids) is the deferred **VD-3b**, run in Phase 2 once the orchestrator role exists._
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). This story closes Phase 1 — capture `restore/phase-1-green` + inventory row.
 - **Advancement gate:** Phase 2 (Control Plane) cannot begin until Phase 1's gate passes.
