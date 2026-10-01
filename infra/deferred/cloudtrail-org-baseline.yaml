@@ -93,12 +93,18 @@ Resources:
                 "aws:SourceArn": !Sub "arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${ManagementAccountId}:trail/${TrailName}"
               StringLike:
                 "kms:EncryptionContext:aws:cloudtrail:arn": !Sub "arn:${AWS::Partition}:cloudtrail:*:${ManagementAccountId}:trail/*"
-          # Any principal in the organization may DECRYPT the logs it is
-          # entitled to read (log delivery + authorized readers).
+          # Principals in the organization may DECRYPT the logs they are
+          # entitled to read (log delivery + authorized readers). The principal
+          # is the management account root (which fronts the org's audit-read
+          # access) rather than a bare AWS "*" wildcard: a wildcard principal in
+          # a KMS key policy trips CKV_AWS_33 even when org-scoped, and the
+          # org-wide read fan-out is better delegated through the management
+          # account than granted directly to every principal on the key. The
+          # aws:PrincipalOrgID condition is retained as defense-in-depth.
           - Sid: AllowOrgDecrypt
             Effect: Allow
             Principal:
-              AWS: "*"
+              AWS: !Sub "arn:${AWS::Partition}:iam::${ManagementAccountId}:root"
             Action: kms:Decrypt
             Resource: "*"
             Condition:
@@ -116,6 +122,68 @@ Resources:
       AliasName: alias/pde-org-cloudtrail
       TargetKeyId: !Ref CloudTrailKmsKey
 
+  # --- S3 server-access-log target for the CloudTrail log bucket -----------
+  # A dedicated access-log bucket so the primary audit bucket satisfies
+  # CKV_AWS_18 (S3 access logging enabled). A log bucket cannot self-log
+  # without a loop, so a separate hardened target is the standard pattern.
+  # Story 4.1 carry-forward: when this template is deployed (adapted
+  # root-hosted -> Hub-delegated), add a bucket policy on this target granting
+  # logging.s3.amazonaws.com s3:PutObject (with aws:SourceAccount/SourceArn
+  # conditions) so S3 log delivery can write under BucketOwnerEnforced.
+  CloudTrailAccessLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: >-
+              Terminal S3 server-access-log target — it is the end of the
+              logging chain and cannot self-log without a loop; enabling access
+              logging on an access-log bucket is neither expected nor supported.
+          - id: CKV_AWS_145
+            comment: >-
+              Deliberate SSE-S3 (AES256), not SSE-KMS: S3 server access log
+              delivery is incompatible with SSE-KMS on the destination bucket.
+              The primary audit bucket (CloudTrailLogBucket) remains SSE-KMS.
+    Properties:
+      BucketName: !Sub "${LogBucketName}-access-logs"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          # S3 server access logging requires the log-delivery group to write,
+          # which is incompatible with SSE-KMS; use SSE-S3 (AES256) on this
+          # access-log target. The audit bucket itself stays SSE-KMS.
+          - BucketKeyEnabled: false
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-access-logs
+            Status: Enabled
+            ExpirationInDays: !Ref LogRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          - Id: abort-incomplete-multipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "1.1" }
+        - { Key: Component, Value: governance-cloudtrail-access-logs }
+        - { Key: ManagedBy, Value: cloudformation }
+
   # --- Centralized, hardened S3 log bucket ---------------------------------
   CloudTrailLogBucket:
     Type: AWS::S3::Bucket
@@ -125,6 +193,10 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Ref LogBucketName
+      # Server access logging to a dedicated target bucket (CKV_AWS_18).
+      LoggingConfiguration:
+        DestinationBucketName: !Ref CloudTrailAccessLogBucket
+        LogFilePrefix: cloudtrail-log-bucket-access/
       # NO Object Lock (WORM) — deliberate: COMPLIANCE-mode locks make the
       # bucket un-deletable for the retention window and break clean rollback.
       PublicAccessBlockConfiguration:

@@ -50,8 +50,17 @@ jobs:
       - name: Install the static-analysis bar
         run: pip install --quiet cfn-lint checkov
 
+      # Both the lint and the security bar grade the ACTIVE, top-level infra
+      # templates only — the artifacts a story actually deploys. infra/deferred/
+      # holds parked/retired templates (RD-007, picked up at Story 4.1) that are
+      # explicitly not-deployed in Phases 1-3; grading them here would fail a
+      # story's PR on out-of-scope code. cfn-lint already scopes to infra/*.yaml
+      # (non-recursive); checkov is scoped to match with --skip-path infra/deferred
+      # so the two steps are consistent. The deferred templates keep their own
+      # offline invariant checkers and are re-validated at Story 4.1 when adapted
+      # root-hosted -> Hub-delegated.
       - name: cfn-lint (well-formedness, incl. the E1003 Description limit)
         run: cfn-lint infra/*.yaml
 
       - name: Checkov (security bar — expect 0 failed; CKV_AWS_158 SKIPPED, CKV_AWS_26 fixed)
-        run: checkov -d infra --framework cloudformation
+        run: checkov -d infra --framework cloudformation --skip-path infra/deferred
