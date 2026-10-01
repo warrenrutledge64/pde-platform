@@ -31,21 +31,11 @@
 
 ## STEP 0 — Stand up + VERIFY the launch pad
 
-**Preferred: the named bootstrap script (no block to mis-paste).** From a Pipeline-Hub
-CloudShell session, fetch the script from the public raw URL and run it — it confirms the
-Hub account, hands your PAT to the git credential helper (never into the URL), clones +
-checks out `feature/story-1.2`, and runs the fail-loud VERIFY:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/warrenrutledge64/pde-platform/feature/story-1.2/scripts/bootstrap_launchpad.sh -o /tmp/bootstrap_launchpad.sh
-bash /tmp/bootstrap_launchpad.sh
-```
-
-You will be prompted ONCE for your GitHub PAT (silent, no echo). **PASS = the final line
-is `LAUNCH-PAD VERIFY: PASS`.** If the repo is private so the raw URL needs auth, use the
-inline one-shot block below instead (same effect).
-
-<details><summary><b>Fallback: inline ONE-SHOT BOOTSTRAP</b> (copy this whole block; replace only the PAT)</summary>
+> **`pde-platform` is a PRIVATE repo** — a `raw.githubusercontent.com` URL will NOT
+> fetch anonymously, so there is no public one-liner. The reliable path is the inline
+> one-shot block below: it prompts for your PAT, hands it to git via the credential
+> helper (never into the URL), clones + checks out `feature/story-1.2`, and runs the
+> fail-loud VERIFY. Copy the WHOLE block; replace nothing but the PAT at the prompt.
 
 ```bash
 # CONTEXT: Pipeline-Hub 641628980935 CloudShell, us-east-1
@@ -75,11 +65,12 @@ grep -Rqs '@github.com' .git/config && { echo "✗ credential-pattern in .git/co
 **PASS:** the first line prints `641628980935`, HEAD is on `feature/story-1.2`, and the
 last line is **`LAUNCH-PAD VERIFY: PASS`**.
 
-</details>
-
-> Either path above supersedes the step-by-step STEP 2 / STEP 2a below (kept for
-> reference / manual runs). Once you have seen `LAUNCH-PAD VERIFY: PASS`, continue to
-> STEP 1.
+> **Equivalent:** if you already cloned + checked out `feature/story-1.2` by hand, you
+> can instead run `bash scripts/bootstrap_launchpad.sh` (the same VERIFY, as a named
+> script). The inline block above and the script are interchangeable.
+>
+> This supersedes the step-by-step STEP 2 / STEP 2a below (kept for reference / manual
+> runs). Once you have seen `LAUNCH-PAD VERIFY: PASS`, continue to STEP 1.
 
 ## STEP 1 — Tooling present and runnable
 

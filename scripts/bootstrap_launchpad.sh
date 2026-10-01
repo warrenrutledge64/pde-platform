@@ -11,14 +11,22 @@
 #      live — they are NOT on main),
 #   4. runs a fail-loud launch-pad VERIFY and prints LAUNCH-PAD VERIFY: PASS/FAIL.
 #
-# Run it one of two ways from a Pipeline-Hub CloudShell session:
+# pde-platform is a PRIVATE repo, so a raw.githubusercontent.com URL needs auth —
+# you cannot fetch this script anonymously. Run it one of two ways from a Pipeline-Hub
+# CloudShell session:
 #
-#   A) FETCH-AND-RUN (nothing cloned yet — the robust path):
-#        curl -fsSL https://raw.githubusercontent.com/warrenrutledge64/pde-platform/feature/story-1.2/scripts/bootstrap_launchpad.sh -o /tmp/bootstrap_launchpad.sh
-#        bash /tmp/bootstrap_launchpad.sh
-#      (A public raw URL needs no token. If the repo is private, use path B instead.)
+#   A) FETCH-AND-RUN with a token (private-repo raw fetch via the GitHub API):
+#        read -rs -p "GitHub PAT: " GH_PAT && echo
+#        curl -fsSL -H "Authorization: Bearer $GH_PAT" \
+#          -H "Accept: application/vnd.github.raw" \
+#          https://api.github.com/repos/warrenrutledge64/pde-platform/contents/scripts/bootstrap_launchpad.sh?ref=feature/story-1.2 \
+#          -o /tmp/bootstrap_launchpad.sh
+#        bash /tmp/bootstrap_launchpad.sh      # it will prompt for the PAT again for the clone
+#      (The script re-prompts for the PAT; that is fine. Or just use path B.)
 #
-#   B) AFTER a manual clone+checkout of feature/story-1.2:
+#   B) SIMPLEST for a private repo — paste the inline ONE-SHOT block from the
+#      LIVE-RUNBOOK STEP 0 (it clones + checks out + VERIFYs inline), OR after a
+#      manual clone+checkout of feature/story-1.2:
 #        bash scripts/bootstrap_launchpad.sh
 #
 # You will be prompted ONCE for your PAT (silent, no echo). Prefer a fine-grained PAT
