@@ -1,0 +1,57 @@
+name: PDE infra static bar
+
+# Checkout-proof validation (OD-007 clear-by #3; OD-008 escalation): GitHub checks
+# out the EXACT PR head commit automatically, so a validator reading these logs can
+# never be looking at a stale local checkout (the attempt 3-5 failure mode, where a
+# human CloudShell clone kept validating the pre-fix file). This runs the SAME static
+# bar an operator would run by hand — the stdlib invariant checkers + their in-memory
+# --self-test, cfn-lint, and Checkov — over the PDE CloudFormation templates.
+#
+# This workflow does NOT deploy anything and needs NO AWS credentials — it is pure
+# static analysis of infra/*.yaml. It is additive tooling (RD-015 management artifact),
+# not a change to any deliverable.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/static-bar.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  static-bar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the PR head (exact commit — no stale checkout possible)
+        uses: actions/checkout@v4
+
+      - name: Show the commit under test (target lock)
+        run: |
+          echo "HEAD commit:"
+          git log --oneline -1
+          echo "SNS at-rest encryption present on the approval topic (CKV_AWS_26 fix)?"
+          grep -n "KmsMasterKeyId" infra/state-machine.yaml || { echo "KmsMasterKeyId ABSENT — stale/pre-fix tree"; exit 1; }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Offline invariant checkers (+ in-memory self-test)
+        run: |
+          python3 infra/validate_state_machine.py
+          python3 infra/validate_state_machine.py --self-test
+          python3 infra/validate_codebuild_projects.py
+          python3 infra/validate_codebuild_projects.py --self-test
+
+      - name: Install the static-analysis bar
+        run: pip install --quiet cfn-lint checkov
+
+      - name: cfn-lint (well-formedness, incl. the E1003 Description limit)
+        run: cfn-lint infra/*.yaml
+
+      - name: Checkov (security bar — expect 0 failed; CKV_AWS_158 SKIPPED, CKV_AWS_26 fixed)
+        run: checkov -d infra --framework cloudformation

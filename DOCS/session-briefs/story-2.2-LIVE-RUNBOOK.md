@@ -81,6 +81,24 @@ echo "VERIFY PASS: Story 2.2 target files present"
 > Do not evaluate downstream output from a launch pad on stale/wrong code (the attempt-4
 > lesson: a FAIL sealed against the pre-fix commit is a target-lock miss, not a defect).
 
+> **PREFERRED (checkout-proof) — run the static bar in CI, not by hand.** Attempts 3-5
+> all FAILed on the pre-fix file because a hand-run CloudShell clone kept going stale
+> (CKV_AWS_26 reported at lines 99-106, which is the OLD `36cbdb9` layout; the fix is at
+> line 110 on the tip). The durable fix (OD-007 clear-by #3 / OD-008) is the committed
+> workflow **`.github/workflows/static-bar.yml`**: on PR #24 GitHub checks out the EXACT
+> head commit and runs the same bar (both offline checkers + `--self-test`, `cfn-lint`,
+> `checkov -d infra`). The validator reads the Actions logs (they print the HEAD SHA +
+> confirm `KmsMasterKeyId`), so there is no human checkout to get stale. **If you cannot
+> use CI**, use a PINNED, FRESH clone instead of reusing the stale on-disk one:
+>
+> ```bash
+> cd ~ && rm -rf pde-platform
+> git clone --depth 1 --branch feature/story-2.2 https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+> cd pde-platform
+> git log --oneline -1                               # MUST be c226e60 / 5f2b3b2+ (NOT 36cbdb9)
+> grep -n KmsMasterKeyId infra/state-machine.yaml    # MUST show line ~110
+> ```
+
 ## STEP 1 — Offline invariant checker (no network)
 
 ```bash
