@@ -117,7 +117,25 @@ rather than starting.
 
 **Phase gate.** A phase closes **only** when its end-of-phase check passes and is
 recorded. On phase-close — and not before — you capture a **restore point**
-(§6), record it in the inventory, and mark the phase done.
+(§6), record it in the inventory, and mark the phase done. **The end-of-phase gate
+is not left to memory, and it has its own validator handover — just like a story.**
+When every story in a phase reaches ✅, the phase is *story-complete* but **not
+closed**: it still owes its end-of-phase check, its captured restore point, and the
+Progress-Summary flip. The phase gate uses the same split-brain handover a story
+does, phase-shaped (anchored to the frozen `restore/phase-N-green` tag): the
+reusable [`DOCS/PHASE_GATE_VALIDATOR_BRIEF_TEMPLATE.md`](../DOCS/PHASE_GATE_VALIDATOR_BRIEF_TEMPLATE.md)
+(the phase-level sibling of [`DOCS/VALIDATOR_BRIEF_TEMPLATE.md`](../DOCS/VALIDATOR_BRIEF_TEMPLATE.md)),
+instantiated per phase as `DOCS/session-briefs/phase-N-GATE-VALIDATOR-HANDOVER.md`.
+The independent validator authors the end-of-phase DoD + live steps blind; the
+builder supplies only the pinned phase target + the gate requirement, never the
+DoD/verdict. The gate validates the **integrated** phase, its **restore point** (a
+restore point you cannot prove you can restore from is faith, not a baseline), and
+the **BOM** (deployed == inventoried). `scripts/check_docs.py` **CHECK N** backs
+this mechanically: it hard-fails a phase row marked ✅ while a story under it is open,
+and (for a phase that produces deployed materials) a ✅ phase whose restore point is
+not recorded in `BOM.md`; it surfaces a story-complete-but-unclosed phase as a loud
+"PHASE-GATE CLOSE OWED" advisory on every run. Closing a phase stays a
+human-confirmed act — the checker verifies, it never writes.
 
 **Recording a result.** Every story carries a one-line, dated **Validation
 Result**: `pass — <what was checked>, <date>, confirmed by <who>` or

@@ -116,9 +116,9 @@ class StatusConsistencyTests(unittest.TestCase):
             self.assertIn("1.2", violations[0].detail)
 
     def test_prose_glyph_in_auxiliary_table_is_not_read_as_status(self) -> None:
-        """Regression (PDE Story 0.1): a glyph mentioned in PROSE inside a
-        Ready-Now/Blocked/Build-Tier table — which is keyed on the same story id
-        as the summary table — must not be mistaken for that story's status.
+        """Regression: a glyph mentioned in PROSE inside a Ready-Now/Blocked/
+        Build-Tier table — which is keyed on the same story id as the summary
+        table — must not be mistaken for that story's status.
 
         Before the fix, ``| 1.2 | 2 | 1.1 not yet ✅ |`` injected a ✅ as story
         1.2's 'table status', which then falsely disagreed with 1.2's 🟡 detail
@@ -184,6 +184,232 @@ class GlyphHelperTests(unittest.TestCase):
 
     def test_status_cell_glyph_none_when_no_glyph(self) -> None:
         self.assertIsNone(check_docs._status_cell_glyph("| 1 | 1.1 | \u2014 |"))
+
+
+# A runbook with a Progress Summary + two phase sections. Phase 1 is story-complete
+# (both stories ✅) AND its summary row is ✅ (correctly closed); Phase 2 has an open
+# story and its summary row is 🟡 (correctly in progress). This is the honest tree.
+PHASE_RUNBOOK = """# Runbook
+
+## Progress Summary
+
+| Phase | Scope | Gate | Status |
+|-------|-------|------|--------|
+| **1** | Foundation | health 200 live | \u2705 Done |
+| **2** | Features | feature live | \U0001f7e1 In Progress |
+
+## Phase 1 \u2014 Foundation  \u2705
+
+| Story | Title | Depends on | Status | Completed | Restore tag |
+|-------|-------|-----------|--------|-----------|-------------|
+| 1.1 | Skeleton | \u2014 | \u2705 | 2026-01-07 | |
+| 1.2 | Persistence | 1.1 | \u2705 | 2026-01-09 | restore/phase-1-green |
+
+**1.1 \u2014 Skeleton**  \u2705 _Done (validated)_
+- **Validation Result:** pass \u2014 health 200 live, 2026-01-07, confirmed by maintainer.
+
+**1.2 \u2014 Persistence**  \u2705 _Done (validated)_
+- **Validation Result:** pass \u2014 round-trip green, 2026-01-09, confirmed by maintainer.
+
+## Phase 2 \u2014 Features  \U0001f7e1
+
+| Story | Title | Depends on | Status | Completed | Restore tag |
+|-------|-------|-----------|--------|-----------|-------------|
+| 2.1 | Shorten | 1.2 | \u2705 | 2026-01-12 | |
+| 2.2 | Redirect | 2.1 | \U0001f7e1 | | |
+
+**2.1 \u2014 Shorten**  \u2705 _Done (validated)_
+- **Validation Result:** pass \u2014 live shorten returned a code, 2026-01-12, confirmed by maintainer.
+
+**2.2 \u2014 Redirect**  \U0001f7e1 _In Progress_
+- **Validation Result:** _pending._
+"""
+
+
+class PhaseGateTests(unittest.TestCase):
+    """CHECK N: the Progress Summary must stay honest about each phase."""
+
+    def test_honest_tree_has_no_hard_n_and_no_advisory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), PHASE_RUNBOOK)
+            self.assertEqual(check_docs.check_n_phase_gate(gov), [])
+            self.assertEqual(check_docs.phase_gate_advisories(gov), [])
+
+    def test_phase_marked_done_while_story_open_fires_hard_n(self) -> None:
+        """Mark Phase 2's summary row ✅ while 2.2 is still 🟡 -> hard CHECK N."""
+        runbook = PHASE_RUNBOOK.replace(
+            "| **2** | Features | feature live | \U0001f7e1 In Progress |",
+            "| **2** | Features | feature live | \u2705 Done |",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), runbook)
+            violations = check_docs.check_n_phase_gate(gov)
+            self.assertEqual(len(violations), 1, violations)
+            self.assertEqual(violations[0].check, "CHECK N")
+            self.assertIn("phase 2", violations[0].detail)
+
+    def test_story_complete_but_unclosed_phase_is_advisory_not_hard(self) -> None:
+        """Phase 1 fully ✅ but its summary row 🟡 -> advisory, never a hard fail."""
+        runbook = PHASE_RUNBOOK.replace(
+            "| **1** | Foundation | health 200 live | \u2705 Done |",
+            "| **1** | Foundation | health 200 live | \U0001f7e1 In Progress |",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), runbook)
+            self.assertEqual(check_docs.check_n_phase_gate(gov), [])  # no hard fail
+            advisories = check_docs.phase_gate_advisories(gov)
+            self.assertEqual(len(advisories), 1, advisories)
+            self.assertEqual(advisories[0].check, "CHECK N (advisory)")
+            self.assertIn("PHASE-GATE CLOSE OWED", advisories[0].detail)
+
+    def test_missing_runbook_is_silent_pass(self) -> None:
+        """Fail-open: no RUNBOOK.md -> CHECK N + advisory both no-op."""
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "governance").mkdir()
+            gov = Path(tmp) / "governance"
+            self.assertEqual(check_docs.check_n_phase_gate(gov), [])
+            self.assertEqual(check_docs.phase_gate_advisories(gov), [])
+
+    def test_no_progress_summary_is_no_op(self) -> None:
+        """A runbook with phases but no Progress Summary -> CHECK N no-ops (nothing
+        to compare the roll-up against)."""
+        runbook = PHASE_RUNBOOK.split("## Phase 1", 1)[1]
+        runbook = "# Runbook\n\n## Phase 1" + runbook
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), runbook)
+            self.assertEqual(check_docs.check_n_phase_gate(gov), [])
+
+
+class RestorePointCompletenessTests(unittest.TestCase):
+    """CHECK N restore-point arm: a ✅ phase must have a restore point RECORDED in BOM.
+
+    In PHASE_RUNBOOK, phase 1 rolls up ✅ and its summary row is ✅ (closed). The arm
+    reads BOM.md: a ✅ phase needs a BOM row naming a ``restore/`` tag; and IF the repo
+    captures state manifests (a restore-manifests/ dir exists) that row must also name a
+    ``manifest-*.json``. Fail-open without BOM.md.
+    """
+
+    def test_no_bom_is_fail_open(self) -> None:
+        """PHASE_RUNBOOK alone (no BOM.md) -> the restore-point arm no-ops."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), PHASE_RUNBOOK)
+            bom_viol = [v for v in check_docs.check_n_phase_gate(gov) if v.file == "BOM.md"]
+            self.assertEqual(bom_viol, [], "no BOM.md -> restore-point arm no-ops")
+
+    def test_closed_phase_with_bom_restore_tag_passes(self) -> None:
+        """A ✅ phase with a BOM row naming a restore/ tag (no manifests dir) is clean."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), PHASE_RUNBOOK)
+            (gov / "BOM.md").write_text(
+                "# BOM\n\n| Artifact | Type | Name | Phase | Restore point |\n"
+                "|---|---|---|---|---|\n"
+                "| svc | service | svc | 1 | restore/phase-1-green |\n",
+                encoding="utf-8",
+            )
+            bom_viol = [v for v in check_docs.check_n_phase_gate(gov) if v.file == "BOM.md"]
+            self.assertEqual(bom_viol, [], f"a ✅ phase with a recorded restore tag is clean: {bom_viol}")
+
+    def test_closed_phase_without_restore_tag_in_bom_fires(self) -> None:
+        """A ✅ phase whose BOM row names NO restore/ tag fires the restore-point arm."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gov = _gov(Path(tmp), PHASE_RUNBOOK)
+            (gov / "BOM.md").write_text(
+                "# BOM\n\n| Artifact | Type | Name | Phase | Restore point |\n"
+                "|---|---|---|---|---|\n"
+                "| svc | service | svc | 1 | (none captured) |\n",
+                encoding="utf-8",
+            )
+            bom_viol = [v for v in check_docs.check_n_phase_gate(gov) if v.file == "BOM.md"]
+            self.assertEqual(len(bom_viol), 1, f"a ✅ phase with no recorded restore point must fire: {bom_viol}")
+
+    def test_manifest_half_required_only_when_repo_captures_manifests(self) -> None:
+        """IF a restore-manifests/ dir exists, a ✅ phase's BOM row must ALSO name a manifest."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gov = _gov(root, PHASE_RUNBOOK)
+            (root / "restore-manifests").mkdir()      # repo captures manifests
+            # BOM names the tag but NOT a manifest -> the manifest half must fire.
+            (gov / "BOM.md").write_text(
+                "# BOM\n\n| Artifact | Type | Name | Phase | Restore point |\n"
+                "|---|---|---|---|---|\n"
+                "| svc | service | svc | 1 | restore/phase-1-green |\n",
+                encoding="utf-8",
+            )
+            bom_viol = [v for v in check_docs.check_n_phase_gate(gov) if v.file == "BOM.md"]
+            self.assertEqual(len(bom_viol), 1, f"manifest-capturing repo needs the paired manifest: {bom_viol}")
+            # Now name a manifest too -> clean.
+            (gov / "BOM.md").write_text(
+                "# BOM\n\n| Artifact | Type | Name | Phase | Restore point |\n"
+                "|---|---|---|---|---|\n"
+                "| svc | service | svc | 1 | restore/phase-1-green; restore-manifests/manifest-20260101T000000Z.json |\n",
+                encoding="utf-8",
+            )
+            bom_viol = [v for v in check_docs.check_n_phase_gate(gov) if v.file == "BOM.md"]
+            self.assertEqual(bom_viol, [], f"tag + manifest named -> clean: {bom_viol}")
+
+
+class SplitBrainLiveRunbookTests(unittest.TestCase):
+    """CHECK O: no builder-authored LIVE-RUNBOOK for an OPEN story."""
+
+    def _tree(self, root: Path, opt_in: bool = True) -> Path:
+        # CHECK O is OPT-IN: a project enables it by placing the marker in a living
+        # governance doc. Append it to the RUNBOOK unless the test wants it OFF.
+        runbook = PHASE_RUNBOOK + (
+            f"\n\n<!-- {check_docs._CHECK_O_OPT_IN} -->\n" if opt_in else "\n"
+        )
+        _gov(root, runbook)
+        (root / "DOCS" / "session-briefs").mkdir(parents=True)
+        return root
+
+    def test_open_story_live_runbook_fires_o_when_opted_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))  # opt-in marker present
+            # 2.2 is OPEN (🟡) in PHASE_RUNBOOK.
+            (root / "DOCS" / "session-briefs" / "story-2.2-LIVE-RUNBOOK.md").write_text(
+                "# how to prove 2.2 live\nStep 1: curl ...", encoding="utf-8"
+            )
+            violations = check_docs.check_o_no_builder_live_runbook(
+                root / "governance", root
+            )
+            self.assertEqual(len(violations), 1, violations)
+            self.assertEqual(violations[0].check, "CHECK O")
+            self.assertIn("2.2", violations[0].detail)
+
+    def test_open_story_live_runbook_is_silent_without_opt_in(self) -> None:
+        """Default OFF: no opt-in marker -> CHECK O does not fire even for an OPEN
+        story's builder-authored LIVE-RUNBOOK (pde-platform's permitted doctrine)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp), opt_in=False)
+            (root / "DOCS" / "session-briefs" / "story-2.2-LIVE-RUNBOOK.md").write_text(
+                "# operator runbook for 2.2\nStep 1: curl ...", encoding="utf-8"
+            )
+            self.assertEqual(
+                check_docs.check_o_no_builder_live_runbook(root / "governance", root),
+                [],
+                "without the opt-in marker CHECK O must stay silent",
+            )
+
+    def test_closed_story_live_runbook_is_grandfathered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            # 2.1 is CLOSED (✅); its LIVE-RUNBOOK is frozen history.
+            (root / "DOCS" / "session-briefs" / "story-2.1-LIVE-RUNBOOK.md").write_text(
+                "# frozen history for closed 2.1", encoding="utf-8"
+            )
+            self.assertEqual(
+                check_docs.check_o_no_builder_live_runbook(root / "governance", root),
+                [],
+            )
+
+    def test_missing_session_briefs_dir_is_no_op(self) -> None:
+        """Fail-open: no DOCS/session-briefs/ -> CHECK O no-ops."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _gov(root, PHASE_RUNBOOK)
+            self.assertEqual(
+                check_docs.check_o_no_builder_live_runbook(root / "governance", root),
+                [],
+            )
 
 
 if __name__ == "__main__":
