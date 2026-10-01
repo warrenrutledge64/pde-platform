@@ -13,7 +13,7 @@
 | **Date** | _(fill at session start)_ |
 | **Status** | Not Started |
 | **Builds from restore point** | `restore/phase-1-green` (cut at Story 1.2's close) |
-| **Session goal** | Author + offline-prove CloudFormation (YAML) for the two PDE CodeBuild projects — a Lint/static-analysis project and a Deployment project — under the ZTIE-safe `pde-` naming + tagging namespace. |
+| **Session goal** | Author + offline-prove CloudFormation (YAML) for the two PDE CodeBuild projects — a Lint/static-analysis project and a Deployment project — under the ZTIE-safe **`pdlv-`** naming + `Project=PDE` tagging namespace (RD-009). |
 
 ---
 
@@ -31,7 +31,7 @@ the **CodeBuild projects** (lint + deploy) expressed as CloudFormation.
 
 - **Objective:** two CloudFormation (YAML) templates (or one parameterised template
   with both projects) defining the PDE **Lint/static-analysis** CodeBuild project
-  and the **Deployment** CodeBuild project, each under the `pde-` naming prefix with
+  and the **Deployment** CodeBuild project, each under the `pdlv-` naming prefix with
   strict `Project=PDE` tagging, offline-proven by a stdlib invariant checker.
 - **Why it matters:** these are the build/deploy executors the Phase-2 Step Functions
   state machine (Story 2.2) orchestrates; getting the naming/tagging ZTIE-safe here
@@ -40,7 +40,7 @@ the **CodeBuild projects** (lint + deploy) expressed as CloudFormation.
 ### Scope, Dependencies & Position
 
 - **In scope:** the CodeBuild CFN template(s) (Lint + Deploy projects), their
-  least-privilege service-role shape, `pde-` naming + `Project=PDE` tags, and an
+  least-privilege service-role shape, `pdlv-` naming + `Project=PDE` tags, and an
   offline invariant checker (mirroring `infra/validate_trust_fabric.py`).
 - **Out of scope:** the Step Functions state machine (Story 2.2); the actual Hub
   bootstrap deploy (Story 2.3); the member execution roles (Story 1.1, done); the
@@ -54,14 +54,15 @@ the **CodeBuild projects** (lint + deploy) expressed as CloudFormation.
 
 - **Approach:** (1) author `infra/codebuild-projects.yaml` (CFN YAML) with the Lint
   and Deploy `AWS::CodeBuild::Project` resources + a tightly-scoped CodeBuild service
-  role; (2) enforce the `pde-` name prefix and `Project=PDE` tags on every resource
+  role; (2) enforce the `pdlv-` name prefix and `Project=PDE` tags on every resource
   (Universal Criterion 5); (3) write `infra/validate_codebuild_projects.py` (stdlib,
   no network) asserting the invariants; (4) hand the USER the deploy + static-bar
   (cfn-lint / cfn-guard / Checkov) commands for the live run.
 - **Hard constraints:** CloudFormation (YAML) + Python 3 only — **no Terraform**
   (RD-004); AWS-native + serverless (RD-003); **least privilege / zero-trust** — the
   CodeBuild service role is scoped to exactly the lint/deploy tasks, no wildcards, no
-  AdministratorAccess (RD-006, Universal Criterion 3); **ZTIE-safe** `pde-` namespace,
+  AdministratorAccess (RD-006, Universal Criterion 3); **ZTIE-safe** `pdlv-` namespace
+  (RD-009 — `pde-*` is ZTIE's; PDE must avoid it),
   strictly additive + non-destructive (Universal Criterion 5); zero-touch management
   account (Universal Criterion 1).
 
@@ -84,7 +85,7 @@ the **CodeBuild projects** (lint + deploy) expressed as CloudFormation.
 - **Done means:** the CodeBuild CFN template(s) pass the offline invariant checker
   AND the USER returns raw passing STDOUT from the static bar (cfn-lint, and
   cfn-guard / Checkov as available) confirming the Lint + Deploy projects are
-  well-formed, `pde-`-prefixed, `Project=PDE`-tagged, and least-privilege (no
+  well-formed, `pdlv-`-prefixed, `Project=PDE`-tagged, and least-privilege (no
   wildcard / AdministratorAccess). _(2.1 is template authoring + static proof; the
   live deploy into the Hub is Story 2.3 — do not deploy in 2.1.)_
 - **Validated by:** the USER, live (static bar in CloudShell / CI); the template is
@@ -97,11 +98,15 @@ the **CodeBuild projects** (lint + deploy) expressed as CloudFormation.
 
 ### Risks & Watch-Items
 
-- **ZTIE collision:** the Hub co-hosts the live ZTIE control plane — every PDE
-  resource name must carry the `pde-` prefix and `Project=PDE` tag; never reuse a
-  bare/unprefixed name that could shadow a ZTIE resource.
+- **ZTIE collision (CONFIRMED live, OD-004/RD-009):** the Hub already holds **18
+  `pde-*` stacks that are ZTIE's** — including `pde-codebuild-foundation` ("PDE
+  CodeBuild Project for Hub Account"), which would have directly collided with this
+  story. **PDE must use `pdlv-`, never `pde-`.** Every PDE resource carries the
+  `pdlv-` prefix and `Project=PDE` tag; before any Phase-2 deploy, re-run
+  `aws cloudformation list-stacks … contains(StackName,'pdlv-')` to confirm the
+  chosen names are free. Never reuse a `pde-`/bare name that could shadow ZTIE.
 - **Least privilege creep:** resist granting the CodeBuild service role broad deploy
-  permissions "to be safe." Scope to the lint/deploy tasks on the `pde-` namespace;
+  permissions "to be safe." Scope to the lint/deploy tasks on the `pdlv-` namespace;
   the cross-account deploy power comes from assuming the Story 1.1 member roles, not
   from a broad Hub-side policy.
 - **Offline invariant checker hygiene:** the Story 1.1/1.2 checkers strip comments /
@@ -146,7 +151,7 @@ the **CodeBuild projects** (lint + deploy) expressed as CloudFormation.
   `360999005254` is **ZTIE's**, not PDE. Use the derive-from-account pattern for any
   per-account value.
 - **Must-know / must-avoid for this session:** Phase 2 is where PDE first deploys into
-  the Hub (eventually, in 2.3) — the ZTIE-safe `pde-` prefix + tagging discipline
+  the Hub (eventually, in 2.3) — the ZTIE-safe `pdlv-` prefix + tagging discipline
   (Universal Criterion 5) starts here in 2.1. Keep 2.1 to template + offline proof;
   the live Hub deploy is Story 2.3.
 - **User notes:** _(open for the user)_
