@@ -25,13 +25,25 @@ of Done and the live-validation steps FROM SCRATCH, try to BREAK the change, and
 verdict from the raw output I run for you. Do not rubber-stamp.
 
 # THE REQUIREMENT (in the stakeholder's own words — the one anchor no AI authored)
-[[ STAKEHOLDER: in your own words, what did Story 1.2 have to achieve, and how would a
-   skeptical operator know it truly works from a Pipeline-Hub CloudShell session? Do
-   NOT paste the builder's description. A seed you may edit/replace: "From our Hub
-   account's CloudShell I must be able to clone the repo over a token-auth HTTPS URL,
-   have the real tooling (AWS CLI, Python 3, Boto3, cfn-lint) present and runnable, and
-   have the committed Phase-1 gate script prove itself with no network. I do NOT expect
-   the live cross-account assume to run yet — that is deliberately deferred." ]]
+Story 1.2 had to give us a working, reproducible operator launch pad in our Pipeline-Hub
+account's CloudShell, and commit the script that will later prove the trust fabric. A
+skeptical operator should be able to sit down in Hub CloudShell and confirm, with their
+own eyes:
+  - They are actually in the Hub account 641628980935 (confirmed from the live identity
+    output, not a tab label).
+  - The real tooling is present and runnable — AWS CLI (v2), Python 3, Boto3, and
+    cfn-lint — not just "should be there."
+  - They can clone our repo over a token-authenticated HTTPS URL, the templates/scripts
+    land on disk, and the embedded token does not stay sitting in the repo config.
+  - The committed Phase-1 gate script proves itself with NO network (its offline check
+    passes) and its --help runs — so the artifact that will validate the real trust
+    fabric in Phase 2 is already correct and ready.
+  - Nothing was deployed anywhere, least of all the management account (zero-touch).
+I do NOT expect the live cross-account assume into Dev/Sandbox/Prod to run yet — the Hub
+orchestrator role does not exist until Phase 2, and that live run is deliberately
+deferred (VD-3b). Its absence is not a failure. I DO expect the gate script to be
+honestly built: no secret baked in, no way to point it at the wrong accounts, and it
+should refuse to run from anywhere but the Hub.
 
 # SCOPE BOUNDARY YOU MUST TREAT AS A GIVEN (project decision, not the builder's spin)
 This project chose "Option B" (recorded 2026-09-30 in governance/RUNBOOK.md and
