@@ -155,13 +155,15 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | ~~VD-1~~ | ~~1.1 (old)~~ | _Superseded 2026-09-30: Story 1.1 re-scoped from the org-wide CloudTrail to the trust fabric (RD-006/RD-007). Org-trail work moved to Story 4.1. Replaced by VD-2._ | 2026-09-30 | SUPERSEDED |
 | ~~VD-2~~ | ~~1.1 (Hub-pushes)~~ | _Superseded 2026-09-30: the trust-fabric direction was corrected from Hub-pushes-into-Spoke to the RD-006 **orchestrate-and-pull** model (Hub invokes; member executes locally). The push-model template is retired to `infra/deferred/`. Replaced by VD-3._ | 2026-09-30 | SUPERSEDED |
 | ~~VD-4~~ | ~~1.2 (CloudShell bootstrap + Phase-1 gate)~~ | _CLEARED 2026-10-01 on the Independent Validator's sealed PASS: Hub CloudShell launch pad bootstrapped + secured (identity `641628980935`, tooling present, repo securely cloned), the Phase-1 gate script offline-proven (24/24 invariants), mgmt account zero-touch. Story 1.2 ✅; Phase 1 CLOSED (`restore/phase-1-green`). The live cross-account `AssumeRole` is the deferred **VD-3b** (Phase 2), not open 1.2 debt._ The Hub CloudShell bootstrap (`DOCS/CLOUDSHELL_BOOTSTRAP.md`) + the Phase-1 gate script (`scripts/phase1_gate.py`) are authored + offline-proven (24 invariants via `scripts/test_phase1_gate.py`), and 1.2's **live Option-B proof** — Hub-CloudShell reachability + tooling + token-auth repo access, from Pipeline-Hub `641628980935` — is now recorded (took 5 live attempts; all prior stops were environment/execution issues — stray `$HOME` repo, stale copies, partial paste, `set -e` reset — never a deliverable defect, each hardened into the launch pad). _(The gate script's live cross-account `AssumeRole` run is the separate deferred **VD-3b**, Phase 2 — not this debt.)_ **Attempt 1 (head `fcfe4f3d`) sealed FAIL (2026-09-30, Independent Validator):** token left in the git remote + the 1.2 artifacts were not on disk (the live CloudShell was never on `feature/story-1.2`; a plain clone lands on `main`, and `git show fcfe4f3d` was `invalid object name`). Conditions 1+2 (Hub identity, tooling) passed. **Remediated 2026-10-01** — runbook/bootstrap hardened (explicit `feature/story-1.2` checkout; `git-credential-store` so no token is ever written into the remote URL; a post-clone VERIFY block that fails loudly if the commit/scripts are absent or a token lingers). **Attempt 2 sealed FAIL (2026-09-30):** an EXECUTION MISMATCH — the live CloudShell ran the OLD attempt-1 instructions, not the remediation (HEAD at `330487…`, a commit absent from this repo; `git remote -v` still showed the literal `YOUR_TOKEN` placeholder). The hardened STEP 2 / STEP 2a were never executed. No new deliverable defect found; the fix for attempt 3 is **execution integrity** (clone the clean URL, `git checkout feature/story-1.2`, run STEP 2a and confirm `LAUNCH-PAD VERIFY: PASS` before proceeding). Still OPEN pending a clean re-validation on head `677b632`+. | 2026-10-01 | OPEN (2 FAILs recorded; attempt-2 was an execution mismatch, awaiting a clean re-run) |
+| VD-5 | 2.1 (CodeBuild CFN templates) | `infra/codebuild-projects.yaml` (`pdlv-lint` + `pdlv-deploy` + the least-privilege service role) + `infra/validate_codebuild_projects.py` authored, offline-proven (32 invariants), and merged via PR #19 (`33ff245`) — but the live static bar sealed **FAIL** (2026-10-01, Independent Validator). The 32 custom invariants + adversarial grep (strict `pdlv-` namespace, `Project=PDE` tagging, IAM least-privilege / AssumeRole-only cross-account) PASSED; two deliverable defects remain: **(1) cfn-lint E1003** — the template `Description` is 1311 bytes, over CFN's 1024-byte hard limit (`infra/codebuild-projects.yaml:3`); **(2) checkov CKV_AWS_158** — both `AWS::Logs::LogGroup`s lack KMS encryption (needs either a CMK or a justified inline `# checkov:skip=CKV_AWS_158:` suppression). The adversarial sabotage test was INVALIDATED by a CloudShell `No space left on device` (environment, not a deliverable defect) — the re-prove must make the checker's guard provable without writing a sabotage file. Fix-then-validate-once: stays 🟡; next session re-focuses on 2.1 (NOT 2.2/2.3). | 2026-10-01 | OPEN (1 FAIL recorded) |
 | ~~VD-3~~ | ~~1.1 (VD-3a)~~ | Orchestrate-and-pull trust fabric (`infra/member-execution-role.yaml`) authored + offline-proven (21 invariants), but NOT yet live-validated. **Validation is split (Path A, stakeholder-chosen):** VD-3a = the member roles are deployed in Dev/Sandbox/Prod and `get-role` confirms each trusts the *specific* Hub orchestrator role (not `:root`) + requires `sts:ExternalId` — **provable now**; VD-3b = the full live Hub→member `sts:AssumeRole` (succeeds with ExternalId / denied without) — **deferred to Phase 2** because the `pde-hub-orchestrator` Hub role does not exist until then. Story 1.1 flips ✅ on VD-3a (trust correct-by-construction); VD-3b is tracked as a Phase-2 confirmation, not a 1.1 blocker. **CLEARED 2026-09-30** on the independent validator's sealed PASS (all four VD-3a DoD conditions met). VD-3b remains a Phase-2 item (created with the `pde-hub-orchestrator` role), NOT open 1.1 debt. | 2026-09-30 | CLEARED (VD-3a); VD-3b → Phase 2 |
 
-**Gate status:** **DISARMED** — the Validation Debt Register is empty. Story 1.2
-(CloudShell bootstrap + Phase-1 gate) is ✅ (sealed PASS, 2026-10-01) and **Phase 1 is
-CLOSED** (`restore/phase-1-green`). Phase 2 is now unblocked. The only carried item is
-the Phase-2 confirmation **VD-3b** (the committed gate script's live cross-account
-`AssumeRole`, run once `pde-hub-orchestrator` exists) — tracked for Phase 2, not open debt.
+**Gate status:** **ARMED** — **VD-5 is OPEN** (Story 2.1 sealed FAIL on the live static
+bar, 2026-10-01: cfn-lint E1003 + checkov CKV_AWS_158). No *new* feature story (2.2
+onward) may begin until VD-5 is cleared by a recorded live pass; reworking 2.1 itself is
+always allowed (the covenant working). Phase 1 remains ✅ CLOSED (`restore/phase-1-green`).
+Carried Phase-2 confirmation **VD-3b** (the committed gate script's live cross-account
+`AssumeRole`, run once `pde-hub-orchestrator` exists) is tracked for Phase 2, not open debt.
 
 ## Operational Debt Register
 
@@ -187,13 +189,13 @@ the Phase-2 confirmation **VD-3b** (the committed gate script's live cross-accou
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 2.1 | 3 | **Phase 1 gate PASSED** (2026-10-01) — `restore/phase-1-green` cut. 2.1 depends on the Phase 1 gate, now ✅. Author + offline-prove the PDE CodeBuild CFN templates (Lint + Deploy) under the **`pdlv-`** namespace (RD-009). Opens Phase 2. |
-| 2.2 | 3 | Phase 1 gate PASSED — 2.2 (Step Functions state machine) also unblocked; can proceed in parallel with 2.1. |
+| 2.1 (rework) | 3 | 🟡 **built but sealed FAIL** on the static bar (VD-5) — fix cfn-lint E1003 (Description > 1024 B) + checkov CKV_AWS_158 (Log Group KMS), re-prove, re-validate. Reworking the debited story is always allowed. **This is the focus.** |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
+| 2.2 | 3 | Gate ARMED by VD-5 (2.1 sealed FAIL) — no new feature story may begin until 2.1's debt clears. |
 | 2.3 | 4 | Stories 2.1 + 2.2 not yet validated |
 | 3.1 | 5 | Phase 2 gate not yet passed |
 | 3.2 | 6 | Story 3.1 not yet validated |
@@ -201,17 +203,20 @@ the Phase-2 confirmation **VD-3b** (the committed gate script's live cross-accou
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 2.1 — PDE CodeBuild CFN templates (Lint + Deploy), opens Phase 2.**
-Phase 1 is CLOSED (sealed PASS 2026-10-01; `restore/phase-1-green`), the Validation Debt
-Register is empty, and the gate is DISARMED — so Phase 2 is unblocked. This is a tier
-2→3 advance AND a Phase 1→2 transition. Author + offline-prove `infra/codebuild-projects.yaml`
-(Lint + Deploy CodeBuild projects + a least-privilege service role) under the **`pdlv-`**
-namespace with `Project=PDE` tags (RD-009 — `pde-*` is ZTIE's; before any Phase-2 deploy
-re-run `list-stacks` to confirm `pdlv-` names are free), per
-[`../DOCS/session-briefs/story-2.1-brief.md`](../DOCS/session-briefs/story-2.1-brief.md).
-2.1 does NOT close Phase 2 (2.2 + 2.3 remain; the Phase 2 gate is the dummy-payload Step
-Functions run in 2.3). _(Carried Phase-2 confirmation: **VD-3b** — run the committed
-`scripts/phase1_gate.py` live once `pde-hub-orchestrator` is created in Phase 2.)_
+**Default next action:** **Story 2.1 — FIX + RE-VALIDATE (do not advance to 2.2).**
+The gate is **ARMED** (VD-5): Story 2.1 was built, merged (PR #19, `33ff245`), and
+offline-proven, but the live static bar sealed **FAIL** (2026-10-01) on two deliverable
+defects — **cfn-lint E1003** (template `Description` 1311 B > the 1024-byte CFN limit) and
+**checkov CKV_AWS_158** (both `pdlv-` Log Groups lack KMS encryption; needs a CMK or a
+justified `# checkov:skip=CKV_AWS_158:` suppression). The 32 custom invariants + adversarial
+grep (strict `pdlv-` namespace, `Project=PDE` tagging, IAM least-privilege / AssumeRole-only)
+PASSED, so the fix is narrow. Also make the checker's guard provable WITHOUT writing a
+sabotage file (the sabotage test was invalidated by a CloudShell `No space left on device`).
+Fix-then-validate-once: shorten the Description, resolve the KMS finding, re-run the offline
+checker + the static bar, and record the validator's result. 2.1 does NOT close Phase 2
+(2.2 + 2.3 remain; the Phase 2 gate is the dummy-payload Step Functions run in 2.3).
+_(Carried Phase-2 confirmation: **VD-3b** — run the committed `scripts/phase1_gate.py` live
+once `pde-hub-orchestrator` is created in Phase 2.)_
 
 ## Progress Summary
 
@@ -275,14 +280,15 @@ _Gate: A human operator triggers the deployed Step Function in the Hub account w
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 2.1 | CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes | Phase 1 gate | ⬜ | | |
+| 2.1 | CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes | Phase 1 gate | 🟡 | | |
 | 2.2 | Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates) | Phase 1 gate | ⬜ | | |
 | 2.3 | Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM | 2.1, 2.2 | ⬜ | | |
 
-**2.1 — CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes**  ⬜ _Not Started_
-- Steps: author CloudFormation (YAML) for the PDE CodeBuild projects (a Linting/static-analysis project and a Deployment project), enforcing standard `pde-` naming prefixes + resource tagging so nothing collides with or alters existing ZTIE infrastructure in the Hub (Universal Criterion 5). Prove offline.
-- **Validation Result:** _pending — synth/lint the templates; on deploy, confirm the CodeBuild projects exist under the `pde-` namespace with no ZTIE resource touched._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date).
+**2.1 — CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes**  🟡 _In Progress (built + merged PR #19; sealed FAIL on the static bar — re-focus on fix + re-validate)_
+- Steps: author CloudFormation (YAML) for the PDE CodeBuild projects (a Lint/static-analysis project + a Deployment project) + a least-privilege service role, under the ZTIE-safe **`pdlv-`** naming prefix + `Project=PDE` tags (RD-009 — `pde-` is ZTIE's Hub namespace), so nothing collides with or alters existing ZTIE infrastructure in the Hub (Universal Criterion 5). Prove offline, then the static bar (cfn-lint / Checkov) live. _(2.1 is author + static proof only; the live Hub deploy is Story 2.3.)_
+- **As built:** `infra/codebuild-projects.yaml` (`pdlv-lint` + `pdlv-deploy` CodeBuild projects; `pdlv-codebuild-service-role` whose sole cross-account power is `sts:AssumeRole` into the three Story 1.1 `pde-member-execution-<env>` roles — no wildcard/admin, RD-006 orchestrate-and-pull) + `infra/validate_codebuild_projects.py` (stdlib offline checker, 32 invariants). Validator handover + LIVE-RUNBOOK authored. Merged to `main` via PR #19 (commit `33ff245`) — **merge is the work commit, not a validation**.
+- **Validation Result:** _FAIL — cfn-lint E1003 (Description > 1024 bytes) and checkov CKV_AWS_158 (Log Groups missing KMS), 2026-10-01, confirmed by Independent Validator. (The 32 custom invariants + adversarial grep checks — `pdlv-` namespace, `Project=PDE` tagging, IAM least-privilege/AssumeRole-only — PASSED; the sabotage test was invalidated by a CloudShell no-space-left-on-device, an environment issue, not a deliverable defect.) Tracked as VD-5; stays 🟡, fix + re-validate next._
+- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). _(Does NOT close Phase 2 — 2.2 + 2.3 remain.)_
 - **Advancement gate:** 2.3 cannot begin until 2.1 + 2.2 are ✅.
 
 **2.2 — Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates)**  ⬜ _Not Started_

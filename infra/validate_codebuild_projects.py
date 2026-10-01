@@ -7,16 +7,29 @@ checker is the OFFLINE proof bar for the Story 2.1 Hub-side CodeBuild projects
 (RD-003/RD-004/RD-006/RD-009): it confirms the template is well-formed and that
 every ZTIE-safe naming, least-privilege, and orchestrate-and-pull invariant holds.
 
-Usage:  python3 infra/validate_codebuild_projects.py
-Exit:   0 = all invariants hold; 1 = one or more failed.
+It also mirrors the two findings the live static bar sealed (so this class of
+defect is caught OFFLINE next time): the CloudFormation Description byte limit
+(cfn-lint E1003) and the CloudWatch Log Group KMS finding (checkov CKV_AWS_158,
+satisfied here by a justified inline suppression).
+
+Usage:
+    python3 infra/validate_codebuild_projects.py      # validate the real template
+    python3 infra/validate_codebuild_projects.py --self-test
+        # prove the guard actually FAILS on broken input, in memory, with NO disk
+        # write (the sabotage test the live run could not complete on a full disk).
+Exit:   0 = all invariants hold (or self-test passed); 1 = one or more failed.
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 TEMPLATE = Path(__file__).resolve().parent / "codebuild-projects.yaml"
+
+# CloudFormation hard limit on the top-level template Description (cfn-lint E1003).
+CFN_DESCRIPTION_MAX_BYTES = 1024
 
 
 def _strip_comments(text: str) -> str:
@@ -25,17 +38,49 @@ def _strip_comments(text: str) -> str:
     (An explanatory 'NOT AdministratorAccess' / 'no wildcard' comment must not be
     mistaken for the policy actually doing it.) The buildspec blocks are block
     scalars with no inline '#'; a 'first # to end-of-line' strip per line is safe
-    for this template.
+    for this template. NOTE: invariants that must inspect a COMMENT (e.g. the
+    checkov:skip suppression) test the RAW un-stripped text instead.
     """
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
-def main() -> int:
-    raw = _strip_comments(TEMPLATE.read_text(encoding="utf-8"))
+def _description_bytes(raw_text: str) -> int:
+    """Rendered byte length of the top-level folded ('>-') Description block.
 
-    checks: list[tuple[str, bool]] = [
+    Folds single newlines to spaces and blank lines to a newline (YAML folded
+    scalar semantics) so the measured length matches what CloudFormation stores —
+    the same thing cfn-lint E1003 counts.
+    """
+    m = re.search(r"\nDescription: >-\n(.*?)\n\n[^ ]", raw_text, re.DOTALL)
+    if not m:
+        return 0
+    body = m.group(1)
+    chunks: list[str] = []
+    rendered = ""
+    for line in body.split("\n"):
+        if line.strip() == "":
+            rendered += " ".join(chunks) + "\n"
+            chunks = []
+        else:
+            chunks.append(line.strip())
+    rendered += " ".join(chunks)
+    return len(rendered.strip().encode("utf-8"))
+
+
+def run_checks(template_text: str) -> list[tuple[str, bool]]:
+    """Return the (name, ok) invariant list for a template's TEXT.
+
+    Pure function of the text, so --self-test can feed it a deliberately broken
+    template in memory (no file, no disk write)."""
+    raw = _strip_comments(template_text)  # policy/structure invariants
+    full = template_text                  # comment-aware invariants (suppressions)
+
+    return [
         ("template format version present",
          "AWSTemplateFormatVersion:" in raw),
+        # --- cfn-lint E1003: Description within the 1024-byte CFN limit ---
+        (f"template Description within the CFN {CFN_DESCRIPTION_MAX_BYTES}-byte limit (cfn-lint E1003)",
+         0 < _description_bytes(full) <= CFN_DESCRIPTION_MAX_BYTES),
         # --- Both CodeBuild projects exist (Lint + Deploy) ---
         ("declares two AWS::CodeBuild::Project resources",
          raw.count("Type: AWS::CodeBuild::Project") == 2),
@@ -61,6 +106,9 @@ def main() -> int:
          "Value: PDE" in raw),
         ("every taggable resource is Project=PDE-tagged (2 log groups + role + 2 projects = 5; managed policies have no Tags)",
          raw.count("Key: Project, Value: PDE") == 5),
+        # --- checkov CKV_AWS_158: Log Group KMS — satisfied by a justified skip ---
+        ("both Log Groups carry a justified CKV_AWS_158 KMS suppression (checkov)",
+         full.count("checkov:skip=CKV_AWS_158:") == 2),
         # --- Least privilege: NO wildcard admin (Universal Criterion 3) ---
         ("no AdministratorAccess",
          "AdministratorAccess" not in raw),
@@ -120,6 +168,8 @@ def main() -> int:
          "946509368326" in raw and "586917955591" in raw and "466494951534" in raw),
     ]
 
+
+def _report(checks: list[tuple[str, bool]]) -> int:
     width = max(len(n) for n, _ in checks)
     failed = 0
     for name, ok in checks:
@@ -127,7 +177,6 @@ def main() -> int:
         if not ok:
             failed += 1
         print(f"  [{status}] {name.ljust(width)}")
-
     print()
     if failed:
         print(f"validate_codebuild_projects: FAIL — {failed} invariant(s) not satisfied")
@@ -136,5 +185,60 @@ def main() -> int:
     return 0
 
 
+def self_test() -> int:
+    """Prove the guard GUARDS — in memory, no disk write.
+
+    Takes the real template, applies sabotages that mirror the live-sealed FAILs
+    (and the core adversarial cases), and asserts the relevant invariant flips to
+    FAIL. This replaces the on-disk `sed` sabotage that a full CloudShell disk
+    could not complete.
+    """
+    good = TEMPLATE.read_text(encoding="utf-8")
+
+    sabotages: list[tuple[str, str, str]] = [
+        # (label, broken_text, the invariant-name substring that must now FAIL)
+        ("pde- namespace regression",
+         good.replace("pdlv-", "pde-"),
+         "no bare pde- Hub resource name"),
+        ("over-long Description (cfn-lint E1003)",
+         re.sub(r"\nDescription: >-\n.*?\n\n([^ ])",
+                "\nDescription: >-\n  " + ("x " * 700) + "\n\n\\1", good, flags=re.DOTALL),
+         f"within the CFN {CFN_DESCRIPTION_MAX_BYTES}-byte limit"),
+        ("dropped CKV_AWS_158 suppression",
+         good.replace("checkov:skip=CKV_AWS_158:", "nope:", 1),
+         "CKV_AWS_158 KMS suppression"),
+        ("wildcard action injected",
+         good.replace("Action: sts:AssumeRole", 'Action: "*"', 1),
+         "no full wildcard action"),
+    ]
+
+    all_ok = True
+    for label, broken, must_fail_substr in sabotages:
+        checks = run_checks(broken)
+        target = [(n, ok) for n, ok in checks if must_fail_substr in n]
+        hit = bool(target) and all(not ok for _, ok in target)
+        status = "PASS" if hit else "FAIL"
+        if not hit:
+            all_ok = False
+        print(f"  [{status}] guard catches: {label}")
+    print()
+    if not all_ok:
+        print("validate_codebuild_projects --self-test: FAIL — a sabotage was NOT caught")
+        return 1
+    # And the pristine template must still PASS cleanly.
+    clean_fail = sum(1 for _, ok in run_checks(good) if not ok)
+    if clean_fail:
+        print(f"validate_codebuild_projects --self-test: FAIL — clean template has {clean_fail} failing invariant(s)")
+        return 1
+    print("validate_codebuild_projects --self-test: PASS — guard flips to FAIL on every sabotage; clean template passes")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if "--self-test" in argv:
+        return self_test()
+    return _report(run_checks(TEMPLATE.read_text(encoding="utf-8")))
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

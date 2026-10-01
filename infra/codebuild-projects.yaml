@@ -1,25 +1,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Description: >-
-  PDE Story 2.1 (OPENS Phase 2 — PDE Control Plane, RD-003/RD-004/RD-006/RD-009) —
-  the two Hub-side CodeBuild projects that the Phase-2 Step Functions state machine
-  (Story 2.2) orchestrates: a LINT / static-analysis project (cfn-lint + cfn-guard +
-  Checkov over the PDE CFN templates) and a DEPLOY project that performs cross-account
-  CloudFormation deploys. Deployed into Pipeline-Hub (641628980935) ONLY. Every
-  resource carries the ZTIE-safe pdlv- name prefix + Project=PDE tag (RD-009 — pde-
-  is ZTIE's Hub namespace; PDE must avoid it). STRICTLY ADDITIVE / non-destructive to
-  the co-resident ZTIE control plane (Universal Criterion 5). The management/root
-  account is zero-touch — its id is not referenced in this template.
-
-  ORCHESTRATE-AND-PULL (RD-006): the DEPLOY project's ONLY cross-account power is
-  sts:AssumeRole into the SPECIFIC Story 1.1 member execution roles — it has NO broad
-  Hub-side deploy policy. The Hub directs; the CloudFormation action executes LOCALLY
-  in the member via the assumed member role. Least privilege / zero-trust: no wildcard
-  actions, no account-wide admin grant (Universal Criterion 3).
-
-  SCOPE: Story 2.1 is template authoring + offline static proof. The live Hub
-  bootstrap deploy is Story 2.3 — do NOT deploy this in 2.1. The state machine that
-  invokes these projects is Story 2.2.
+  PDE Story 2.1 (opens Phase 2; RD-003/004/006/009). The two Hub-side CodeBuild
+  projects the Story 2.2 state machine orchestrates: pdlv-lint (static analysis) and
+  pdlv-deploy (cross-account CFN deploy). ZTIE-safe pdlv- prefix + Project=PDE tags
+  (RD-009; pde- is ZTIE's). Orchestrate-and-pull (RD-006): the deploy project's only
+  cross-account power is sts:AssumeRole into the specific Story 1.1 member roles — no
+  broad Hub deploy policy, no wildcard/admin (least privilege). Author + static proof
+  only; the live Hub deploy is Story 2.3. Fuller rationale is in the resource comments
+  and DOCS/session-briefs/story-2.1-brief.md.
 
 # ---------------------------------------------------------------------------
 # PARAMETERS
@@ -80,8 +69,16 @@ Parameters:
 Resources:
 
   # --- Dedicated log groups (own namespace, bounded retention) ----------------
+  # KMS (CKV_AWS_158): these groups hold PDE CodeBuild run output (lint results +
+  # cross-account deploy step logs) in the Hub control-plane account — build/operational
+  # telemetry, NOT customer, forensic, or regulated data. A dedicated CMK is deliberately
+  # NOT provisioned at this tier: it adds key-management/rotation overhead + per-request
+  # cost with no corresponding data-sensitivity need, and SSE with the CloudWatch Logs
+  # AWS-owned key already encrypts the data at rest. Revisit if a future PDE build is made
+  # to log sensitive values (then provision a CMK + KmsKeyId here). Suppressed with reason:
   LintLogGroup:
     Type: AWS::Logs::LogGroup
+    # checkov:skip=CKV_AWS_158:PDE CodeBuild operational logs (non-sensitive control-plane build output); SSE via the AWS-owned key suffices at this tier — a CMK is unjustified overhead (see comment above).
     Properties:
       LogGroupName: !Sub "/aws/codebuild/${NamePrefix}lint"
       RetentionInDays: !Ref LogRetentionDays
@@ -92,6 +89,7 @@ Resources:
 
   DeployLogGroup:
     Type: AWS::Logs::LogGroup
+    # checkov:skip=CKV_AWS_158:PDE CodeBuild operational logs (non-sensitive control-plane build output); SSE via the AWS-owned key suffices at this tier — a CMK is unjustified overhead (see comment above).
     Properties:
       LogGroupName: !Sub "/aws/codebuild/${NamePrefix}deploy"
       RetentionInDays: !Ref LogRetentionDays

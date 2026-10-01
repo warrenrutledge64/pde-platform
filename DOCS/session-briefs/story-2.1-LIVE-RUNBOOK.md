@@ -15,9 +15,18 @@
 > Dev `946509368326`, Sandbox `586917955591`, Prod `466494951534`; management/root
 > `467866449172` zero-touch; Pipeline-Forensics `360999005254` is ZTIE's, not PDE.
 >
-> **Artifact:** `infra/codebuild-projects.yaml` (offline-proven — 32 invariants via
-> `python3 infra/validate_codebuild_projects.py`). Story 2.1 stays 🟡 until the
-> validator seals a PASS on the static-bar output below.
+> **Artifact:** `infra/codebuild-projects.yaml` (offline-proven — 34 invariants via
+> `python3 infra/validate_codebuild_projects.py`, plus `--self-test`). Story 2.1 stays
+> 🟡 until the validator seals a PASS on the static-bar output below.
+>
+> **RE-VALIDATION (attempt 2):** attempt 1 sealed FAIL — cfn-lint E1003 (Description
+> > 1024 B) + checkov CKV_AWS_158 (Log Group KMS). Both fixed on branch
+> `fix/story-2.1-static-bar`: the Description is shortened (now ~624 B) and each Log
+> Group carries a justified `# checkov:skip=CKV_AWS_158:` suppression (PDE CodeBuild
+> operational logs — non-sensitive control-plane build output; AWS-owned-key SSE
+> suffices at this tier). The offline checker gained matching invariants + an in-memory
+> `--self-test` (the on-disk `sed` sabotage was replaced because a full CloudShell disk
+> invalidated attempt 1's guard test). Validate on `fix/story-2.1-static-bar`.
 
 ---
 
@@ -32,8 +41,8 @@ get onto this story's branch (the 2.1 files are NOT on `main`):
 aws sts get-caller-identity --query Account --output text   # expect 641628980935
 cd ~/pde-platform                                           # the cloned repo
 git fetch origin
-git checkout feature/story-2.1
-git rev-parse --abbrev-ref HEAD                             # expect: feature/story-2.1
+git checkout fix/story-2.1-static-bar                       # the re-validation branch (attempt 2)
+git rev-parse --abbrev-ref HEAD                             # expect: fix/story-2.1-static-bar
 git log --oneline -1                                        # pin this SHA as <HEAD-SHA>
 ls -1 infra/codebuild-projects.yaml infra/validate_codebuild_projects.py
 ```
@@ -45,7 +54,9 @@ ls -1 infra/codebuild-projects.yaml infra/validate_codebuild_projects.py
 
 ```bash
 python3 infra/validate_codebuild_projects.py
-# expect: validate_codebuild_projects: PASS — all 32 CodeBuild invariants hold
+# expect: validate_codebuild_projects: PASS — all 34 CodeBuild invariants hold
+#   (34 includes the two added after attempt-1's sealed FAIL: the Description
+#    1024-byte limit (cfn-lint E1003) and the CKV_AWS_158 KMS suppression.)
 ```
 
 ## STEP 2 — Static bar (cfn-lint + Checkov; cfn-guard optional)
@@ -80,12 +91,12 @@ grep -nE 'Resource:\s*["'\'']\*["'\'']' infra/codebuild-projects.yaml || echo "n
 grep -n 'sts:AssumeRole' infra/codebuild-projects.yaml
 grep -n 'role/${MemberRoleName}-' infra/codebuild-projects.yaml
 
-# Prove the checker actually GUARDS (temporarily break an invariant, expect FAIL):
-cp infra/codebuild-projects.yaml /tmp/cb.bak
-sed -i 's/pdlv-/pde-/' infra/codebuild-projects.yaml
-python3 infra/validate_codebuild_projects.py; echo "exit=$?"   # expect FAIL + exit=1
-cp /tmp/cb.bak infra/codebuild-projects.yaml                    # restore
-python3 infra/validate_codebuild_projects.py; echo "exit=$?"   # expect PASS + exit=0
+# Prove the checker actually GUARDS — in memory, NO disk write (so a full disk
+# cannot invalidate it, the attempt-1 lesson). The --self-test sabotages the
+# template in RAM and asserts each guard flips to FAIL, then that the clean
+# template still passes:
+python3 infra/validate_codebuild_projects.py --self-test; echo "exit=$?"
+# expect: PASS — guard flips to FAIL on every sabotage; clean template passes, exit=0
 ```
 
 ## STEP 4 — Zero-deploy confirmation (Universal Criteria 1 & 5)
