@@ -18,7 +18,7 @@
 > Dev `946509368326`, Sandbox `586917955591`, Prod `466494951534`; management/root
 > `467866449172` zero-touch; Pipeline-Forensics `360999005254` is ZTIE's, not PDE.
 >
-> **Artifact:** `infra/state-machine.yaml` (offline-proven — 48 invariants via
+> **Artifact:** `infra/state-machine.yaml` (offline-proven — 49 invariants via
 > `python3 infra/validate_state_machine.py`, plus `--self-test`). Story 2.2 stays
 > 🟡 until the validator seals a PASS on the static-bar output below.
 
@@ -43,13 +43,31 @@ Use the hardened launch pad from Story 1.2
 path) and confirm `LAUNCH-PAD VERIFY: PASS` BEFORE anything else. Then get onto this
 story's branch (the 2.2 files are NOT on `main`):
 
+> **AUTHORITATIVE SOURCE — clone THIS repo, nothing else (OD-008, attempt-1 execution
+> failure):** the PDE repo is **GitHub `warrenrutledge64/pde-platform`**, cloned
+> token-auth per the Story 1.2 launch pad. It is **NOT** a CodeCommit repo and is
+> **NOT** named `pde-hub` — a clone of
+> `https://git-codecommit.us-east-1.amazonaws.com/v1/repos/pde-hub/` returns
+> `repository not found` and every downstream step cascades into "file not found".
+
 ```bash
 aws sts get-caller-identity --query Account --output text   # expect 641628980935
-cd ~/pde-platform                                           # the cloned repo
+# Clone the CORRECT repo if it is not already on disk (token-auth per Story 1.2; NOT CodeCommit, NOT pde-hub):
+#   git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+cd ~/pde-platform                                           # the cloned GitHub repo
+git remote -v                                               # expect github.com/warrenrutledge64/pde-platform (NOT codecommit / pde-hub)
 git fetch origin
 git checkout feature/story-2.2                              # this story's branch
+git reset --hard origin/feature/story-2.2                   # pin EXACTLY the remote tip (no stale local commit)
 git rev-parse --abbrev-ref HEAD                             # expect: feature/story-2.2
 git log --oneline -1                                        # pin this SHA as <HEAD-SHA>
+
+# TARGET-LOCK — you MUST be on the FIXED commit, or STOP (attempt-4 validated the stale
+# pre-fix commit 36cbdb9 and re-found an already-fixed finding — the deploy-gap class).
+# The SNS at-rest-encryption fix (CKV_AWS_26) lives in 5f2b3b2+; prove it is on disk:
+grep -q 'KmsMasterKeyId' infra/state-machine.yaml \
+  || { echo "TARGET-LOCK FAIL: KmsMasterKeyId absent — you are on a STALE pre-fix commit, STOP"; exit 1; }
+echo "TARGET-LOCK PASS: on the fixed commit (SNS SSE present)"
 
 # FAIL-LOUD VERIFY — the target files MUST exist, or STOP (bad checkout / full disk).
 # Do NOT use a bare `|| echo CLEAN` anywhere — a missing file must never read as a pass.
@@ -59,14 +77,33 @@ done
 echo "VERIFY PASS: Story 2.2 target files present"
 ```
 
-> If VERIFY fails, STOP — you are on the wrong branch/commit or out of disk. Do not
-> evaluate downstream output from a launch pad on the wrong code (the 2.1 lesson).
+> If TARGET-LOCK or VERIFY fails, STOP — you are on the wrong commit/branch or out of disk.
+> Do not evaluate downstream output from a launch pad on stale/wrong code (the attempt-4
+> lesson: a FAIL sealed against the pre-fix commit is a target-lock miss, not a defect).
+
+> **PREFERRED (checkout-proof) — run the static bar in CI, not by hand.** Attempts 3-5
+> all FAILed on the pre-fix file because a hand-run CloudShell clone kept going stale
+> (CKV_AWS_26 reported at lines 99-106, which is the OLD `36cbdb9` layout; the fix is at
+> line 110 on the tip). The durable fix (OD-007 clear-by #3 / OD-008) is the committed
+> workflow **`.github/workflows/static-bar.yml`**: on PR #24 GitHub checks out the EXACT
+> head commit and runs the same bar (both offline checkers + `--self-test`, `cfn-lint`,
+> `checkov -d infra`). The validator reads the Actions logs (they print the HEAD SHA +
+> confirm `KmsMasterKeyId`), so there is no human checkout to get stale. **If you cannot
+> use CI**, use a PINNED, FRESH clone instead of reusing the stale on-disk one:
+>
+> ```bash
+> cd ~ && rm -rf pde-platform
+> git clone --depth 1 --branch feature/story-2.2 https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+> cd pde-platform
+> git log --oneline -1                               # MUST be c226e60 / 5f2b3b2+ (NOT 36cbdb9)
+> grep -n KmsMasterKeyId infra/state-machine.yaml    # MUST show line ~110
+> ```
 
 ## STEP 1 — Offline invariant checker (no network)
 
 ```bash
 python3 infra/validate_state_machine.py
-# expect: validate_state_machine: PASS — all 48 state-machine invariants hold
+# expect: validate_state_machine: PASS — all 49 state-machine invariants hold
 ```
 
 ## STEP 2 — Prove the checker actually GUARDS (in memory, NO disk write)
@@ -94,7 +131,7 @@ checkov -f infra/state-machine.yaml --framework cloudformation
 - `checkov` reports no failed checks that indicate a real least-privilege / hardening
   regression (CKV_AWS_158 should be the single, justified, SKIPPED Log Group finding;
   triage any informational findings against the DoD).
-- The offline checker is `PASS — all 48 invariants hold`.
+- The offline checker is `PASS — all 49 invariants hold`.
 
 ## STEP 4 — Spot-check the invariants by eye (adversarial)
 
@@ -113,6 +150,14 @@ grep -n 'Default: pdlv-deploy' infra/state-machine.yaml
 # No pde- Hub resource name (only pdlv-); exports are pdlv-*
 grep -nE '(StateMachineName|RoleName|TopicName|LogGroupName|ManagedPolicyName):' infra/state-machine.yaml
 grep -n 'Export:' -A1 infra/state-machine.yaml
+
+# Project=PDE tags — the template uses inline-map syntax "- { Key: Project, Value: PDE }",
+# so grep for THAT, not "Project: PDE" (a plain "Project: PDE" grep returns nothing here —
+# a false warning, not a missing tag; the offline checker counts these authoritatively):
+grep -n 'Key: Project, Value: PDE' infra/state-machine.yaml   # expect 4 (topic + log group + role + state machine)
+
+# At-rest encryption on the approval topic (checkov CKV_AWS_26 — the attempt-3 FAIL, now fixed):
+grep -n 'KmsMasterKeyId' infra/state-machine.yaml             # expect: KmsMasterKeyId: alias/aws/sns
 
 # Least privilege — these should return NOTHING (prove absence):
 grep -nE 'AdministratorAccess|PowerUserAccess|codebuild:\*|sns:\*' infra/state-machine.yaml || echo "none — good"
@@ -152,8 +197,15 @@ Record in `governance/RUNBOOK.md` Story 2.2 the validator's sealed one-line verd
 - **The `logs:*`-resource `Resource: "*"`** in the logging policy is the AWS-required
   log-*delivery* setup (not a data grant); the log-write actions (`CreateLogStream`/
   `PutLogEvents`) are scoped to this state machine's own log-group ARN.
-- **Checkov triage:** CKV_AWS_158 on the Log Group is a justified, SKIPPED finding
-  (operational control-plane telemetry; AWS-owned-key SSE suffices). Any real
-  wildcard/privilege finding is a FAIL.
+- **Checkov triage:** two encryption findings are addressed differently and both should
+  now be clean — **CKV_AWS_26** (SNS at-rest encryption) is REALLY FIXED on the
+  `ApprovalTopic` via `KmsMasterKeyId: alias/aws/sns` (the approval channel carries the
+  task token + decision, so it gets real SSE, not a skip); **CKV_AWS_158** on the Log
+  Group is a justified, SKIPPED finding (operational control-plane telemetry; AWS-owned-key
+  SSE suffices). Checkov should report **0 failed checks** (CKV_AWS_158 shown as SKIPPED).
+  Any real wildcard/privilege finding is a FAIL.
+- **`Project=PDE` grep caveat:** the tags use inline-map syntax
+  `- { Key: Project, Value: PDE }`; grep for `Key: Project, Value: PDE` (expect 4), not a
+  bare `Project: PDE` (which returns nothing — a false warning, not a missing tag).
 - **Pipeline-Forensics (`360999005254`) is ZTIE's — never a target.** Management/root
   `467866449172` is zero-touch.
