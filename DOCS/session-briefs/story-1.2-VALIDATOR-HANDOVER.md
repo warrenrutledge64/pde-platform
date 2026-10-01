@@ -71,30 +71,46 @@ landed on a commit (`330487…`) that exists NOWHERE in the repo, so the hardene
 was never executed. For attempt 3, make the launch-pad setup a HARD PRECONDITION of your
 DoD: require the operator to run the single **STEP 0 ONE-SHOT BOOTSTRAP** block in
 DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md and paste its final `LAUNCH-PAD VERIFY:
-PASS` line (HEAD on `feature/story-1.2`, remediation commit `677b632` present, scripts
-on disk, no token in `.git/config`) BEFORE any STEP 1+ output is accepted. If that line
-is absent, seal FAIL/INCONCLUSIVE on the spot — do not evaluate downstream output from a
-launch pad that is on the wrong code.
+PASS` line (HEAD on `feature/story-1.2`, remediation commit `677b632` present as an
+ancestor — current tip is `6a527a6`, scripts on disk, no token in `.git/config`) BEFORE
+any STEP 1+ output is accepted. If that line is absent, seal FAIL/INCONCLUSIVE on the
+spot — do not evaluate downstream output from a launch pad that is on the wrong code.
+
+# NEW CONTEXT SINCE ATTEMPT 2 (govern against stale assumptions — read before authoring)
+A live Hub check during these attempts found **18 pre-existing `pde-*` CloudFormation
+stacks already in Pipeline-Hub `641628980935`** (an unattributed shadow footprint, in
+neither the PDE nor ZTIE BOM). This produced governance changes you should treat as
+current ground truth:
+- **RD-009 (ratified):** PDE's Hub resource prefix is **`pdlv-`**, NOT `pde-` (which is
+  in use by ZTIE/other work). This affects Story 2.1+, not 1.2's deliverable — but note
+  it so you do not flag "`pde-`" naming as a 1.2 defect.
+- **OD-004 (PAID), OD-005 / OD-006 (open):** namespace collision resolved; the shadow
+  footprint + program-level BOM maintenance are tracked. Out of scope for the 1.2 verdict;
+  listed so you have the full picture.
+- Story 1.2 itself **deploys nothing** and is unaffected by the above — its DoD is still
+  Option-B (reachability + tooling + token-auth repo access + the committed gate script
+  proving out OFFLINE). The live cross-account assume remains deferred (VD-3b, Phase 2).
 
 # WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
 - Story / PR: Story 1.2 — PR #17 (branch `feature/story-1.2` -> `main`).
 - Pinned commits:  base `1ba738bd899911e6e16009c909f0363981724681`
-                   head `677b632bec48e629315a07953b183d396eccad49`  (attempt-2 remediation)
+                   head `6a527a62bb6ff23aaebbefc5516d035d3008153a`  (current branch tip)
 - The 1.2 artifacts live on the branch `feature/story-1.2`, NOT on `main` (the PR is
   unmerged). Get on the right code FIRST, or every file check will fail:
     git fetch origin
     git checkout feature/story-1.2
     git rev-parse --abbrev-ref HEAD        # expect: feature/story-1.2
 - Fetch the raw diff yourself (do not trust a summary):
-    git diff 1ba738bd899911e6e16009c909f0363981724681..677b632bec48e629315a07953b183d396eccad49
+    git diff 1ba738bd899911e6e16009c909f0363981724681..6a527a62bb6ff23aaebbefc5516d035d3008153a
 - FULL context at the exact head commit (a diff is not enough — read the whole files):
-    git show 677b632:scripts/phase1_gate.py
-    git show 677b632:scripts/test_phase1_gate.py
-    git show 677b632:DOCS/CLOUDSHELL_BOOTSTRAP.md
-    git show 677b632:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md    # includes the new STEP 2a VERIFY gate
-    git show 677b632:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4; attempt-1 FAIL recorded)
+    git show 6a527a6:scripts/phase1_gate.py
+    git show 6a527a6:scripts/test_phase1_gate.py
+    git show 6a527a6:scripts/bootstrap_launchpad.sh                   # the named launch-pad bootstrap
+    git show 6a527a6:DOCS/CLOUDSHELL_BOOTSTRAP.md
+    git show 6a527a6:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md    # STEP 0 one-shot bootstrap + VERIFY
+    git show 6a527a6:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4) + OD-004/005/006
   (Also read the trust-fabric contract the gate script targets, unchanged this story:
-    git show 677b632:infra/member-execution-role.yaml )
+    git show 6a527a6:infra/member-execution-role.yaml )
 
 # ENVIRONMENT FACTS (so you can author account-specific steps)
 - Pipeline-Hub (where CloudShell + the gate run): 641628980935
