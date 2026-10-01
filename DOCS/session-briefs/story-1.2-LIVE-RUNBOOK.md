@@ -32,20 +32,45 @@
 ## STEP 0 — Stand up + VERIFY the launch pad
 
 > **`pde-platform` is a PRIVATE repo** — a `raw.githubusercontent.com` URL will NOT
-> fetch anonymously, so there is no public one-liner. The reliable path is the inline
-> one-shot block below: it prompts for your PAT, hands it to git via the credential
-> helper (never into the URL), clones + checks out `feature/story-1.2`, and runs the
-> fail-loud VERIFY. Copy the WHOLE block; replace nothing but the PAT at the prompt.
+> fetch anonymously, so there is no public one-liner.
+>
+> **⚠ NEVER paste a bare `set -e` into interactive CloudShell** — if any later command
+> returns non-zero, `set -e` **terminates your login shell** (the session "resets").
+> This bit Story 1.2 (session reset after a pasted `set -e`). Both paths below avoid
+> that: PATH A has no `set -e`; PATH B runs it inside a child `bash` (a subshell, so it
+> can't kill your session).
+
+### PATH A — named script (RECOMMENDED: 3 short lines, nothing big to mis-paste)
+
+Run these **one line at a time**. No `set -e`. The token goes at git's password prompt
+(paste your **PAT**, not an account password); the committed script then sets up the
+credential helper, checks out the branch, and runs the fail-loud VERIFY.
 
 ```bash
-# CONTEXT: Pipeline-Hub 641628980935 CloudShell, us-east-1
+cd ~ && rm -rf ~/.git pde-platform
+```
+```bash
+git clone https://warrenrutledge64@github.com/warrenrutledge64/pde-platform.git
+```
+```bash
+cd pde-platform && git checkout feature/story-1.2 && bash scripts/bootstrap_launchpad.sh
+```
+
+**PASS:** the script ends with **`LAUNCH-PAD VERIFY: PASS`** (`641628980935` confirmed,
+HEAD on `feature/story-1.2`, scripts on disk, no token in `.git/config`).
+
+### PATH B — inline one-shot (reset-safe heredoc; copy the WHOLE block)
+
+Runs entirely inside a child `bash` (`bash <<'EOF' … EOF`), so the `set -e` inside it
+can never terminate your interactive session. Copy from `bash <<'EOF'` through `EOF`.
+It prompts once for your PAT (silent) and keeps the token out of the URL/`.git/config`.
+
+```bash
+bash <<'EOF'
 set -e
 aws sts get-caller-identity --query Account --output text    # MUST print 641628980935
-# GUARD: $HOME must NOT itself be a git repo. A stray `git init` in ~ hijacks the
-# clone (Story 1.2 attempts 1-3 root cause: ~ had HEAD "Initial commit" 3304878, so
-# the gate scripts never landed). This stops with a clear fix instead of proceeding.
 if [ "$(git -C "$HOME" rev-parse --show-toplevel 2>/dev/null)" = "$HOME" ]; then
-  echo "✗ \$HOME is a git repo — run:  rm -rf ~/.git ~/pde-platform  then re-run this block"; return 2>/dev/null || exit 2
+  echo "✗ \$HOME is a git repo — run:  rm -rf ~/.git ~/pde-platform  then re-run"; exit 2
 fi
 cd ~ && rm -rf pde-platform
 git config --global credential.helper store
@@ -56,7 +81,6 @@ git clone https://github.com/warrenrutledge64/pde-platform.git   # CLEAN url —
 cd pde-platform
 git fetch origin && git checkout feature/story-1.2
 set +e
-# ---- launch-pad VERIFY (fail-loud) ----
 ok=1
 echo "HEAD branch: $(git rev-parse --abbrev-ref HEAD)   HEAD sha: $(git rev-parse --short HEAD)"
 git merge-base --is-ancestor 677b632 HEAD 2>/dev/null && echo "✓ remediation commit 677b632 present" || { echo "✗ remediation commit 677b632 NOT present — wrong branch/code"; ok=0; }
@@ -66,15 +90,11 @@ done
 git config --get remote.origin.url | grep -q '@' && { echo "✗ TOKEN in remote URL"; ok=0; } || echo "✓ remote URL carries no token"
 grep -Rqs '@github.com' .git/config && { echo "✗ credential-pattern in .git/config"; ok=0; } || echo "✓ .git/config clean"
 [ "$ok" = 1 ] && echo "LAUNCH-PAD VERIFY: PASS" || echo "LAUNCH-PAD VERIFY: FAIL — do NOT proceed; paste this output back"
+EOF
 ```
 
-**PASS:** the first line prints `641628980935`, HEAD is on `feature/story-1.2`, and the
-last line is **`LAUNCH-PAD VERIFY: PASS`**.
+**PASS (either path):** the output ends with **`LAUNCH-PAD VERIFY: PASS`**.
 
-> **Equivalent:** if you already cloned + checked out `feature/story-1.2` by hand, you
-> can instead run `bash scripts/bootstrap_launchpad.sh` (the same VERIFY, as a named
-> script). The inline block above and the script are interchangeable.
->
 > This supersedes the step-by-step STEP 2 / STEP 2a below (kept for reference / manual
 > runs). Once you have seen `LAUNCH-PAD VERIFY: PASS`, continue to STEP 1.
 
