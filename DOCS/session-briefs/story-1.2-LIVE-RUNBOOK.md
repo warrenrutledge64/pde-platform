@@ -41,22 +41,63 @@ cfn-lint --version                                           # confirm on PATH
 **PASS:** AWS CLI v2, Python 3, boto3, and cfn-lint each print a version with no
 error.
 
-## STEP 2 — Token-auth repo access (clone + scrub the token)
+## STEP 2 — Token-auth repo access (token NEVER in the remote URL)
+
+> **Why this changed (attempt-1 FAIL, 2026-09-30):** the old flow embedded the
+> token in the clone URL and then relied on a manual scrub line — which was skipped,
+> leaving the PAT in `.git/config`. **New rule: the token is never written into the
+> remote URL at all.** It is handed to git ONCE via a credential helper, so there is
+> nothing to scrub.
 
 ```bash
 cd ~
-git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+rm -rf pde-platform                                          # clean start (idempotent)
+# Hand the PAT to git ONCE, out of the URL and off the command line (read -rs = no echo):
+git config --global credential.helper store                 # (CloudShell $HOME is per-user)
+read -rs -p "GitHub PAT: " GH_PAT && echo
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+unset GH_PAT                                                 # drop it from the shell env
+# Clone over a CLEAN URL (no token in it); git pulls the PAT from the helper:
+git clone https://github.com/warrenrutledge64/pde-platform.git
 cd pde-platform
-git remote set-url origin https://github.com/warrenrutledge64/pde-platform.git
-git remote -v                                                # confirm NO token in the URL
-ls infra/member-execution-role.yaml scripts/phase1_gate.py   # templates/scripts on disk
 ```
 
-**PASS:** the clone succeeds, the remote URL has no embedded token, and the Story
-1.1 template + the Phase-1 gate script are present on disk.
+**Then check out THIS story's branch (the 1.2 artifacts are on `feature/story-1.2`,
+NOT yet on `main`):**
 
-> **Secret hygiene:** if the `<TOKEN>` ever appears in terminal output, **rotate it
-> immediately** in GitHub. Prefer a fine-grained PAT scoped to this repo only.
+```bash
+git fetch origin
+git checkout feature/story-1.2
+git rev-parse --abbrev-ref HEAD                              # expect: feature/story-1.2
+```
+
+**PASS:** the clone succeeds and HEAD is on `feature/story-1.2`.
+
+> **Secret hygiene:** the PAT lives only in `~/.git-credentials` (mode 600), never in
+> `.git/config` and never on screen. Prefer a fine-grained PAT scoped to THIS repo
+> (contents: read). If a token ever appears in terminal output, **rotate it
+> immediately** in GitHub. To remove it after the session: `rm -f ~/.git-credentials`.
+
+## STEP 2a — VERIFY the launch pad (fail-loud gate — attempt-1 would have stopped here)
+
+Run this ONE block. It fails loudly (`✗`) if the pinned commit is missing, the
+scripts are not on disk, or a token lingers in the git config — the exact three
+things that sank attempt 1. **Do not proceed to STEP 3 unless every line prints `✓`.**
+
+```bash
+# in ~/pde-platform, on feature/story-1.2
+ok=1
+git cat-file -e fcfe4f3d 2>/dev/null && echo "✓ pinned commit fcfe4f3d present" || { echo "✗ pinned commit MISSING — you are not on the fetched branch"; ok=0; }
+for f in scripts/phase1_gate.py scripts/test_phase1_gate.py infra/member-execution-role.yaml DOCS/CLOUDSHELL_BOOTSTRAP.md; do
+  [ -f "$f" ] && echo "✓ on disk: $f" || { echo "✗ MISSING: $f"; ok=0; }
+done
+if git config --get remote.origin.url | grep -q '@'; then echo "✗ TOKEN in remote URL — scrub it"; ok=0; else echo "✓ remote URL carries no token"; fi
+if grep -Rqs '@github.com' .git/config; then echo "✗ credential-pattern in .git/config"; ok=0; else echo "✓ .git/config is clean"; fi
+[ "$ok" = 1 ] && echo "LAUNCH-PAD VERIFY: PASS" || echo "LAUNCH-PAD VERIFY: FAIL — fix the ✗ lines before STEP 3"
+```
+
+**PASS:** every line is `✓` and the last line reads `LAUNCH-PAD VERIFY: PASS`.
 
 ## STEP 3 — The committed Phase-1 gate script proves out offline
 
@@ -88,11 +129,13 @@ a committed script; it deploys nothing).
 
 1. **STEP 0** — CloudShell is in Pipeline-Hub `641628980935`.
 2. **STEP 1** — AWS CLI v2, Python 3, boto3, cfn-lint all present and runnable.
-3. **STEP 2** — token-auth clone works; repo (templates + gate script) is on disk;
-   remote URL carries no token.
-4. **STEP 3** — the committed gate script passes its offline proof (24 invariants)
+3. **STEP 2** — token-auth clone works via a credential helper (no token in the URL)
+   and HEAD is on `feature/story-1.2`.
+4. **STEP 2a** — `LAUNCH-PAD VERIFY: PASS` — pinned commit present, all four artifacts
+   on disk, and no token in the git config.
+5. **STEP 3** — the committed gate script passes its offline proof (24 invariants)
    and `--help` runs.
-5. **STEP 4** — management account is zero-touch (no `pde-` stacks).
+6. **STEP 4** — management account is zero-touch (no `pde-` stacks).
 
 > **Deferred to Phase 2 (NOT a failure, NOT in this gate):** the live Hub→member
 > `sts:AssumeRole` run of `scripts/phase1_gate.py` — it needs `pde-hub-orchestrator`,

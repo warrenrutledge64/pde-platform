@@ -72,39 +72,47 @@ pip install --user cfn-guard-rules checkov bandit   # policy-as-code + IaC/py sc
 
 ## 2. Token-authenticated repository access (clone PDE)
 
-GitHub is **source control only** (PDE constraint). Clone over **HTTPS with a
-token embedded in the URL** — the convention for CloudShell, which has no SSH keys.
+GitHub is **source control only** (PDE constraint). CloudShell has no SSH keys, so
+authenticate over HTTPS — but **never embed the token in the clone URL**. Hand the
+PAT to git ONCE via a credential helper, so it lands only in `~/.git-credentials`
+(mode 600) and never in `.git/config`. (Attempt 1 of the Story 1.2 live gate FAILED
+precisely because a token-in-URL clone left the PAT in `.git/config`.)
 
-> **Secret hygiene (hard rule):** a Personal Access Token (`ghp_…`) embedded in a
-> clone URL **will appear in your shell history and can leak into terminal
-> output**. If a token is ever echoed to the transcript, **rotate it immediately**
-> in GitHub (Settings → Developer settings → Tokens). Prefer a **fine-grained PAT**
-> scoped to *only* this repository with *read* (and, if you push from here,
-> *contents: write*) permission.
-
-Clone (replace `<TOKEN>` with your PAT — do not paste the real token into any file):
+> **Secret hygiene (hard rule):** a Personal Access Token embedded in a clone URL
+> ends up **in the remote URL inside `.git/config` and in your shell history**. Use
+> the credential-helper flow below instead. Prefer a **fine-grained PAT** scoped to
+> *only* this repository (*contents: read*, plus *write* if you push from here). If a
+> token is ever echoed to the transcript, **rotate it immediately** in GitHub.
 
 ```bash
 cd ~
-git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+rm -rf pde-platform                                   # clean start (idempotent)
+git config --global credential.helper store
+read -rs -p "GitHub PAT: " GH_PAT && echo            # silent; nothing on screen
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+unset GH_PAT
+git clone https://github.com/warrenrutledge64/pde-platform.git   # CLEAN url, no token
 cd pde-platform
-git rev-parse --abbrev-ref HEAD       # confirm the branch you expect
 ```
 
-Keep the token out of the on-disk git config (the clone writes it into
-`.git/config` remote URL). After cloning, scrub it from the stored remote and let
-git prompt / use a credential helper instead:
+**Check out the story's branch** — PDE work-in-progress lives on a feature branch,
+not `main`, so a plain clone of `main` will be MISSING the story's files:
 
 ```bash
-# Replace the token-embedded remote with a clean HTTPS URL (token no longer at rest):
-git remote set-url origin https://github.com/warrenrutledge64/pde-platform.git
-git remote -v                          # confirm no token in the URL
+git fetch origin
+git checkout feature/story-1.2          # the branch carrying the current story's work
+git rev-parse --abbrev-ref HEAD         # confirm you are on the expected branch
+git config --get remote.origin.url      # confirm NO '@token@' in the URL
 ```
 
-> Why this matters for Story 1.1's lesson: the validator's CloudShell *did not have
-> the repo*, so `aws cloudformation deploy --template-file infra/…` failed with
-> `Invalid template path`. **The clone above is a prerequisite for every deploy** —
-> the template must be on disk first. That is exactly what Story 1.2 establishes.
+> Why this matters (Story 1.1 + 1.2-attempt-1 lessons combined): the validator's
+> CloudShell *did not have the repo on the right branch*, so every
+> `--template-file infra/…` / `scripts/…` reference failed `No such file or
+> directory` and `git show <sha>` was `invalid object name`. **Cloning AND checking
+> out the right branch is a prerequisite for every deploy** — the templates/scripts
+> must be on disk first. Verify with the launch-pad check in the live runbook before
+> doing anything else.
 
 ---
 
@@ -167,8 +175,11 @@ In short, from Pipeline-Hub `641628980935` CloudShell:
 
 1. `aws sts get-caller-identity` returns the Hub account `641628980935`.
 2. AWS CLI v2, Python 3, Boto3, and cfn-lint are all present and runnable.
-3. The repo clones over token-auth HTTPS and the templates/scripts are on disk.
-4. The committed gate script passes its offline proof (`test_phase1_gate.py`) and
+3. The repo clones over the credential-helper flow (**no token in the URL**) and
+   HEAD is on `feature/story-1.2`, so the templates/scripts are on disk.
+4. The **launch-pad VERIFY** block (runbook STEP 2a) returns `PASS` — pinned commit
+   present, all four artifacts on disk, no token in the git config.
+5. The committed gate script passes its offline proof (`test_phase1_gate.py`) and
    `--help` runs.
 
 On that recorded pass, Story 1.2 closes Phase 1 (restore tag + inventory row).
