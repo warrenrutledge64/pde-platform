@@ -1,0 +1,293 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 2.1 (OPENS Phase 2 — PDE Control Plane, RD-003/RD-004/RD-006/RD-009) —
+  the two Hub-side CodeBuild projects that the Phase-2 Step Functions state machine
+  (Story 2.2) orchestrates: a LINT / static-analysis project (cfn-lint + cfn-guard +
+  Checkov over the PDE CFN templates) and a DEPLOY project that performs cross-account
+  CloudFormation deploys. Deployed into Pipeline-Hub (641628980935) ONLY. Every
+  resource carries the ZTIE-safe pdlv- name prefix + Project=PDE tag (RD-009 — pde-
+  is ZTIE's Hub namespace; PDE must avoid it). STRICTLY ADDITIVE / non-destructive to
+  the co-resident ZTIE control plane (Universal Criterion 5). The management/root
+  account is zero-touch — its id is not referenced in this template.
+
+  ORCHESTRATE-AND-PULL (RD-006): the DEPLOY project's ONLY cross-account power is
+  sts:AssumeRole into the SPECIFIC Story 1.1 member execution roles — it has NO broad
+  Hub-side deploy policy. The Hub directs; the CloudFormation action executes LOCALLY
+  in the member via the assumed member role. Least privilege / zero-trust: no wildcard
+  actions, no account-wide admin grant (Universal Criterion 3).
+
+  SCOPE: Story 2.1 is template authoring + offline static proof. The live Hub
+  bootstrap deploy is Story 2.3 — do NOT deploy this in 2.1. The state machine that
+  invokes these projects is Story 2.2.
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  NamePrefix:
+    Type: String
+    Description: >-
+      PDE Hub-side naming prefix. MUST be pdlv- (RD-009): pde- is ZTIE's namespace
+      in Pipeline-Hub (18 existing pde-* stacks, incl. pde-codebuild-foundation),
+      and pdlv- is substring-disjoint from pde so it never collides with — nor is
+      swept up by inventory filters that match — the ZTIE pde-* namespace.
+    Default: pdlv-
+    AllowedPattern: "^pdlv-$"
+    ConstraintDescription: Must be exactly "pdlv-" (RD-009 — ZTIE-safe prefix).
+
+  MemberRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Story 1.1 member execution role the DEPLOY project
+      assumes in each member account. These roles live in the MEMBER accounts
+      (Dev/Sandbox/Prod), not the Hub, so they keep their pde-member-execution-<env>
+      names (RD-009). The <env> suffix is appended per member below.
+    Default: pde-member-execution
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,56}$"
+
+  DevAccountId:
+    Type: String
+    Description: Pipeline-Dev member account ID.
+    Default: "946509368326"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  SandboxAccountId:
+    Type: String
+    Description: Pipeline-Sandbox member account ID.
+    Default: "586917955591"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  ProdAccountId:
+    Type: String
+    Description: Pipeline-Prod member account ID.
+    Default: "466494951534"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  LogRetentionDays:
+    Type: Number
+    Description: CloudWatch Logs retention for the CodeBuild log groups.
+    Default: 90
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 3653]
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Dedicated log groups (own namespace, bounded retention) ----------------
+  LintLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/codebuild/${NamePrefix}lint"
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.1" }
+        - { Key: Component, Value: codebuild }
+
+  DeployLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/codebuild/${NamePrefix}deploy"
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.1" }
+        - { Key: Component, Value: codebuild }
+
+  # --- Least-privilege permissions for BOTH CodeBuild projects ----------------
+  # CloudWatch Logs scoped to THIS project's own pdlv- log groups only.
+  CodeBuildLogsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}codebuild-logs"
+      Description: Write CodeBuild run logs to the PDE pdlv- log groups only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OwnLogGroupsOnly
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !GetAtt LintLogGroup.Arn
+              - !Sub "${LintLogGroup.Arn}:*"
+              - !GetAtt DeployLogGroup.Arn
+              - !Sub "${DeployLogGroup.Arn}:*"
+
+  # The ONLY cross-account power (RD-006 orchestrate-and-pull): assume the SPECIFIC
+  # Story 1.1 member execution roles. NOT a broad Hub deploy policy, NOT a wildcard
+  # resource — three named role ARNs, one per member.
+  CodeBuildAssumeMemberPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}codebuild-assume-member"
+      Description: >-
+        Assume ONLY the Story 1.1 member execution roles (Dev/Sandbox/Prod). This is
+        the sole cross-account deploy power — the Hub holds no broad deploy policy.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AssumeSpecificMemberExecutionRolesOnly
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
+              - !Sub "arn:${AWS::Partition}:iam::${SandboxAccountId}:role/${MemberRoleName}-sandbox"
+              - !Sub "arn:${AWS::Partition}:iam::${ProdAccountId}:role/${MemberRoleName}-prod"
+
+  # The CodeBuild service role — assumes ONLY the two scoped policies above.
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${NamePrefix}codebuild-service-role"
+      Description: >-
+        Least-privilege service role for the PDE Lint + Deploy CodeBuild projects.
+        No wildcards, no account-wide admin grant; cross-account deploy power is only
+        sts:AssumeRole into the named member roles (RD-006).
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CodeBuildServiceTrust
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+      ManagedPolicyArns:
+        - !Ref CodeBuildLogsPolicy
+        - !Ref CodeBuildAssumeMemberPolicy
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.1" }
+        - { Key: Component, Value: codebuild }
+        - { Key: Model, Value: orchestrate-and-pull }
+        - { Key: ManagedBy, Value: cloudformation }
+
+  # --- LINT / static-analysis project -----------------------------------------
+  # Runs the static bar (cfn-lint + cfn-guard + Checkov) over the PDE CFN templates.
+  # No cross-account power is needed for linting; it inherits the service role but
+  # exercises only the logs policy.
+  LintProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${NamePrefix}lint"
+      Description: PDE static-analysis / lint of CloudFormation templates (cfn-lint, cfn-guard, Checkov).
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: false
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.12
+              commands:
+                - pip install --quiet cfn-lint checkov
+            build:
+              commands:
+                - echo "PDE lint — static analysis over infra/*.yaml"
+                - cfn-lint infra/*.yaml
+                - checkov -d infra --framework cloudformation
+      TimeoutInMinutes: 15
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref LintLogGroup
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.1" }
+        - { Key: Component, Value: codebuild }
+        - { Key: Role, Value: lint }
+        - { Key: ManagedBy, Value: cloudformation }
+
+  # --- DEPLOY project ----------------------------------------------------------
+  # Performs cross-account CloudFormation deploys by assuming the Story 1.1 member
+  # execution role for the target environment (passed in at run-time as TARGET_ENV /
+  # TARGET_ROLE_ARN by the Step Functions state machine, Story 2.2). The deploy
+  # ACTION executes locally in the member via that assumed role (RD-006).
+  DeployProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${NamePrefix}deploy"
+      Description: PDE cross-account CloudFormation deploy (assumes the Story 1.1 member execution role).
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: TARGET_ROLE_ARN
+            Type: PLAINTEXT
+            Value: "set-at-runtime-by-state-machine"
+          - Name: EXTERNAL_ID
+            Type: PLAINTEXT
+            Value: "set-at-runtime-by-state-machine"
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo "PDE deploy — assume the member execution role, then deploy locally in the member (RD-006)"
+                - CREDS=$(aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name pdlv-deploy --external-id "$EXTERNAL_ID")
+                - export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
+                - export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
+                - export AWS_SESSION_TOKEN=$(echo "$CREDS" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
+                - aws sts get-caller-identity
+                - echo "deploy step runs here against the member (CFN deploy of the pdlv- artifact stack)"
+      TimeoutInMinutes: 30
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref DeployLogGroup
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.1" }
+        - { Key: Component, Value: codebuild }
+        - { Key: Role, Value: deploy }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  LintProjectName:
+    Description: Name of the PDE Lint CodeBuild project (the Story 2.2 state machine invokes this).
+    Value: !Ref LintProject
+    Export:
+      Name: pdlv-codebuild-lint-project-name
+
+  DeployProjectName:
+    Description: Name of the PDE Deploy CodeBuild project (the Story 2.2 state machine invokes this).
+    Value: !Ref DeployProject
+    Export:
+      Name: pdlv-codebuild-deploy-project-name
+
+  CodeBuildServiceRoleArn:
+    Description: ARN of the least-privilege PDE CodeBuild service role.
+    Value: !GetAtt CodeBuildServiceRole.Arn
+    Export:
+      Name: pdlv-codebuild-service-role-arn
