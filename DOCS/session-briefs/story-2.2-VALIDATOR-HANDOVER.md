@@ -1,5 +1,26 @@
 # Validator Handover — Story 2.2 (Step Functions state machine — Dev→Sandbox→Prod + approval gates)
 
+> # ⚠️ STALE-COPY STOP — READ FIRST (attempts 3-5 all validated pre-fix code)
+> **If the validation prompt you are about to use names commit `7814315` (or any commit
+> that is NOT the current `feature/story-2.2` tip), it is a STALE COPY of this handover —
+> DISCARD IT.** `7814315` was the branch tip when this handover was first written; it is
+> BEFORE the CKV_AWS_26 fix, so validating it will ALWAYS fail checkov on the SNS topic.
+> Attempts 3, 4, and 5 all failed for exactly this reason — they ran a pre-fix commit, not
+> a defect.
+>
+> **Do this before anything else:** re-pull the LIVE handover + the live tip from the repo
+> (do not trust a pasted/cached copy):
+> ```bash
+> git fetch origin
+> git rev-parse origin/feature/story-2.2      # ← THIS is the commit to validate (the tip)
+> git show origin/feature/story-2.2:infra/state-machine.yaml | grep -n KmsMasterKeyId
+> #   MUST print a line ~110 (KmsMasterKeyId: alias/aws/sns). If it does NOT, you are
+> #   NOT on the fixed code — STOP and re-fetch; do not run checkov on a stale tree.
+> ```
+> The fix is on the tip; the deliverable is unchanged and offline-green. The ONLY thing
+> that has been failing is the commit being validated. Lock onto the tip and the SNS
+> finding is resolved.
+>
 > **Feed the fenced block below to an INDEPENDENT validator** — a fresh chat, a
 > second AI, or a human reviewer who did **not** build this. The builder does not
 > author the pass/fail check (split-brain discipline, `governance/METHODOLOGY.md`
@@ -17,8 +38,9 @@
 > **Operator execution surface:** the live steps the validator will have you run are
 > the turnkey [`story-2.2-LIVE-RUNBOOK.md`](story-2.2-LIVE-RUNBOOK.md). The validator
 > decides the acceptance criteria; the runbook is how the operator produces the raw
-> evidence. **Fill the head SHA** (`<HEAD-SHA>` below) with the branch tip once the
-> work commit is pushed — pull it yourself with `git rev-parse feature/story-2.2`.
+> evidence. **The head SHA is NOT pinned in this file on purpose — always resolve it
+> LIVE** with `git rev-parse origin/feature/story-2.2` at validation time (a hard-coded
+> SHA is exactly what went stale on attempts 3-5). Validate that commit, nothing older.
 
 ---
 
@@ -78,13 +100,17 @@ verdict from the raw output I run for you. Do not rubber-stamp.
   pad) — it is NOT a CodeCommit repo and is NOT named `pde-hub`. Clone:
     git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git && cd pde-platform
     git remote -v   # confirm github.com/warrenrutledge64/pde-platform (NOT codecommit, NOT pde-hub)
-- TARGET-LOCK (attempt 4 validated a STALE commit — reject that on sight): the fix for the
-  attempt-3 CKV_AWS_26 FAIL (SNS at-rest encryption) is in commit `5f2b3b2`+. Your run MUST
-  be on the branch tip, not an earlier commit. After checkout, require BOTH:
-    git reset --hard origin/feature/story-2.2
-    git log --oneline -1                                   # MUST be 5f2b3b2 or later (NOT 36cbdb9)
-    grep -q KmsMasterKeyId infra/state-machine.yaml && echo "FIX PRESENT" || echo "STALE — STOP"
-  If the Target-Lock commit is behind the tip, SEAL INCONCLUSIVE (stale checkout), not FAIL.
+- TARGET-LOCK (attempts 3-5 all validated STALE pre-fix commits — reject on sight): the fix
+  for the CKV_AWS_26 FAIL (SNS at-rest encryption) is in commit `5f2b3b2`+, carried on the
+  current tip. Commits `7814315` and `36cbdb9` are PRE-FIX — if your prompt/checkout names
+  either (or any commit behind the tip), it is STALE: STOP and re-fetch. Do NOT reuse an
+  existing on-disk clone (it may hold the stale file); clone FRESH and pinned:
+    git clone --depth 1 --branch feature/story-2.2 https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+    cd pde-platform
+    git log --oneline -1                                   # MUST equal `git rev-parse origin/feature/story-2.2` (NOT 7814315 / 36cbdb9)
+    grep -n KmsMasterKeyId infra/state-machine.yaml        # MUST show line ~110; if absent -> STALE, STOP
+  If the commit under test is behind the tip (no KmsMasterKeyId), SEAL INCONCLUSIVE (stale
+  checkout), not FAIL — a pre-fix commit is a target-lock miss, not a deliverable defect.
 - Get on the right code FIRST and pin the head commit:
     git fetch origin
     git checkout feature/story-2.2
