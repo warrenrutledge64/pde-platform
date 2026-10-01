@@ -30,21 +30,45 @@
 
 ---
 
-## STEP 0 — Launch pad + get on the right code (Hub CloudShell)
+## STEP 0 — FREE DISK FIRST (CloudShell is 1 GB; OD-007)
+
+Disk exhaustion blocked attempts 1 and 2 (a full disk makes `git fetch` fail and
+`grep` report false "clean" on a missing file). Clear space and CONFIRM it before
+anything else:
+
+```bash
+df -h ~                                   # check free space on the home volume
+# clear the usual CloudShell hogs (safe to delete):
+rm -rf ~/.cache/pip ~/.cache/* ~/.npm /tmp/* 2>/dev/null
+# drop stale clones if present (re-cloned below):
+# rm -rf ~/pde-platform ~/ZTIE-* 2>/dev/null
+# if Docker was used: docker system prune -af 2>/dev/null
+df -h ~                                   # RE-CHECK — proceed only with headroom (≥ ~300 MB free)
+```
+
+> If you cannot free enough space, do the static bar in CI / a roomier environment
+> instead of CloudShell — do NOT proceed on a full disk (the output will mislead).
+
+## STEP 0a — Launch pad + get on the right code (fail-loud)
 
 Use the hardened launch pad from Story 1.2
 ([`story-1.2-LIVE-RUNBOOK.md`](story-1.2-LIVE-RUNBOOK.md) STEP 0 PATH A — the 3-line
 named-script path) and confirm `LAUNCH-PAD VERIFY: PASS` BEFORE anything else. Then
-get onto this story's branch (the 2.1 files are NOT on `main`):
+get onto this story's branch (the 2.1 files are NOT on `main`). Run this as ONE block
+so a failed fetch/checkout HALTS instead of letting later steps run on absent files:
 
 ```bash
 aws sts get-caller-identity --query Account --output text   # expect 641628980935
-cd ~/pde-platform                                           # the cloned repo
-git fetch origin
+cd ~/pde-platform || { echo "VERIFY: FAIL — repo dir missing"; exit 1; }
+set -e                                                       # (inside a script/heredoc, not a bare interactive shell)
+git fetch origin                                            # if this says "No space left on device", go back to STEP 0
 git checkout fix/story-2.1-static-bar                       # the re-validation branch (attempt 2)
 git rev-parse --abbrev-ref HEAD                             # expect: fix/story-2.1-static-bar
 git log --oneline -1                                        # pin this SHA as <HEAD-SHA>
-ls -1 infra/codebuild-projects.yaml infra/validate_codebuild_projects.py
+# HARD VERIFY — both target files MUST exist, or STOP (do not run the bar on missing files):
+test -f infra/codebuild-projects.yaml && test -f infra/validate_codebuild_projects.py \
+  && echo "VERIFY: PASS — target files present on fix/story-2.1-static-bar" \
+  || { echo "VERIFY: FAIL — target files absent (bad checkout / disk) — do NOT proceed"; exit 1; }
 ```
 
 > If the files are absent, STOP — you are on the wrong branch/commit. Do not evaluate
@@ -73,19 +97,29 @@ checkov -f infra/codebuild-projects.yaml --framework cloudformation
 - `cfn-lint` returns clean (no errors) — the template is well-formed.
 - `checkov` reports no failed checks that indicate a real least-privilege / hardening
   regression (triage any informational findings against the DoD).
-- The offline checker is `PASS — all 32 invariants hold`.
+- The offline checker is `PASS — all 34 invariants hold`.
 
 ## STEP 3 — Spot-check the invariants by eye (adversarial)
 
 ```bash
+# GUARD: the file MUST exist, or the "absence" greps below give a FALSE clean
+# (the attempt-2 trap). Stop here if it is missing.
+test -f infra/codebuild-projects.yaml \
+  || { echo "ABORT — infra/codebuild-projects.yaml missing (bad checkout / disk); STEP 3 is meaningless"; }
+
 # No pde- Hub resource name (only pdlv-); exports are pdlv-*
 grep -nE '(Name|RoleName|LogGroupName|ManagedPolicyName):' infra/codebuild-projects.yaml
 grep -n 'Export:' -A1 infra/codebuild-projects.yaml
 
-# Least privilege — these should return NOTHING (prove absence):
-grep -nE 'AdministratorAccess|PowerUserAccess' infra/codebuild-projects.yaml || echo "none — good"
-grep -nE 'Action:\s*["'\'']\*["'\'']' infra/codebuild-projects.yaml || echo "none — good"
-grep -nE 'Resource:\s*["'\'']\*["'\'']' infra/codebuild-projects.yaml || echo "none — good"
+# Least privilege — these should print "ABSENT (good)" ONLY when the file exists and the
+# pattern is truly not found. grep exit 1 = not found (good); exit >1 = error (e.g. no file).
+for pat in 'AdministratorAccess|PowerUserAccess' 'Action:\s*["'\'']\*["'\'']' 'Resource:\s*["'\'']\*["'\'']'; do
+  grep -nE "$pat" infra/codebuild-projects.yaml
+  rc=$?
+  if   [ $rc -eq 1 ]; then echo "ABSENT (good): $pat"
+  elif [ $rc -gt 1 ]; then echo "ERROR (not a pass — file missing/unreadable): $pat"
+  else echo "FOUND (investigate): $pat"; fi
+done
 
 # The only cross-account power is AssumeRole into the three member roles:
 grep -n 'sts:AssumeRole' infra/codebuild-projects.yaml
