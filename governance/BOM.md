@@ -15,7 +15,9 @@
   plane, co-resident with ZTIE), `Pipeline-Dev`, `Pipeline-Sandbox`,
   `Pipeline-Prod` (deployment targets). **Home region: `us-east-1`** (pinned at
   Story 1.1; the org trail is multi-region but delivers to this home region).
-- **Last updated:** 2026-10-01 (Story 1.2 authored + offline-proven; awaiting live Option-B validation)
+- **PDE Hub namespace:** **`pdlv-`** (RD-009). The `pde-*` namespace in the Hub is
+  **ZTIE's**, not PDE's — see §2.1 Known co-occupants.
+- **Last updated:** 2026-10-01 (Story 1.2 authored + offline-proven; RD-009 ratified — PDE Hub prefix `pdlv-`; ZTIE Hub footprint recorded in §2.1; awaiting live Option-B validation)
 - **Current restore point:** none yet (`restore/phase-1-green` is cut when Story 1.2's live pass closes Phase 1)
 
 ---
@@ -48,12 +50,24 @@
 
 | Artifact | Type | Name / ID | Phase | Restore point |
 |----------|------|-----------|-------|---------------|
-| _(none yet — pending Phase 1)_ | | | | |
+| _(none PDE-owned yet — pending Phase 1 close; Story 1.1 member roles deploy in the member accounts, recorded at the Phase-1 restore point)_ | | | | |
 
 > Track here the resource classes relevant to PDE: CloudFormation stacks, the
 > Org-wide CloudTrail + its S3 log bucket + KMS CMK, cross-account IAM execution
 > roles, the Step Functions state machine, CodeBuild projects, and the Golden-Path
 > test artifact.
+
+### 2.1 Known co-occupants of the Hub (NOT PDE-owned — environment fact)
+
+> These are recorded for drift-defense and namespace awareness, **not** as PDE
+> artifacts (PDE does not own, deploy, or restore them). Discovered live 2026-10-01
+> during the Story 1.2 gate; they drove **RD-009** (PDE uses `pdlv-`, not `pde-`) and
+> are tracked as **OD-004** (namespace) / **OD-005** (untagged). PDE must never
+> deploy, modify, or tear these down (Universal Criterion 5 — non-destructive).
+
+| Occupant | Owner | Account | Notes |
+|----------|-------|---------|-------|
+| 18 × `pde-*` CloudFormation stacks | **ZTIE** (confirmed via stack descriptions) | `Pipeline-Hub` `641628980935` | Created Jun–Aug 2026, **untagged** (OD-005). The ZTIE control plane: `pde-ztie-websocket-api`, `pde-intake-gateway`(+`-production`), `pde-intake-broker`, `pde-ingestion-vault`, `pde-vault-writer`, `pde-hub-synthesis-parser`, `pde-hub-identity-stack`, `pde-ui-hosting-stack`, `pde-compliance-dashboard`, `pde-compliance-heatmap`, `pde-governance-pipeline`, `pde-remediation-statemachine`, `pde-eventbridge-approval-rule`, `pde-event-trigger-foundation`, `pde-artifact-store`, `pde-codebuild-foundation`, `github-oidc-pde-burn`. (Enumeration is a point-in-time snapshot, not an authoritative ZTIE inventory — ZTIE owns its own BOM.) |
 
 ## 3. Components (reusable units)
 
