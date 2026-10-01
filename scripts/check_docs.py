@@ -19,6 +19,16 @@ Checks:
               not exist on disk (a dangling link).
   CHECK M  -- (if the repo-map is adopted) docs/REPO_MAP.md is stale or an
               annotation targets a missing path. Delegates to check_repo_map.
+  CHECK N  -- (phase-gate) the hand-kept Progress Summary disagrees with the phase
+              roll-up derived from the story rows. A phase marked ✅ while a story
+              in it is open HARD-fails; a story-complete-but-unclosed phase is a
+              loud "PHASE-GATE CLOSE OWED" advisory printed every run (the skipped
+              end-of-phase gate — never auto-closed). No-op without a Progress
+              Summary / phase sections.
+  CHECK O  -- (split-brain) an OPEN story has a builder-authored
+              ``*-LIVE-RUNBOOK.md`` under DOCS/session-briefs/. The builder does
+              not author live-proof steps; the validator authors them blind (§4a).
+              Closed-story LIVE-RUNBOOKs are frozen history (grandfathered).
 
 Usage:
     python3 scripts/check_docs.py                 # check cwd
@@ -236,6 +246,335 @@ def check_m_repo_map(repo_root: Path) -> list[Violation]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# CHECK N -- phase-gate: the hand-kept Progress Summary must not lie about a phase.
+# ---------------------------------------------------------------------------
+#
+# The end-of-phase validation (run the gate, capture the restore point, flip the
+# phase row ✅) is the easiest discipline to skip, because nothing fires when a
+# phase quietly reaches "every story ✅". CHECK N makes it mechanical: it derives
+# each phase's TRUE status from the story rows under its ``## Phase N`` section and
+# compares it to the glyph in that phase's Progress-Summary row. Fail-open: if the
+# runbook has no Progress Summary or no phase sections (a fresh / partially-adopted
+# template, where phases are still ``{{PHASE_ID}}`` placeholders), it is a no-op.
+
+# A ``## Phase <label> — <name>  <glyph>`` section heading. The label is whatever
+# sits between "Phase" and the em/en dash or the glyph (a number, "P1", a name).
+_PHASE_HEADING_RE = re.compile(r"^##\s+Phase\s+(?P<label>.+?)\s*(?:[—–-].*)?$")
+# A Progress-Summary row: ``| **<label>** | scope | gate | <status> |``. The label
+# is read from the first cell (bold-stripped); the status is the row's status cell.
+_SUMMARY_ROW_RE = re.compile(r"^\|\s*\*{0,2}(?P<label>[^|*]+?)\*{0,2}\s*\|.*\|\s*$")
+
+
+def _norm_phase_label(label: str) -> str:
+    """Normalise a phase label so a ``## Phase`` heading and a Progress-Summary
+    row key the same (strip glyphs/emphasis/whitespace; take the leading token)."""
+    text = label
+    for g in STATUS_GLYPHS:
+        text = text.replace(g, "")
+    text = text.replace("*", "").strip()
+    # Key on the leading token (e.g. "1" from "1 — Foundation", "P1" from "P1").
+    return text.split()[0] if text.split() else text
+
+
+def _rollup_phase_status(runbook_text: str) -> dict[str, str]:
+    """Derive each phase's true status by rolling up the story rows beneath its
+    ``## Phase`` heading: ✅ only if every story row is ✅; else 🟡 if any story is
+    started/done; else ⬜. Returns ``{normalised_label: glyph}`` (empty if no
+    phase sections / no story rows are found -> CHECK N no-ops)."""
+    IN_PROGRESS, BLOCKED = STATUS_GLYPHS[1], STATUS_GLYPHS[2]
+    NOT_STARTED = STATUS_GLYPHS[0]
+    rollup: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in runbook_text.splitlines():
+        hm = _PHASE_HEADING_RE.match(line)
+        if hm:
+            current = _norm_phase_label(hm.group("label"))
+            rollup.setdefault(current, [])
+            continue
+        if line.startswith("## "):  # left the phase section (some other heading)
+            current = None
+            continue
+        if current is None:
+            continue
+        m = STORY_ROW_RE.match(line)
+        if m:
+            g = _status_cell_glyph(line)
+            if g is not None:
+                rollup[current].append(g)
+    result: dict[str, str] = {}
+    for label, glyphs in rollup.items():
+        if not glyphs:
+            continue  # a phase heading with no story-table rows -> cannot roll up
+        gs = set(glyphs)
+        if gs == {DONE}:
+            result[label] = DONE
+        elif gs & {DONE, IN_PROGRESS, BLOCKED}:
+            result[label] = IN_PROGRESS
+        else:
+            result[label] = NOT_STARTED
+    return result
+
+
+def _summary_phase_status(runbook_text: str) -> dict[str, str]:
+    """Read the hand-kept Progress Summary table's ``{normalised_label: glyph}``.
+
+    Only rows inside the ``## Progress Summary`` section are read. Fail-open: no
+    section / no parseable rows -> empty map (CHECK N no-ops)."""
+    result: dict[str, str] = {}
+    in_section = False
+    for line in runbook_text.splitlines():
+        if line.startswith("## "):
+            in_section = line.strip() == "## Progress Summary"
+            continue
+        if not in_section or "|" not in line:
+            continue
+        # Skip header + separator rows.
+        low = line.lower()
+        if "phase" in low and "status" in low and "scope" in low:
+            continue
+        if set(line.strip()) <= set("|-: "):
+            continue
+        rm = _SUMMARY_ROW_RE.match(line)
+        if rm is None:
+            continue
+        # The Progress Summary status cell carries a glyph + a label (e.g.
+        # "✅ Done", "🟡 In Progress"), so read the FIRST glyph of the LAST
+        # non-empty cell rather than requiring a bare-glyph cell.
+        cells = [cell.strip() for cell in line.split("|") if cell.strip()]
+        g = _first_glyph(cells[-1]) if cells else None
+        if g is None:
+            continue
+        label = _norm_phase_label(rm.group("label"))
+        if label and label.lower() != "phase":
+            result.setdefault(label, g)
+    return result
+
+
+def check_n_phase_gate(gov_dir: Path) -> list[Violation]:
+    """CHECK N (hard): a Progress-Summary phase row may never claim a phase is MORE
+    complete than its stories.
+
+    Hard-fails only the contradiction direction — the phase row is ✅ while a story
+    under its ``## Phase`` section is still open. The opposite direction (every
+    story ✅ but the phase row not yet ✅ — the skipped end-of-phase gate) is a
+    non-blocking advisory (``phase_gate_advisories``): closing a phase is a
+    stakeholder-confirmed act, surfaced on every run but never auto-tripped. Fail-
+    open: no Progress Summary / no phase story rows -> no-op.
+    """
+    runbook = gov_dir / "RUNBOOK.md"
+    if not runbook.exists():
+        return []
+    text = runbook.read_text(encoding="utf-8")
+    rollup = _rollup_phase_status(text)
+    summary = _summary_phase_status(text)
+    violations: list[Violation] = []
+    for label, shown in sorted(summary.items()):
+        true_g = rollup.get(label)
+        if true_g is None or shown != DONE or true_g == DONE:
+            continue
+        violations.append(
+            Violation(
+                "CHECK N",
+                "RUNBOOK.md",
+                f"phase {label}: the Progress Summary marks it ✅ but a story under "
+                "its section is not ✅; a phase may not be done while a story it "
+                "contains is open (reconcile the phase row to its stories)",
+            )
+        )
+    # Restore-point completeness: a ✅ phase must have a restore point RECORDED, because a
+    # phase close is a coordinated code+state baseline (a restore point you can return to),
+    # not just a green behaviour run. Checked against BOM.md (the restore-point index). The
+    # DEPTH is fail-open + generic: a ✅ phase whose stories roll up ✅ must have a BOM row for
+    # that phase naming a ``restore/`` tag. IF the repo captures state manifests (a
+    # ``restore-manifests/`` dir exists — the heavier, ZTIE-style discipline), that row must
+    # ALSO name a ``manifest-*.json`` (an annotated tag PAIRED WITH a verified state manifest,
+    # RESTORE.md rule 4). A project that does not capture manifests is not flagged for the
+    # manifest half. Fail-open: no BOM.md -> skipped.
+    bom = gov_dir / "BOM.md"
+    if bom.exists():
+        bom_text = bom.read_text(encoding="utf-8")
+        # Does the repo capture state manifests? (any restore-manifests/ dir up the tree)
+        captures_manifests = any(
+            (d / "restore-manifests").is_dir() for d in (gov_dir, gov_dir.parent)
+        )
+        # The numeric/token core of a phase label (e.g. "0" from "Phase 0", "1" from
+        # "P1") so a BOM row's Phase cell can be matched to the phase.
+        for label in sorted(lbl for lbl, g in summary.items() if g == DONE):
+            if rollup.get(label) != DONE:
+                continue  # premature ✅ already reported as the contradiction above
+            has_tag = has_manifest = produces = False
+            for line in bom_text.splitlines():
+                if "|" not in line or not re.search(rf"\b{re.escape(label)}\b", line):
+                    continue
+                # A BOM §2 inventory row for this phase = the phase PRODUCES materials.
+                # (A row that only indexes a restore point is caught by has_tag below.)
+                produces = True
+                if "restore/" in line:
+                    has_tag = True
+                    if re.search(r"manifest-[0-9A-Za-z]+\.json", line):
+                        has_manifest = True
+            # A phase that produces NO deployed materials (a docs-only / bootstrap
+            # phase — no BOM §2 inventory row names it) has no coordinated code+state
+            # baseline to restore, so a restore point is not required of it. Only
+            # require a restore point for a phase that actually produces/deploys
+            # something. (Fail-open on bootstrap phases — matches the documented
+            # "a restore/phase-0-green tag is optional and not cut" convention.)
+            if not produces:
+                continue
+            if not has_tag:
+                violations.append(
+                    Violation(
+                        "CHECK N",
+                        "BOM.md",
+                        f"phase {label} is marked ✅ (closed) but BOM.md records no "
+                        "restore point (a restore/ tag) for it; a phase closes to a "
+                        "coordinated restore point, not on a behaviour run alone "
+                        "(record its restore/phase-N-green baseline in BOM.md).",
+                    )
+                )
+            elif captures_manifests and not has_manifest:
+                violations.append(
+                    Violation(
+                        "CHECK N",
+                        "BOM.md",
+                        f"phase {label} is ✅ and this repo captures state manifests, "
+                        "but its BOM restore-point row names no paired "
+                        "restore-manifests/manifest-*.json; a complete restore point is "
+                        "an annotated tag PAIRED WITH a verified state manifest "
+                        "(RESTORE.md). Record + verify the manifest, then name it.",
+                    )
+                )
+    return violations
+
+
+def phase_gate_advisories(gov_dir: Path) -> list[Violation]:
+    """ADVISORY (non-blocking): name every phase that is STORY-COMPLETE but not yet
+    CLOSED — every story ✅ while the Progress-Summary row is not ✅. The end-of-
+    phase gate (run the check, capture the restore point, flip the row) was not
+    recorded. Surfaced on every run so a skipped phase-gate can never silently
+    slip; never auto-closed (closing a phase is a stakeholder-confirmed act)."""
+    runbook = gov_dir / "RUNBOOK.md"
+    if not runbook.exists():
+        return []
+    text = runbook.read_text(encoding="utf-8")
+    rollup = _rollup_phase_status(text)
+    summary = _summary_phase_status(text)
+    advisories: list[Violation] = []
+    for label, true_g in sorted(rollup.items()):
+        if true_g != DONE or summary.get(label) == DONE:
+            continue
+        advisories.append(
+            Violation(
+                "CHECK N (advisory)",
+                "RUNBOOK.md",
+                f"phase {label} is STORY-COMPLETE (every story ✅) but its phase row "
+                "is not ✅: PHASE-GATE CLOSE OWED — run the end-of-phase gate, "
+                "capture/confirm the restore point, then flip the Progress Summary "
+                "row to ✅. A story-complete phase is NOT a closed phase.",
+            )
+        )
+    return advisories
+
+
+# ---------------------------------------------------------------------------
+# CHECK O -- split-brain: the builder does not author live-proof steps.
+# ---------------------------------------------------------------------------
+#
+# The split-brain discipline (§4a) says the party that built the code does not
+# frame how it is judged — the independent validator authors the live steps + DoD.
+# A ``*-LIVE-RUNBOOK.md`` committed for an OPEN story is the concrete artifact-form
+# of a breach (the builder writing "how to prove it live"). CHECK O hard-fails that
+# for forward work; LIVE-RUNBOOKs for closed (✅) stories are frozen history and are
+# grandfathered. Fail-open: no session-briefs dir -> no-op.
+
+# A story's open/closed status is read from the RUNBOOK summary-table rows.
+_LIVE_RUNBOOK_RE = re.compile(r"^(?:story-)?(?P<id>" + _STORY_ID + r")-LIVE-RUNBOOK\.md$")
+
+
+def _runbook_story_statuses(gov_dir: Path) -> dict[str, str]:
+    """Return ``{story_id: glyph}`` from the RUNBOOK summary-table rows."""
+    runbook = gov_dir / "RUNBOOK.md"
+    if not runbook.exists():
+        return {}
+    statuses: dict[str, str] = {}
+    for line in runbook.read_text(encoding="utf-8").splitlines():
+        m = STORY_ROW_RE.match(line)
+        if not m:
+            continue
+        g = _status_cell_glyph(line)
+        if g is not None:
+            statuses.setdefault(m.group(1), g)
+    return statuses
+
+
+# CHECK O is OPT-IN. The strict "the builder authors NO live-proof steps, not even an
+# operator runbook" doctrine (ZTIE's RD-055) is one valid stance; another valid stance
+# (e.g. pde-platform) is that a builder-authored operator LIVE-RUNBOOK is a legitimate
+# turnkey execution surface the independent validator ADOPTS / reorders / extends while
+# still authoring the acceptance criteria itself. The split-brain guarantee (the builder
+# does not author the DoD/verdict) holds under BOTH. So CHECK O only fires where a project
+# has EXPLICITLY opted in by placing this marker in a living governance doc (RUNBOOK /
+# METHODOLOGY / CONVENTIONS). Default OFF -> a project that uses operator runbooks is not
+# broken; a project that wants the strict rule declares it.
+_CHECK_O_OPT_IN = "check-o: enforce no-builder-live-runbook"
+
+
+def _check_o_enabled(gov_dir: Path, repo_root: Path) -> bool:
+    """True iff the project opted into CHECK O via the marker in a living gov doc."""
+    for base in (gov_dir, repo_root):
+        for name in ("RUNBOOK.md", "METHODOLOGY.md", "CONVENTIONS.md"):
+            p = base / name
+            if p.exists() and _CHECK_O_OPT_IN in p.read_text(encoding="utf-8"):
+                return True
+    return False
+
+
+def check_o_no_builder_live_runbook(gov_dir: Path, repo_root: Path) -> list[Violation]:
+    """CHECK O (split-brain, OPT-IN): no builder-authored ``*-LIVE-RUNBOOK.md`` for an
+    OPEN story. The validator authors the live steps + DoD blind (§4a); the builder must
+    not frame "how to prove it live." Closed-story LIVE-RUNBOOKs are frozen history and
+    grandfathered.
+
+    OPT-IN: only fires where the project declares the strict doctrine via the
+    ``check-o: enforce no-builder-live-runbook`` marker in a living governance doc. A
+    project whose doctrine permits a builder-authored OPERATOR runbook (that the
+    validator adopts/extends while still authoring the DoD itself) simply does not place
+    the marker and is unaffected. Fail-open: no marker / no session-briefs dir -> no-op.
+    """
+    if not _check_o_enabled(gov_dir, repo_root):
+        return []
+    IN_PROGRESS, BLOCKED = STATUS_GLYPHS[1], STATUS_GLYPHS[2]
+    # Session artifacts live under DOCS/session-briefs/ (root or governance/).
+    candidates = [
+        repo_root / "DOCS" / "session-briefs",
+        gov_dir / "DOCS" / "session-briefs",
+        gov_dir / "session-briefs",
+    ]
+    briefs = next((d for d in candidates if d.is_dir()), None)
+    if briefs is None:
+        return []
+    statuses = _runbook_story_statuses(gov_dir)
+    violations: list[Violation] = []
+    for path in sorted(briefs.glob("*-LIVE-RUNBOOK.md")):
+        m = _LIVE_RUNBOOK_RE.match(path.name)
+        if not m:
+            continue
+        if statuses.get(m.group("id")) not in {IN_PROGRESS, BLOCKED}:
+            continue  # closed / unknown stories are frozen history -> grandfathered
+        violations.append(
+            Violation(
+                "CHECK O",
+                f"DOCS/session-briefs/{path.name}",
+                f"story {m.group('id')} is OPEN but has a builder-authored "
+                "LIVE-RUNBOOK; the builder does not author live-proof steps — the "
+                "independent validator authors the live steps + DoD blind (§4a). "
+                "Remove it (closed-story LIVE-RUNBOOKs are grandfathered).",
+            )
+        )
+    return violations
+
+
 def run_checks(repo_root: Path) -> list[Violation]:
     gov = _governance_dir(repo_root)
     out: list[Violation] = []
@@ -244,14 +583,31 @@ def run_checks(repo_root: Path) -> list[Violation]:
     out += check_p_stray_placeholders(gov)
     out += check_l_dangling_links(gov, repo_root)
     out += check_m_repo_map(repo_root)
+    out += check_n_phase_gate(gov)
+    out += check_o_no_builder_live_runbook(gov, repo_root)
     return out
+
+
+def run_advisories(repo_root: Path) -> list[Violation]:
+    """Non-blocking advisories (printed, never affect the exit code)."""
+    return phase_gate_advisories(_governance_dir(repo_root))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo-root", default=".", help="repo root to check (default: cwd)")
     args = parser.parse_args(argv)
-    violations = run_checks(Path(args.repo_root))
+    repo_root = Path(args.repo_root)
+
+    # Non-blocking advisories (phase-gate "close owed"). Printed on every run so a
+    # skipped end-of-phase gate can never silently slip; never affects the exit code.
+    advisories = run_advisories(repo_root)
+    if advisories:
+        print(f"check_docs: ADVISORY -- {len(advisories)} note(s) (does not block):")
+        for a in advisories:
+            print(f"  {a.render()}")
+
+    violations = run_checks(repo_root)
     if violations:
         print(f"check_docs: FAIL -- {len(violations)} violation(s):")
         for v in violations:
