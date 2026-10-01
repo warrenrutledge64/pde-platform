@@ -32,12 +32,16 @@ management account. Greenfield, run on the project-os operating model.
 - /tmp is wiped on CloudShell session recycle — regenerate staged files, don't assume.
 - Feed CloudShell commands ONE LINE AT A TIME; multi-line pastes mis-feed.
 - The gate script's assume-role calls need the ExternalId that matches the Story 1.1
-  member-role trust condition.
-- The Hub orchestrator role pde-hub-orchestrator is created in Phase 2; if it doesn't
-  exist yet, the gate may need a temporary Hub principal to run the AssumeRole — note
-  what was used.
-- Verify the DEPLOYED reality (live assume-role returns the member account id), not the
-  script's intent.
+  member-role trust condition (ExternalId-parameterised; never hardcode/echo the secret).
+- OPTION B (stakeholder-chosen, 2026-09-30): pde-hub-orchestrator is created in Phase 2,
+  so do NOT stand up a temporary Hub principal. AUTHOR + COMMIT the gate script now
+  (targeting the real pde-hub-orchestrator); its live cross-account AssumeRole run is the
+  deferred VD-3b (Phase 2). 1.2's live proof = Hub-CloudShell reachability + tooling +
+  token-auth repo access; the live assume is NOT in 1.2's DoD.
+- Use the derive-EnvironmentName-from-account pattern (get-caller-identity → case) in any
+  per-account command/loop; never hand-edit a per-account literal (the 1.1 copy-paste trap).
+- Verify DEPLOYED reality, not intent: for 1.2 that is live reachability/tooling/clone
+  working; the live assume-returns-account-id proof is validated in Phase 2 (VD-3b).
 
 # FIRST — VALIDATION & ADVANCEMENT GATE (before any new work)
 # Binding policy: governance/RUNBOOK.md "Validation & Advancement Gate".
