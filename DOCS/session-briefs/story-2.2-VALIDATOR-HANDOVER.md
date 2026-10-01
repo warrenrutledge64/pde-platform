@@ -72,7 +72,7 @@ verdict from the raw output I run for you. Do not rubber-stamp.
   strictly additive / ZTIE-safe.
 
 # WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
-- Story / PR: Story 2.2 — branch `feature/story-2.2` -> `main` (PR number: [[ fill ]]).
+- Story / PR: Story 2.2 — branch `feature/story-2.2` -> `main` (PR #24).
 - Get on the right code FIRST and pin the head commit:
     git fetch origin
     git checkout feature/story-2.2
