@@ -158,13 +158,18 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | VD-5 | 2.1 (CodeBuild CFN templates) | `infra/codebuild-projects.yaml` (`pdlv-lint` + `pdlv-deploy` + the least-privilege service role) + `infra/validate_codebuild_projects.py` authored, offline-proven (32 invariants), and merged via PR #19 (`33ff245`) — but the live static bar sealed **FAIL** (2026-10-01, Independent Validator). The 32 custom invariants + adversarial grep (strict `pdlv-` namespace, `Project=PDE` tagging, IAM least-privilege / AssumeRole-only cross-account) PASSED; two deliverable defects remain: **(1) cfn-lint E1003** — the template `Description` is 1311 bytes, over CFN's 1024-byte hard limit (`infra/codebuild-projects.yaml:3`); **(2) checkov CKV_AWS_158** — both `AWS::Logs::LogGroup`s lack KMS encryption (needs either a CMK or a justified inline `# checkov:skip=CKV_AWS_158:` suppression). The adversarial sabotage test was INVALIDATED by a CloudShell `No space left on device` (environment, not a deliverable defect) — the re-prove must make the checker's guard provable without writing a sabotage file. Fixes landed on `fix/story-2.1-static-bar` (PR #20, merged): Description shortened to ~624 B; justified `# checkov:skip=CKV_AWS_158:` on both Log Groups; offline checker hardened to **34 invariants + an in-memory `--self-test`** (the on-disk sabotage replaced). **Attempt 2 sealed INCONCLUSIVE (2026-10-01, Independent Validator):** CloudShell was out of disk — `git fetch` failed, the branch never checked out, target files were absent, and the grep `\|\| echo CLEAN` fallback produced a FALSE "clean"; NO deliverable judged (environment issue, tracked as OD-007). **Attempt 3 sealed PASS (2026-10-01, Independent Validator, commit `aa47f85`):** after freeing CloudShell disk, all 8 DoD conditions MET — cfn-lint clean (E1003 resolved), checkov 0 failures (CKV_AWS_158 cleanly SKIPPED on both log groups), strict `pdlv-` namespace + `pdlv-*` exports, zero wildcard/admin, `sts:AssumeRole`-only cross-account (no `cloudformation:*`), `Project=PDE` on all 5 taggable resources, and the 34-invariant checker + `--self-test` caught all four simulated regressions. **CLEARED** — Story 2.1 ✅. | 2026-10-01 | CLEARED (attempt 3 sealed PASS; attempts 1 FAIL + 2 INCONCLUSIVE retained as the audit trail) |
 | ~~VD-3~~ | ~~1.1 (VD-3a)~~ | Orchestrate-and-pull trust fabric (`infra/member-execution-role.yaml`) authored + offline-proven (21 invariants), but NOT yet live-validated. **Validation is split (Path A, stakeholder-chosen):** VD-3a = the member roles are deployed in Dev/Sandbox/Prod and `get-role` confirms each trusts the *specific* Hub orchestrator role (not `:root`) + requires `sts:ExternalId` — **provable now**; VD-3b = the full live Hub→member `sts:AssumeRole` (succeeds with ExternalId / denied without) — **deferred to Phase 2** because the `pde-hub-orchestrator` Hub role does not exist until then. Story 1.1 flips ✅ on VD-3a (trust correct-by-construction); VD-3b is tracked as a Phase-2 confirmation, not a 1.1 blocker. **CLEARED 2026-09-30** on the independent validator's sealed PASS (all four VD-3a DoD conditions met). VD-3b remains a Phase-2 item (created with the `pde-hub-orchestrator` role), NOT open 1.1 debt. | 2026-09-30 | CLEARED (VD-3a); VD-3b → Phase 2 |
 
-**Gate status:** **DISARMED** — the Validation Debt Register is empty. Story 2.1
-(CodeBuild CFN templates) is ✅ (sealed PASS, 2026-10-01, commit `aa47f85`) and **VD-5 is
-CLEARED**. Story 2.2 (Step Functions state machine, tier 3, dep = Phase 1 gate ✅) is now
-unblocked. Phase 1 remains ✅ CLOSED (`restore/phase-1-green`); Phase 2 stays open (2.2 +
-2.3 remain; the Phase 2 gate is the dummy-payload Step Functions run in 2.3). Carried
-Phase-2 confirmation **VD-3b** (the committed gate script's live cross-account
-`AssumeRole`, run once `pde-hub-orchestrator` exists) is tracked for Phase 2, not open debt.
+| VD-6 | 2.2 (Step Functions state machine) | `infra/state-machine.yaml` (`pdlv-promotion-pipeline` STANDARD state machine — Dev→Sandbox→Prod with native `.waitForTaskToken` manual-approval pauses before Sandbox + before Prod, each promotion starting the Story 2.1 `pdlv-deploy` CodeBuild project via `codebuild:startBuild.sync`; a `pdlv-promotion-pipeline-role` least-privilege execution role, a `pdlv-promotion-approval` SNS topic, and a dedicated `pdlv-` execution log group) + `infra/validate_state_machine.py` (stdlib offline checker, **48 invariants** + an in-memory `--self-test`) authored + offline-proven on `feature/story-2.2`. Validator handover + LIVE-RUNBOOK authored. **AWAITING the live static bar** (cfn-lint + Checkov, Hub CloudShell / CI) sealed by an INDEPENDENT validator — 2.2 stays 🟡 until a recorded PASS. _(2.2 is author + static proof only; the live Hub deploy + the dummy-payload paused-state run are Story 2.3 / the Phase 2 gate — nothing is deployed in 2.2.)_ | 2026-10-01 | OPEN (built + offline-proven; awaiting the sealed static-bar PASS) |
+
+**Gate status:** **ARMED** — the Validation Debt Register is non-empty (**VD-6**, Story
+2.2, awaiting its sealed static-bar PASS). Story 2.1 (CodeBuild CFN templates) is ✅
+(sealed PASS, 2026-10-01, commit `aa47f85`) and **VD-5 is CLEARED**. Story 2.2 (Step
+Functions state machine, tier 3, dep = Phase 1 gate ✅) is **built + offline-proven**
+(48 invariants + `--self-test`) and is 🟡 pending the live static bar — reworking 2.2 is
+allowed, but no *new* feature story (e.g. 2.3) begins until VD-6 clears. Phase 1 remains
+✅ CLOSED (`restore/phase-1-green`); Phase 2 stays open (2.2 + 2.3 remain; the Phase 2
+gate is the dummy-payload Step Functions run in 2.3). Carried Phase-2 confirmation
+**VD-3b** (the committed gate script's live cross-account `AssumeRole`, run once
+`pde-hub-orchestrator` exists) is tracked for Phase 2, not open debt.
 
 ## Operational Debt Register
 
@@ -191,30 +196,30 @@ Phase-2 confirmation **VD-3b** (the committed gate script's live cross-account
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 2.2 | 3 | **Phase 1 gate ✅ + 2.1 ✅ (VD-5 cleared, gate DISARMED).** 2.2 depends only on the Phase 1 gate. Author + offline-prove the Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates), `pdlv-` namespace + `Project=PDE` tags. **This is the focus.** |
+| 2.2 | 3 | 🟡 **Built + offline-proven; the focus is now its live validation.** `infra/state-machine.yaml` + `infra/validate_state_machine.py` (48 invariants + `--self-test`) are authored on `feature/story-2.2`; the INDEPENDENT validator runs the live static bar (cfn-lint + Checkov) and seals the verdict. 2.2 flips ✅ on the recorded PASS (clears VD-6). |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| 2.3 | 4 | Story 2.2 not yet validated (2.1 ✅) |
+| 2.3 | 4 | Story 2.2 not yet validated (built + offline-proven, VD-6 open; 2.1 ✅) |
 | 3.1 | 5 | Phase 2 gate not yet passed |
 | 3.2 | 6 | Story 3.1 not yet validated |
 | 3.3 | 7 | Story 3.2 not yet validated |
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Story 2.2 — Step Functions state machine (Dev→Sandbox→Prod
-promotion + manual approval gates).** Story 2.1 is ✅ (sealed PASS 2026-10-01, `aa47f85`),
-VD-5 is CLEARED, and the gate is DISARMED. 2.2 is tier 3 (dep = Phase 1 gate ✅; same tier
-as 2.1 — no new tier advance). Author + offline-prove the state-machine definition + its
-CloudFormation (the Dev→Sandbox→Prod promotion with native manual-approval paused states and
-per-environment tasks that start the 2.1 `pdlv-deploy` CodeBuild project), under the
-**`pdlv-`** namespace with `Project=PDE` tags (RD-009; before any Phase-2 deploy re-run
-`list-stacks` to confirm `pdlv-` names are free), per
-[`../DOCS/session-briefs/story-2.2-brief.md`](../DOCS/session-briefs/story-2.2-brief.md).
-2.2 does NOT close Phase 2 (2.3 remains; the Phase 2 gate is the dummy-payload Step Functions
-run in 2.3). _(Carried Phase-2 confirmation: **VD-3b** — run the committed
+**Default next action:** **Validate Story 2.2 (live static bar), then flip it ✅.** Story
+2.2 (Step Functions state machine) is **built + offline-proven** (48 invariants +
+`--self-test`) on `feature/story-2.2` and is 🟡 pending its sealed static-bar PASS (VD-6,
+gate ARMED). Hand the INDEPENDENT validator
+[`../DOCS/session-briefs/story-2.2-VALIDATOR-HANDOVER.md`](../DOCS/session-briefs/story-2.2-VALIDATOR-HANDOVER.md)
+(stakeholder fills the one `[[requirement]]` blank); the operator runs the turnkey
+[`../DOCS/session-briefs/story-2.2-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-2.2-LIVE-RUNBOOK.md)
+(cfn-lint + Checkov in Hub CloudShell `641628980935` / CI — FREE DISK FIRST per OD-007) and
+pastes raw output; the executor records the sealed verdict and, on PASS, flips 2.2 ✅ and
+clears VD-6. 2.2 does NOT close Phase 2 (2.3 remains; the Phase 2 gate is the dummy-payload
+Step Functions run in 2.3). _(Carried Phase-2 confirmation: **VD-3b** — run the committed
 `scripts/phase1_gate.py` live once `pde-hub-orchestrator` is created in Phase 2.)_
 
 ## Progress Summary
@@ -280,7 +285,7 @@ _Gate: A human operator triggers the deployed Step Function in the Hub account w
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
 | 2.1 | CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes | Phase 1 gate | ✅ | 2026-10-01 | |
-| 2.2 | Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates) | Phase 1 gate | ⬜ | | |
+| 2.2 | Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates) | Phase 1 gate | 🟡 | | |
 | 2.3 | Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM | 2.1, 2.2 | ⬜ | | |
 
 **2.1 — CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes**  ✅ _Done (validated)_
@@ -290,10 +295,11 @@ _Gate: A human operator triggers the deployed Step Function in the Hub account w
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). _(Does NOT close Phase 2 — 2.2 + 2.3 remain.)_
 - **Advancement gate:** 2.3 cannot begin until 2.1 + 2.2 are ✅.
 
-**2.2 — Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates)**  ⬜ _Not Started_
-- Steps: author the Step Functions state machine (definition + its CloudFormation) orchestrating the Dev → Sandbox → Prod promotion workflow, including the manual approval gates (native paused states) and per-environment cross-account CFN deploy tasks. Prove offline.
-- **Validation Result:** _pending — validate the state-machine definition; the paused-approval states are present and wired between environment deploys._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date).
+**2.2 — Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates)**  🟡 _Built — awaiting live static bar (VD-6)_
+- Steps: author the Step Functions state machine (definition + its CloudFormation) orchestrating the Dev → Sandbox → Prod promotion workflow, including the manual approval gates (native paused states) and per-environment cross-account CFN deploy tasks. Prove offline. _(2.2 is author + static proof only; the live Hub deploy + the dummy-payload paused-state run are Story 2.3 / the Phase 2 gate.)_
+- **As built:** `infra/state-machine.yaml` — a STANDARD `AWS::StepFunctions::StateMachine` (`pdlv-promotion-pipeline`) whose ASL sequences `DeployDev → AwaitSandboxApproval → DeploySandbox → AwaitProdApproval → DeployProd → PromotionSucceeded`. Each `DeployX` is `codebuild:startBuild.sync` against the SPECIFIC Story 2.1 `pdlv-deploy` project (`ProjectName = ${DeployProjectName}`), overriding `TARGET_ENV`/`TARGET_ROLE_ARN`/`EXTERNAL_ID` per environment so the deploy ACTION runs locally in the member via the assumed Story 1.1 member role (RD-006 orchestrate-and-pull). Each `AwaitXApproval` is a NATIVE `sns:publish.waitForTaskToken` paused state carrying `$$.Task.Token` (not a `Wait`/timer). Least-privilege execution role `pdlv-promotion-pipeline-role` (trusted only by `states.amazonaws.com`, `aws:SourceAccount`-scoped) attaches four scoped managed policies: start/stop/describe ONLY the specific `pdlv-deploy` project ARN; the CodeBuild `.sync` managed EventBridge rule; `sns:Publish` ONLY to the `pdlv-promotion-approval` topic; and execution logging to its own `pdlv-` log group — no wildcard action, no `codebuild:*`/`sns:*`, no admin, and NO `sts:AssumeRole` into a member role (that power stays in the 2.1 CodeBuild role). `pdlv-` naming + `Project=PDE` tags throughout; `ExternalId` is a `NoEcho` parameter. Offline-proven by `infra/validate_state_machine.py` (stdlib, **48 invariants** + an in-memory `--self-test` that catches 8 sabotages including a faked timer-pause, a broken promotion order, a `pde-` prefix regression, and a `codebuild:*` broadening). Validator handover + LIVE-RUNBOOK authored. Work on branch `feature/story-2.2` (PR pending).
+- **Validation Result:** _pending — INDEPENDENT validator seals the live static bar (cfn-lint clean + Checkov no least-privilege/hardening regression + the 48-invariant offline checker + `--self-test`); confirms Dev→Sandbox→Prod with native `waitForTaskToken` approval pauses, each promotion starting the `pdlv-deploy` project, `pdlv-` naming + `Project=PDE` tags, and least privilege (scoped-ARN CodeBuild + topic-scoped publish, no wildcard/admin). Nothing deployed (static proof). Tracked as VD-6._
+- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). _(Does NOT close Phase 2 — 2.3 remains; the Phase 2 gate is the dummy-payload Step Functions run in 2.3.)_
 - **Advancement gate:** 2.3 cannot begin until 2.1 + 2.2 are ✅.
 
 **2.3 — Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM**  ⬜ _Not Started_

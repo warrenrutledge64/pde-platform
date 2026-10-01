@@ -1,0 +1,397 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 2.2 (Phase 2; RD-003/004/006/009). The Hub-side Step Functions state
+  machine that orchestrates the Dev -> Sandbox -> Prod promotion, pausing on a
+  native manual-approval state (callback token) before Sandbox and before Prod.
+  Each promotion starts the Story 2.1 pdlv-deploy CodeBuild project (.sync), which
+  assumes the Story 1.1 member role and deploys locally in the member (RD-006
+  orchestrate-and-pull). ZTIE-safe pdlv- prefix + Project=PDE tags (RD-009; pde- is
+  ZTIE's). Least privilege: the execution role may only start/describe the specific
+  pdlv-deploy project + publish the approval request + write its own logs — no
+  wildcard actions, no broad CodeBuild grant, no admin. Author + static proof only;
+  the live Hub deploy + the dummy-payload paused-state run are Story 2.3 (the gate).
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  NamePrefix:
+    Type: String
+    Description: >-
+      PDE Hub-side naming prefix. MUST be pdlv- (RD-009): pde- is ZTIE's namespace
+      in Pipeline-Hub (18 existing pde-* stacks), and pdlv- is substring-disjoint
+      from pde so it never collides with — nor is swept up by inventory filters that
+      match — the ZTIE pde-* namespace.
+    Default: pdlv-
+    AllowedPattern: "^pdlv-$"
+    ConstraintDescription: Must be exactly "pdlv-" (RD-009 — ZTIE-safe prefix).
+
+  DeployProjectName:
+    Type: String
+    Description: >-
+      Name of the Story 2.1 pdlv-deploy CodeBuild project this state machine starts
+      per environment. Defaults to the exported value; the state machine holds
+      StartBuild on exactly this project's ARN (least privilege), nothing broader.
+    Default: pdlv-deploy
+    AllowedPattern: "^pdlv-[A-Za-z0-9-]{1,100}$"
+    ConstraintDescription: Must be a pdlv--prefixed CodeBuild project name (RD-009).
+
+  MemberRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Story 1.1 member execution role the deploy project
+      assumes in each member account. These roles live in the MEMBER accounts
+      (Dev/Sandbox/Prod), not the Hub, so they keep their pde-member-execution-<env>
+      names (RD-009). The <env> suffix is appended per environment below.
+    Default: pde-member-execution
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,56}$"
+
+  DevAccountId:
+    Type: String
+    Description: Pipeline-Dev member account ID.
+    Default: "946509368326"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  SandboxAccountId:
+    Type: String
+    Description: Pipeline-Sandbox member account ID.
+    Default: "586917955591"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  ProdAccountId:
+    Type: String
+    Description: Pipeline-Prod member account ID.
+    Default: "466494951534"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  ExternalId:
+    Type: String
+    Description: >-
+      Shared secret the deploy project presents on sts:AssumeRole into the member
+      role (confused-deputy protection, matches the Story 1.1 member trust). Passed
+      through to the CodeBuild run as an environment override; not committed real.
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 128
+    Default: "set-this-at-deploy-time"
+
+  LogRetentionDays:
+    Type: Number
+    Description: CloudWatch Logs retention for the state-machine execution log group.
+    Default: 90
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 3653]
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Approval SNS topic ------------------------------------------------------
+  # The native manual-approval paused states publish the approval request (incl. the
+  # Step Functions task token) here; a human approver resumes the execution with
+  # SendTaskSuccess (or fails it with SendTaskFailure). The execution role may ONLY
+  # publish to THIS topic (least privilege) — not sns:* on *.
+  ApprovalTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${NamePrefix}promotion-approval"
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.2" }
+        - { Key: Component, Value: state-machine }
+
+  # --- State-machine execution log group (own namespace, bounded retention) ---
+  # KMS (CKV_AWS_158): this group holds PDE Step Functions execution telemetry
+  # (state transitions + the promotion flow) in the Hub control-plane account —
+  # operational control-plane logging, NOT customer, forensic, or regulated data. A
+  # dedicated CMK is deliberately NOT provisioned at this tier: it adds key
+  # management/rotation overhead + per-request cost with no corresponding
+  # data-sensitivity need, and SSE with the CloudWatch Logs AWS-owned key already
+  # encrypts the data at rest. Revisit if a future PDE flow is made to log sensitive
+  # values (then provision a CMK + KmsKeyId here). Suppressed with reason:
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    # checkov:skip=CKV_AWS_158:PDE Step Functions operational logs (non-sensitive control-plane execution telemetry); SSE via the AWS-owned key suffices at this tier — a CMK is unjustified overhead (see comment above).
+    Properties:
+      LogGroupName: !Sub "/aws/vendedlogs/states/${NamePrefix}promotion-pipeline"
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.2" }
+        - { Key: Component, Value: state-machine }
+
+  # --- Least-privilege permissions for the state machine ----------------------
+  # Start/describe/stop EXACTLY the Story 2.1 pdlv-deploy project (by its specific
+  # ARN) — NOT codebuild:*, NOT a wildcard resource. This is the only "deploy"
+  # power the orchestrator holds; the cross-account deploy itself is done by the
+  # 2.1 CodeBuild service role (which assumes the member roles). 2.2 only STARTS it.
+  StartDeployPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}sfn-start-deploy"
+      Description: Start/describe/stop ONLY the specific pdlv-deploy CodeBuild project.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: StartSpecificDeployProjectOnly
+            Effect: Allow
+            Action:
+              - codebuild:StartBuild
+              - codebuild:StopBuild
+              - codebuild:BatchGetBuilds
+            Resource:
+              - !Sub "arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${DeployProjectName}"
+
+  # The .sync (startBuild.sync) integration uses a managed CloudWatch Events rule to
+  # learn when the build completes. These are the exact actions Step Functions needs
+  # for the CodeBuild .sync pattern, scoped to the AWS-managed rule name.
+  SyncEventsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}sfn-sync-events"
+      Description: Manage ONLY the CodeBuild .sync managed rule (startBuild.sync).
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CodeBuildSyncManagedRule
+            Effect: Allow
+            Action:
+              - events:PutTargets
+              - events:PutRule
+              - events:DescribeRule
+            Resource:
+              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForCodeBuildStartBuildRule"
+
+  # Publish the approval request (with the task token) to THIS approval topic only.
+  PublishApprovalPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}sfn-publish-approval"
+      Description: Publish the manual-approval request to the PDE approval topic only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublishApprovalTopicOnly
+            Effect: Allow
+            Action: sns:Publish
+            Resource:
+              - !Ref ApprovalTopic
+
+  # Write execution logs to THIS state machine's own log group only.
+  StateMachineLogsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}sfn-logs"
+      Description: Deliver Step Functions execution logs to the PDE pdlv- log group only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Step Functions logging to CloudWatch Logs requires these log-delivery
+          # actions; AWS models them as *-resource actions (they create a service
+          # log-delivery, not a data grant), paired with the specific log-group ARN.
+          - Sid: LogDeliverySetup
+            Effect: Allow
+            Action:
+              - logs:CreateLogDelivery
+              - logs:GetLogDelivery
+              - logs:UpdateLogDelivery
+              - logs:DeleteLogDelivery
+              - logs:ListLogDeliveries
+              - logs:DescribeResourcePolicies
+              - logs:DescribeLogGroups
+            Resource: "*"
+          - Sid: OwnStateMachineLogGroupOnly
+            Effect: Allow
+            Action:
+              - logs:PutResourcePolicy
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !GetAtt StateMachineLogGroup.Arn
+              - !Sub "${StateMachineLogGroup.Arn}:*"
+
+  # --- The state-machine execution role ---------------------------------------
+  # Trusted ONLY by Step Functions; attaches the four scoped managed policies above.
+  # No wildcards, no account-wide admin grant.
+  StateMachineExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${NamePrefix}promotion-pipeline-role"
+      Description: >-
+        Least-privilege execution role for the PDE promotion state machine. Starts
+        only the specific pdlv-deploy CodeBuild project, publishes the approval
+        request to the PDE approval topic, and writes its own execution logs
+        (RD-006). No wildcards, no admin.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: StepFunctionsServiceTrust
+            Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+      ManagedPolicyArns:
+        - !Ref StartDeployPolicy
+        - !Ref SyncEventsPolicy
+        - !Ref PublishApprovalPolicy
+        - !Ref StateMachineLogsPolicy
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.2" }
+        - { Key: Component, Value: state-machine }
+        - { Key: Model, Value: orchestrate-and-pull }
+        - { Key: ManagedBy, Value: cloudformation }
+
+  # --- The promotion state machine --------------------------------------------
+  # STANDARD type: the manual-approval states pause with .waitForTaskToken, which can
+  # outlast the 5-minute EXPRESS ceiling (a human approves on their own clock). The
+  # definition sequences:
+  #   DeployDev -> AwaitSandboxApproval (PAUSE) -> DeploySandbox
+  #             -> AwaitProdApproval (PAUSE) -> DeployProd -> PromotionSucceeded
+  # Each DeployX task is codebuild:startBuild.sync against the SPECIFIC pdlv-deploy
+  # project, overriding TARGET_ROLE_ARN + EXTERNAL_ID for that environment's member
+  # role; the deploy ACTION runs locally in the member via that assumed role (RD-006).
+  # Each AwaitXApproval is sns:publish.waitForTaskToken — a NATIVE paused state, not a
+  # wait/timer: the execution halts until a human SendTaskSuccess/SendTaskFailure.
+  PromotionStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${NamePrefix}promotion-pipeline"
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: false
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+      TracingConfiguration:
+        Enabled: true
+      DefinitionSubstitutions:
+        DeployProjectName: !Ref DeployProjectName
+        ApprovalTopicArn: !Ref ApprovalTopic
+        ExternalId: !Ref ExternalId
+        DevRoleArn: !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
+        SandboxRoleArn: !Sub "arn:${AWS::Partition}:iam::${SandboxAccountId}:role/${MemberRoleName}-sandbox"
+        ProdRoleArn: !Sub "arn:${AWS::Partition}:iam::${ProdAccountId}:role/${MemberRoleName}-prod"
+      DefinitionString: |
+        {
+          "Comment": "PDE promotion pipeline: Dev -> (approve) -> Sandbox -> (approve) -> Prod. Each deploy starts the pdlv-deploy CodeBuild project (.sync); each approval is a native waitForTaskToken pause.",
+          "StartAt": "DeployDev",
+          "States": {
+            "DeployDev": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::codebuild:startBuild.sync",
+              "Parameters": {
+                "ProjectName": "${DeployProjectName}",
+                "EnvironmentVariablesOverride": [
+                  { "Name": "TARGET_ENV", "Type": "PLAINTEXT", "Value": "dev" },
+                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${DevRoleArn}" },
+                  { "Name": "EXTERNAL_ID", "Type": "PLAINTEXT", "Value": "${ExternalId}" }
+                ]
+              },
+              "Next": "AwaitSandboxApproval"
+            },
+            "AwaitSandboxApproval": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish.waitForTaskToken",
+              "Parameters": {
+                "TopicArn": "${ApprovalTopicArn}",
+                "Message": {
+                  "stage": "Awaiting Sandbox Approval",
+                  "promoteTo": "sandbox",
+                  "taskToken.$": "$$.Task.Token",
+                  "executionId.$": "$$.Execution.Id"
+                }
+              },
+              "Next": "DeploySandbox"
+            },
+            "DeploySandbox": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::codebuild:startBuild.sync",
+              "Parameters": {
+                "ProjectName": "${DeployProjectName}",
+                "EnvironmentVariablesOverride": [
+                  { "Name": "TARGET_ENV", "Type": "PLAINTEXT", "Value": "sandbox" },
+                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${SandboxRoleArn}" },
+                  { "Name": "EXTERNAL_ID", "Type": "PLAINTEXT", "Value": "${ExternalId}" }
+                ]
+              },
+              "Next": "AwaitProdApproval"
+            },
+            "AwaitProdApproval": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish.waitForTaskToken",
+              "Parameters": {
+                "TopicArn": "${ApprovalTopicArn}",
+                "Message": {
+                  "stage": "Awaiting Prod Approval",
+                  "promoteTo": "prod",
+                  "taskToken.$": "$$.Task.Token",
+                  "executionId.$": "$$.Execution.Id"
+                }
+              },
+              "Next": "DeployProd"
+            },
+            "DeployProd": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::codebuild:startBuild.sync",
+              "Parameters": {
+                "ProjectName": "${DeployProjectName}",
+                "EnvironmentVariablesOverride": [
+                  { "Name": "TARGET_ENV", "Type": "PLAINTEXT", "Value": "prod" },
+                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${ProdRoleArn}" },
+                  { "Name": "EXTERNAL_ID", "Type": "PLAINTEXT", "Value": "${ExternalId}" }
+                ]
+              },
+              "Next": "PromotionSucceeded"
+            },
+            "PromotionSucceeded": {
+              "Type": "Succeed"
+            }
+          }
+        }
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.2" }
+        - { Key: Component, Value: state-machine }
+        - { Key: Model, Value: orchestrate-and-pull }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  PromotionStateMachineArn:
+    Description: ARN of the PDE promotion state machine (Story 2.3 starts a dummy run against this).
+    Value: !Ref PromotionStateMachine
+    Export:
+      Name: pdlv-promotion-pipeline-arn
+
+  PromotionStateMachineName:
+    Description: Name of the PDE promotion state machine.
+    Value: !GetAtt PromotionStateMachine.Name
+    Export:
+      Name: pdlv-promotion-pipeline-name
+
+  ApprovalTopicArn:
+    Description: ARN of the SNS topic the manual-approval paused states publish to.
+    Value: !Ref ApprovalTopic
+    Export:
+      Name: pdlv-promotion-approval-topic-arn
+
+  StateMachineExecutionRoleArn:
+    Description: ARN of the least-privilege state-machine execution role.
+    Value: !GetAtt StateMachineExecutionRole.Arn
+    Export:
+      Name: pdlv-promotion-pipeline-role-arn
