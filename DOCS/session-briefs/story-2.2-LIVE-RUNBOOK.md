@@ -43,9 +43,19 @@ Use the hardened launch pad from Story 1.2
 path) and confirm `LAUNCH-PAD VERIFY: PASS` BEFORE anything else. Then get onto this
 story's branch (the 2.2 files are NOT on `main`):
 
+> **AUTHORITATIVE SOURCE — clone THIS repo, nothing else (OD-008, attempt-1 execution
+> failure):** the PDE repo is **GitHub `warrenrutledge64/pde-platform`**, cloned
+> token-auth per the Story 1.2 launch pad. It is **NOT** a CodeCommit repo and is
+> **NOT** named `pde-hub` — a clone of
+> `https://git-codecommit.us-east-1.amazonaws.com/v1/repos/pde-hub/` returns
+> `repository not found` and every downstream step cascades into "file not found".
+
 ```bash
 aws sts get-caller-identity --query Account --output text   # expect 641628980935
-cd ~/pde-platform                                           # the cloned repo
+# Clone the CORRECT repo if it is not already on disk (token-auth per Story 1.2; NOT CodeCommit, NOT pde-hub):
+#   git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+cd ~/pde-platform                                           # the cloned GitHub repo
+git remote -v                                               # expect github.com/warrenrutledge64/pde-platform (NOT codecommit / pde-hub)
 git fetch origin
 git checkout feature/story-2.2                              # this story's branch
 git rev-parse --abbrev-ref HEAD                             # expect: feature/story-2.2

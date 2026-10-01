@@ -73,6 +73,11 @@ verdict from the raw output I run for you. Do not rubber-stamp.
 
 # WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
 - Story / PR: Story 2.2 — branch `feature/story-2.2` -> `main` (PR #24).
+- AUTHORITATIVE REPO (attempt 1 aborted on a wrong-repo clone, OD-008): the code is on
+  GitHub **`warrenrutledge64/pde-platform`** (token-auth clone per the Story 1.2 launch
+  pad) — it is NOT a CodeCommit repo and is NOT named `pde-hub`. Clone:
+    git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git && cd pde-platform
+    git remote -v   # confirm github.com/warrenrutledge64/pde-platform (NOT codecommit, NOT pde-hub)
 - Get on the right code FIRST and pin the head commit:
     git fetch origin
     git checkout feature/story-2.2
