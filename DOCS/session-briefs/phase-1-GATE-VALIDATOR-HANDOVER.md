@@ -69,6 +69,14 @@ it succeed now.
   members Dev 946509368326 / Sandbox 586917955591 / Prod 466494951534 (the gate's assume
   TARGETS, exercised live in Phase 2 — VD-3b); Management 467866449172 MUST be zero-touch.
   Pipeline-Forensics 360999005254 is ZTIE's account — never a PDE target.
+- CROSS-ACCOUNT ACCESS MODEL (do not mistake this for a defect): the gate reaches members via
+  `sts:AssumeRole` into `pde-hub-orchestrator` + an ExternalId — it does NOT use AWS CLI named
+  profiles (`--profile dev/sandbox/prod`). "The config profile (dev) could not be found" is
+  therefore NOT an in-scope failure; the live cross-account assume is the DEFERRED VD-3b
+  (`pde-hub-orchestrator` exists only in Phase 2). In-scope member checks at the tag are
+  READ-ONLY `aws iam get-role` / `get-role-policy` run from a session that can read the member
+  account (confirm the role exists + trusts ONLY the specific Hub principal + requires the
+  ExternalId) — not a profile-driven assume.
 
 # VERBATIM RUNBOOK CONTEXT (pulled from the repo, unmodified — the per-story evidence the phase integrates)
 - Phase-1 gate statement (the "## Phase 1" _Gate:_ line + the Progress-Summary row):
@@ -85,7 +93,25 @@ it succeed now.
   (Each story's recorded Validation Result is in governance/RUNBOOK.md under its detail block
    + its own story-N.N-VALIDATOR-HANDOVER.md; paste the specific lines you ask for.)
 
+# STEP 0 — LAUNCH-PAD BOOTSTRAP (HARD PRECONDITION — do this FIRST, before anything else)
+# This gate RUNS in Hub CloudShell and reads the repo + queries AWS. Story 1.2 proved (over
+# FIVE attempts) that the #1 failure mode here is an un-bootstrapped launch pad: a plain
+# clone lands on `main` (where the files are not), a stray `~/.git` repo hijacks the clone,
+# or the operator runs from the wrong directory — producing exactly `fatal: not a git
+# repository` / `No such file or directory`. So BEFORE you (the validator) accept ANY output:
+# require the operator to bootstrap the launch pad and paste the `LAUNCH-PAD VERIFY: PASS`
+# line. If that line is absent, seal INCONCLUSIVE on the spot (execution failure, NOT a
+# deliverable finding, and NOT a regression of the already-closed Phase 1) — do not evaluate
+# downstream output from a launch pad that is on the wrong code or wrong directory.
+#   cd ~                                  # start from HOME; ~ must NOT itself be a git repo
+#   git clone https://<PAT>@github.com/warrenrutledge64/pde-platform.git   # one line; PAT via credential helper per DOCS/CLOUDSHELL_BOOTSTRAP.md
+#   cd pde-platform
+#   bash scripts/bootstrap_launchpad.sh   # Hub-account check, $HOME-repo guard, clean checkout, fail-loud VERIFY
+#   # EXPECT the final line: LAUNCH-PAD VERIFY: PASS   AND   pwd == ~/pde-platform
+# (For a HISTORICAL re-proof, after VERIFY PASS also `git checkout 60a27f5…` to pin the phase tag — see below.)
+
 # WHAT TO FETCH (raw, pulled from the repo yourself at the phase tag — not curated by the builder)
+# PRECONDITION: STEP 0 above returned `LAUNCH-PAD VERIFY: PASS` and you are in ~/pde-platform.
     git fetch origin --tags
     git checkout 60a27f5c2b505c7b166fd4eec01efba348f62464
     git cat-file -t restore/phase-1-green          # expect: tag (annotated)
