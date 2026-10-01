@@ -18,14 +18,49 @@
 
 ---
 
-## STEP 0 — Be in the Hub account
+> ## ⚠ EXECUTION INTEGRITY (read before you run anything — attempts 1 & 2 both failed here)
+> Both prior FAILs were the **launch pad never being on the right code**: attempt 1
+> cloned `main` (feature files absent); attempt 2 pasted the OLD token-in-URL command
+> with the literal `YOUR_TOKEN` placeholder and landed on an unrelated commit. **The
+> gate script was never even reached.** To make this impossible:
+> - Run the **ONE-SHOT BOOTSTRAP** block below exactly as-is (replace only the PAT at
+>   the prompt). Do not hand-edit, do not paste fragments from an older message, and
+>   do not paste a `git clone https://...@github.com` line from anywhere else.
+> - It ends by printing `LAUNCH-PAD VERIFY: PASS`. **If you do not see that exact
+>   line, STOP** and paste the full output back — do not run STEP 1+.
+
+## STEP 0 — ONE-SHOT BOOTSTRAP (copy this whole block; replace only the PAT)
 
 ```bash
-aws sts get-caller-identity --query Account --output text    # expect 641628980935
+# CONTEXT: Pipeline-Hub 641628980935 CloudShell, us-east-1
+set -e
+aws sts get-caller-identity --query Account --output text    # MUST print 641628980935
+cd ~ && rm -rf pde-platform
+git config --global credential.helper store
+read -rs -p "GitHub PAT: " GH_PAT && echo
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials && unset GH_PAT
+git clone https://github.com/warrenrutledge64/pde-platform.git   # CLEAN url — no token in it
+cd pde-platform
+git fetch origin && git checkout feature/story-1.2
+set +e
+# ---- launch-pad VERIFY (fail-loud) ----
+ok=1
+echo "HEAD branch: $(git rev-parse --abbrev-ref HEAD)   HEAD sha: $(git rev-parse --short HEAD)"
+git merge-base --is-ancestor 677b632 HEAD 2>/dev/null && echo "✓ remediation commit 677b632 present" || { echo "✗ remediation commit 677b632 NOT present — wrong branch/code"; ok=0; }
+for f in scripts/phase1_gate.py scripts/test_phase1_gate.py infra/member-execution-role.yaml DOCS/CLOUDSHELL_BOOTSTRAP.md; do
+  [ -f "$f" ] && echo "✓ on disk: $f" || { echo "✗ MISSING: $f"; ok=0; }
+done
+git config --get remote.origin.url | grep -q '@' && { echo "✗ TOKEN in remote URL"; ok=0; } || echo "✓ remote URL carries no token"
+grep -Rqs '@github.com' .git/config && { echo "✗ credential-pattern in .git/config"; ok=0; } || echo "✓ .git/config clean"
+[ "$ok" = 1 ] && echo "LAUNCH-PAD VERIFY: PASS" || echo "LAUNCH-PAD VERIFY: FAIL — do NOT proceed; paste this output back"
 ```
 
-**PASS:** output is exactly `641628980935`. If not, switch to the Pipeline-Hub
-console / role and relaunch CloudShell before continuing.
+**PASS:** the first line prints `641628980935`, HEAD is on `feature/story-1.2`, and the
+last line is **`LAUNCH-PAD VERIFY: PASS`**. Only then continue to STEP 1.
+
+> This block supersedes the step-by-step STEP 2 / STEP 2a below (kept for reference /
+> manual runs). If you ran this one-shot block and saw `PASS`, skip to STEP 1.
 
 ## STEP 1 — Tooling present and runnable
 

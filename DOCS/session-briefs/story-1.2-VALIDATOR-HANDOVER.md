@@ -65,6 +65,17 @@ name`). Both are fixed in the remediation head below (token-safe credential-help
 clone, explicit `feature/story-1.2` checkout, and a fail-loud launch-pad VERIFY block).
 Author your DoD fresh and re-run; keep the same adversarial checks.
 
+ATTEMPT 2 ALSO FAILED — but as an EXECUTION MISMATCH, not a new code defect: the live
+CloudShell ran the OLD token-in-URL command (literal `YOUR_TOKEN` placeholder) and
+landed on a commit (`330487…`) that exists NOWHERE in the repo, so the hardened flow
+was never executed. For attempt 3, make the launch-pad setup a HARD PRECONDITION of your
+DoD: require the operator to run the single **STEP 0 ONE-SHOT BOOTSTRAP** block in
+DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md and paste its final `LAUNCH-PAD VERIFY:
+PASS` line (HEAD on `feature/story-1.2`, remediation commit `677b632` present, scripts
+on disk, no token in `.git/config`) BEFORE any STEP 1+ output is accepted. If that line
+is absent, seal FAIL/INCONCLUSIVE on the spot — do not evaluate downstream output from a
+launch pad that is on the wrong code.
+
 # WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
 - Story / PR: Story 1.2 — PR #17 (branch `feature/story-1.2` -> `main`).
 - Pinned commits:  base `1ba738bd899911e6e16009c909f0363981724681`
