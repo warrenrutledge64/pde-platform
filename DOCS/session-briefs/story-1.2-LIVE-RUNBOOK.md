@@ -41,6 +41,12 @@
 # CONTEXT: Pipeline-Hub 641628980935 CloudShell, us-east-1
 set -e
 aws sts get-caller-identity --query Account --output text    # MUST print 641628980935
+# GUARD: $HOME must NOT itself be a git repo. A stray `git init` in ~ hijacks the
+# clone (Story 1.2 attempts 1-3 root cause: ~ had HEAD "Initial commit" 3304878, so
+# the gate scripts never landed). This stops with a clear fix instead of proceeding.
+if [ "$(git -C "$HOME" rev-parse --show-toplevel 2>/dev/null)" = "$HOME" ]; then
+  echo "✗ \$HOME is a git repo — run:  rm -rf ~/.git ~/pde-platform  then re-run this block"; return 2>/dev/null || exit 2
+fi
 cd ~ && rm -rf pde-platform
 git config --global credential.helper store
 read -rs -p "GitHub PAT: " GH_PAT && echo

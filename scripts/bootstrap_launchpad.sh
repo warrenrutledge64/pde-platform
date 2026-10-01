@@ -62,6 +62,23 @@ if [ "$acct" != "$HUB_ACCOUNT_ID" ]; then
 fi
 pass "in Pipeline-Hub $HUB_ACCOUNT_ID"
 
+# --- 1b. Guard: $HOME must NOT itself be a git repo ---------------------------
+# Real failure mode (Story 1.2 attempts 1-3): a stray `git init` had turned
+# /home/cloudshell-user into a repo (HEAD = a bogus "Initial commit"). Every clone
+# ran against that stray repo instead of cloning PDE, so the gate scripts were never
+# on disk. Detect it and refuse with a precise fix, instead of cloning into a
+# nested-repo mess.
+if git -C "$HOME" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  home_top="$(git -C "$HOME" rev-parse --show-toplevel 2>/dev/null)"
+  if [ "$home_top" = "$HOME" ]; then
+    fail "\$HOME ($HOME) is itself a git repo — a stray 'git init' will hijack the clone."
+    say  "  Fix (removes only the accidental git metadata, NOT your files):"
+    say  "    rm -rf \"$HOME/.git\" && rm -rf \"$HOME/$REPO_NAME\""
+    say  "  Then re-run this bootstrap. (See Story 1.2 attempts 1-3 — this was the root cause.)"
+    exit 1
+  fi
+fi
+
 # --- 2. Hand the PAT to git via the credential helper (never into the URL) ----
 # Skip the clone/credential setup if we are ALREADY inside a correct checkout
 # (path B: the operator cloned+checked out manually, then ran this from the repo).
