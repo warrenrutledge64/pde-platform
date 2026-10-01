@@ -19,12 +19,14 @@ Story 2.1 OPENS Phase 2 — the PDE control plane in the Hub.
    OUTPUT, not a label.
 3. **NO TERRAFORM:** CloudFormation (YAML) + Python 3 ONLY (RD-004).
 4. **STRICT LEAST PRIVILEGE:** the CodeBuild service role is scoped to the lint/deploy
-   tasks on the `pde-*` namespace — no wildcards, no AdministratorAccess (Universal
+   tasks on the `pdlv-*` namespace — no wildcards, no AdministratorAccess (Universal
    Criterion 3). Cross-account deploy power comes from assuming the Story 1.1 member
    roles, NOT a broad Hub-side policy.
-5. **ZTIE-SAFE:** every PDE resource carries the `pde-` name prefix + `Project=PDE`
-   tag — strictly additive, non-destructive to the co-resident ZTIE control plane
-   (Universal Criterion 5). Zero-touch management account 467866449172.
+5. **ZTIE-SAFE (RD-009):** every PDE resource carries the **`pdlv-`** name prefix +
+   `Project=PDE` tag — NOT `pde-`, which is ZTIE's namespace in the Hub (18 existing
+   stacks incl. `pde-codebuild-foundation`; OD-004). Strictly additive,
+   non-destructive to the co-resident ZTIE control plane (Universal Criterion 5).
+   Zero-touch management account 467866449172.
 6. **NO MAIN COMMITS / NO SELF-CERTIFICATION:** branch + PR via
    `gh api repos/warrenrutledge64/pde-platform/pulls`; the USER validates live, you
    RECORD the raw STDOUT. No recorded pass → stays 🟡.
@@ -40,7 +42,7 @@ Story 2.1 OPENS Phase 2 — the PDE control plane in the Hub.
 - **Target:** Phase 2 / Story 2.1 — CodeBuild CFN templates (Lint + Deploy).
 - **Prior story state:** 1.2 ✅ (closes Phase 1). No build exists yet for 2.1.
 - **Objective:** author + offline-prove CloudFormation (YAML) for the PDE Lint and
-  Deployment CodeBuild projects + their least-privilege service role, under the `pde-`
+  Deployment CodeBuild projects + their least-privilege service role, under the `pdlv-`
   namespace with `Project=PDE` tags.
 - **Scope IN:** `infra/codebuild-projects.yaml` + an offline invariant checker
   (`infra/validate_codebuild_projects.py`, stdlib, mirroring the Story 1.1/1.2 style).

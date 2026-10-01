@@ -18,45 +18,182 @@
 
 ---
 
-## STEP 0 — Be in the Hub account
+> ## ⚠ EXECUTION INTEGRITY (read before you run anything — attempts 1 & 2 both failed here)
+> Both prior FAILs were the **launch pad never being on the right code**: attempt 1
+> cloned `main` (feature files absent); attempt 2 pasted the OLD token-in-URL command
+> with the literal `YOUR_TOKEN` placeholder and landed on an unrelated commit. **The
+> gate script was never even reached.** To make this impossible:
+> - Run the **ONE-SHOT BOOTSTRAP** block below exactly as-is (replace only the PAT at
+>   the prompt). Do not hand-edit, do not paste fragments from an older message, and
+>   do not paste a `git clone https://...@github.com` line from anywhere else.
+> - It ends by printing `LAUNCH-PAD VERIFY: PASS`. **If you do not see that exact
+>   line, STOP** and paste the full output back — do not run STEP 1+.
+
+## STEP 0 — Stand up + VERIFY the launch pad
+
+> **`pde-platform` is a PRIVATE repo** — a `raw.githubusercontent.com` URL will NOT
+> fetch anonymously, so there is no public one-liner.
+>
+> **⚠ NEVER paste a bare `set -e` into interactive CloudShell** — if any later command
+> returns non-zero, `set -e` **terminates your login shell** (the session "resets").
+> This bit Story 1.2 (session reset after a pasted `set -e`). Both paths below avoid
+> that: PATH A has no `set -e`; PATH B runs it inside a child `bash` (a subshell, so it
+> can't kill your session).
+
+### PATH A — Secure One-Shot Bootstrap (RECOMMENDED)
+
+> **Why this shape (defect fixed 2026-10-01):** an earlier PATH A told you to clone with
+> `https://warrenrutledge64@github.com/...` to force a password prompt — but that leaves
+> `@` in the remote URL, which the VERIFY gate (and `bootstrap_launchpad.sh`) correctly
+> flags as `✗ TOKEN in remote URL`. The operational step contradicted the security gate
+> → guaranteed FAIL. Also, pasting a multi-line block that contains an interactive
+> `read -p` into CloudShell makes the terminal **swallow the next lines as the password
+> input**. This version is **non-interactive**: you put the PAT in the first line, the
+> credential helper is populated **before** the clone, and the clone URL stays clean.
+
+**To avoid CloudShell terminal buffering errors:** paste your Personal Access Token (PAT)
+into the first line of this block in a local text editor, then copy and paste the ENTIRE
+block into the Hub CloudShell at once.
 
 ```bash
-aws sts get-caller-identity --query Account --output text    # expect 641628980935
+GH_PAT="paste_your_token_here_keep_the_quotes"
+
+cd ~ && rm -rf ~/.git pde-platform
+git config --global credential.helper store
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+git clone https://github.com/warrenrutledge64/pde-platform.git
+cd pde-platform && git checkout feature/story-1.2
+unset GH_PAT
+bash scripts/bootstrap_launchpad.sh
 ```
 
-**PASS:** output is exactly `641628980935`. If not, switch to the Pipeline-Hub
-console / role and relaunch CloudShell before continuing.
+**PASS:** the script ends with **`LAUNCH-PAD VERIFY: PASS`** (`641628980935` confirmed,
+HEAD on `feature/story-1.2`, scripts on disk, **no token in `.git/config`** — the clone
+URL is clean because the PAT lives only in `~/.git-credentials`, never in the remote).
+
+> **Secret hygiene:** the PAT is in your clipboard/editor and in `~/.git-credentials`
+> (mode 600) only — never in the remote URL or `.git/config`. After the session:
+> `rm -f ~/.git-credentials`. If the token ever appears in terminal output, rotate it.
+
+### PATH B — inline one-shot (reset-safe heredoc; copy the WHOLE block)
+
+Runs entirely inside a child `bash` (`bash <<'EOF' … EOF`), so the `set -e` inside it
+can never terminate your interactive session. **Non-interactive** (no `read` — a `read`
+inside a heredoc would consume the next script line as input): put your PAT in the
+`GH_PAT=` line, then copy from that line through `EOF`.
+
+```bash
+export GH_PAT="paste_your_token_here_keep_the_quotes"
+bash <<'EOF'
+set -e
+aws sts get-caller-identity --query Account --output text    # MUST print 641628980935
+if [ "$(git -C "$HOME" rev-parse --show-toplevel 2>/dev/null)" = "$HOME" ]; then
+  echo "✗ \$HOME is a git repo — run:  rm -rf ~/.git ~/pde-platform  then re-run"; exit 2
+fi
+cd ~ && rm -rf pde-platform
+git config --global credential.helper store
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+git clone https://github.com/warrenrutledge64/pde-platform.git   # CLEAN url — no token in it
+cd pde-platform
+git fetch origin && git checkout feature/story-1.2
+set +e
+ok=1
+echo "HEAD branch: $(git rev-parse --abbrev-ref HEAD)   HEAD sha: $(git rev-parse --short HEAD)"
+git merge-base --is-ancestor 677b632 HEAD 2>/dev/null && echo "✓ remediation commit 677b632 present" || { echo "✗ remediation commit 677b632 NOT present — wrong branch/code"; ok=0; }
+for f in scripts/phase1_gate.py scripts/test_phase1_gate.py infra/member-execution-role.yaml DOCS/CLOUDSHELL_BOOTSTRAP.md; do
+  [ -f "$f" ] && echo "✓ on disk: $f" || { echo "✗ MISSING: $f"; ok=0; }
+done
+git config --get remote.origin.url | grep -q '@' && { echo "✗ TOKEN in remote URL"; ok=0; } || echo "✓ remote URL carries no token"
+grep -Rqs '@github.com' .git/config && { echo "✗ credential-pattern in .git/config"; ok=0; } || echo "✓ .git/config clean"
+[ "$ok" = 1 ] && echo "LAUNCH-PAD VERIFY: PASS" || echo "LAUNCH-PAD VERIFY: FAIL — do NOT proceed; paste this output back"
+EOF
+unset GH_PAT
+```
+
+**PASS (either path):** the output ends with **`LAUNCH-PAD VERIFY: PASS`**.
+
+> This supersedes the step-by-step STEP 2 / STEP 2a below (kept for reference / manual
+> runs). Once you have seen `LAUNCH-PAD VERIFY: PASS`, continue to STEP 1.
 
 ## STEP 1 — Tooling present and runnable
 
 ```bash
 aws --version                                                # aws-cli/2.x (preinstalled)
 python3 --version                                            # Python 3.x (preinstalled)
-python3 -c "import boto3, sys; print('boto3', boto3.__version__)"   # preinstalled
-pip install --user --upgrade cfn-lint                        # not preinstalled — add it
-export PATH="$HOME/.local/bin:$PATH"
-cfn-lint --version                                           # confirm on PATH
+python3 -c "import boto3; print('boto3', boto3.__version__)" # preinstalled
+# cfn-lint: install ONLY if it is not already present. CloudShell runs pip inside a
+# virtualenv, so `pip install --user` FAILS ("User site-packages are not visible in
+# this virtualenv"). Do NOT use --user; a plain `pip install` into the active venv is
+# correct — and most CloudShell images already ship cfn-lint, so this is often a no-op.
+cfn-lint --version 2>/dev/null || pip install --upgrade cfn-lint
+cfn-lint --version                                           # confirm present + on PATH
 ```
 
 **PASS:** AWS CLI v2, Python 3, boto3, and cfn-lint each print a version with no
-error.
+error. (If `cfn-lint --version` already printed `1.5x.x`, the tool is present and the
+install line is a no-op — that is a PASS, not a failure. The `--user` error you may
+have seen from an older copy of this runbook is harmless because cfn-lint was already
+installed; this updated line avoids it entirely.)
 
-## STEP 2 — Token-auth repo access (clone + scrub the token)
+## STEP 2 — Token-auth repo access (token NEVER in the remote URL)
+
+> **Why this changed (attempt-1 FAIL, 2026-09-30):** the old flow embedded the
+> token in the clone URL and then relied on a manual scrub line — which was skipped,
+> leaving the PAT in `.git/config`. **New rule: the token is never written into the
+> remote URL at all.** It is handed to git ONCE via a credential helper, so there is
+> nothing to scrub.
 
 ```bash
 cd ~
-git clone https://<TOKEN>@github.com/warrenrutledge64/pde-platform.git
+rm -rf pde-platform                                          # clean start (idempotent)
+# Hand the PAT to git ONCE, out of the URL and off the command line (read -rs = no echo):
+git config --global credential.helper store                 # (CloudShell $HOME is per-user)
+read -rs -p "GitHub PAT: " GH_PAT && echo
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+unset GH_PAT                                                 # drop it from the shell env
+# Clone over a CLEAN URL (no token in it); git pulls the PAT from the helper:
+git clone https://github.com/warrenrutledge64/pde-platform.git
 cd pde-platform
-git remote set-url origin https://github.com/warrenrutledge64/pde-platform.git
-git remote -v                                                # confirm NO token in the URL
-ls infra/member-execution-role.yaml scripts/phase1_gate.py   # templates/scripts on disk
 ```
 
-**PASS:** the clone succeeds, the remote URL has no embedded token, and the Story
-1.1 template + the Phase-1 gate script are present on disk.
+**Then check out THIS story's branch (the 1.2 artifacts are on `feature/story-1.2`,
+NOT yet on `main`):**
 
-> **Secret hygiene:** if the `<TOKEN>` ever appears in terminal output, **rotate it
-> immediately** in GitHub. Prefer a fine-grained PAT scoped to this repo only.
+```bash
+git fetch origin
+git checkout feature/story-1.2
+git rev-parse --abbrev-ref HEAD                              # expect: feature/story-1.2
+```
+
+**PASS:** the clone succeeds and HEAD is on `feature/story-1.2`.
+
+> **Secret hygiene:** the PAT lives only in `~/.git-credentials` (mode 600), never in
+> `.git/config` and never on screen. Prefer a fine-grained PAT scoped to THIS repo
+> (contents: read). If a token ever appears in terminal output, **rotate it
+> immediately** in GitHub. To remove it after the session: `rm -f ~/.git-credentials`.
+
+## STEP 2a — VERIFY the launch pad (fail-loud gate — attempt-1 would have stopped here)
+
+Run this ONE block. It fails loudly (`✗`) if the pinned commit is missing, the
+scripts are not on disk, or a token lingers in the git config — the exact three
+things that sank attempt 1. **Do not proceed to STEP 3 unless every line prints `✓`.**
+
+```bash
+# in ~/pde-platform, on feature/story-1.2
+ok=1
+git cat-file -e fcfe4f3d 2>/dev/null && echo "✓ pinned commit fcfe4f3d present" || { echo "✗ pinned commit MISSING — you are not on the fetched branch"; ok=0; }
+for f in scripts/phase1_gate.py scripts/test_phase1_gate.py infra/member-execution-role.yaml DOCS/CLOUDSHELL_BOOTSTRAP.md; do
+  [ -f "$f" ] && echo "✓ on disk: $f" || { echo "✗ MISSING: $f"; ok=0; }
+done
+if git config --get remote.origin.url | grep -q '@'; then echo "✗ TOKEN in remote URL — scrub it"; ok=0; else echo "✓ remote URL carries no token"; fi
+if grep -Rqs '@github.com' .git/config; then echo "✗ credential-pattern in .git/config"; ok=0; else echo "✓ .git/config is clean"; fi
+[ "$ok" = 1 ] && echo "LAUNCH-PAD VERIFY: PASS" || echo "LAUNCH-PAD VERIFY: FAIL — fix the ✗ lines before STEP 3"
+```
+
+**PASS:** every line is `✓` and the last line reads `LAUNCH-PAD VERIFY: PASS`.
 
 ## STEP 3 — The committed Phase-1 gate script proves out offline
 
@@ -88,11 +225,13 @@ a committed script; it deploys nothing).
 
 1. **STEP 0** — CloudShell is in Pipeline-Hub `641628980935`.
 2. **STEP 1** — AWS CLI v2, Python 3, boto3, cfn-lint all present and runnable.
-3. **STEP 2** — token-auth clone works; repo (templates + gate script) is on disk;
-   remote URL carries no token.
-4. **STEP 3** — the committed gate script passes its offline proof (24 invariants)
+3. **STEP 2** — token-auth clone works via a credential helper (no token in the URL)
+   and HEAD is on `feature/story-1.2`.
+4. **STEP 2a** — `LAUNCH-PAD VERIFY: PASS` — pinned commit present, all four artifacts
+   on disk, and no token in the git config.
+5. **STEP 3** — the committed gate script passes its offline proof (24 invariants)
    and `--help` runs.
-5. **STEP 4** — management account is zero-touch (no `pde-` stacks).
+6. **STEP 4** — management account is zero-touch (no `pde-` stacks).
 
 > **Deferred to Phase 2 (NOT a failure, NOT in this gate):** the live Hub→member
 > `sts:AssumeRole` run of `scripts/phase1_gate.py` — it needs `pde-hub-orchestrator`,
