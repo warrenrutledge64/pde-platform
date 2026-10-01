@@ -18,7 +18,7 @@
 > Dev `946509368326`, Sandbox `586917955591`, Prod `466494951534`; management/root
 > `467866449172` zero-touch; Pipeline-Forensics `360999005254` is ZTIE's, not PDE.
 >
-> **Artifact:** `infra/state-machine.yaml` (offline-proven — 48 invariants via
+> **Artifact:** `infra/state-machine.yaml` (offline-proven — 49 invariants via
 > `python3 infra/validate_state_machine.py`, plus `--self-test`). Story 2.2 stays
 > 🟡 until the validator seals a PASS on the static-bar output below.
 
@@ -76,7 +76,7 @@ echo "VERIFY PASS: Story 2.2 target files present"
 
 ```bash
 python3 infra/validate_state_machine.py
-# expect: validate_state_machine: PASS — all 48 state-machine invariants hold
+# expect: validate_state_machine: PASS — all 49 state-machine invariants hold
 ```
 
 ## STEP 2 — Prove the checker actually GUARDS (in memory, NO disk write)
@@ -104,7 +104,7 @@ checkov -f infra/state-machine.yaml --framework cloudformation
 - `checkov` reports no failed checks that indicate a real least-privilege / hardening
   regression (CKV_AWS_158 should be the single, justified, SKIPPED Log Group finding;
   triage any informational findings against the DoD).
-- The offline checker is `PASS — all 48 invariants hold`.
+- The offline checker is `PASS — all 49 invariants hold`.
 
 ## STEP 4 — Spot-check the invariants by eye (adversarial)
 
@@ -123,6 +123,14 @@ grep -n 'Default: pdlv-deploy' infra/state-machine.yaml
 # No pde- Hub resource name (only pdlv-); exports are pdlv-*
 grep -nE '(StateMachineName|RoleName|TopicName|LogGroupName|ManagedPolicyName):' infra/state-machine.yaml
 grep -n 'Export:' -A1 infra/state-machine.yaml
+
+# Project=PDE tags — the template uses inline-map syntax "- { Key: Project, Value: PDE }",
+# so grep for THAT, not "Project: PDE" (a plain "Project: PDE" grep returns nothing here —
+# a false warning, not a missing tag; the offline checker counts these authoritatively):
+grep -n 'Key: Project, Value: PDE' infra/state-machine.yaml   # expect 4 (topic + log group + role + state machine)
+
+# At-rest encryption on the approval topic (checkov CKV_AWS_26 — the attempt-3 FAIL, now fixed):
+grep -n 'KmsMasterKeyId' infra/state-machine.yaml             # expect: KmsMasterKeyId: alias/aws/sns
 
 # Least privilege — these should return NOTHING (prove absence):
 grep -nE 'AdministratorAccess|PowerUserAccess|codebuild:\*|sns:\*' infra/state-machine.yaml || echo "none — good"
@@ -162,8 +170,15 @@ Record in `governance/RUNBOOK.md` Story 2.2 the validator's sealed one-line verd
 - **The `logs:*`-resource `Resource: "*"`** in the logging policy is the AWS-required
   log-*delivery* setup (not a data grant); the log-write actions (`CreateLogStream`/
   `PutLogEvents`) are scoped to this state machine's own log-group ARN.
-- **Checkov triage:** CKV_AWS_158 on the Log Group is a justified, SKIPPED finding
-  (operational control-plane telemetry; AWS-owned-key SSE suffices). Any real
-  wildcard/privilege finding is a FAIL.
+- **Checkov triage:** two encryption findings are addressed differently and both should
+  now be clean — **CKV_AWS_26** (SNS at-rest encryption) is REALLY FIXED on the
+  `ApprovalTopic` via `KmsMasterKeyId: alias/aws/sns` (the approval channel carries the
+  task token + decision, so it gets real SSE, not a skip); **CKV_AWS_158** on the Log
+  Group is a justified, SKIPPED finding (operational control-plane telemetry; AWS-owned-key
+  SSE suffices). Checkov should report **0 failed checks** (CKV_AWS_158 shown as SKIPPED).
+  Any real wildcard/privilege finding is a FAIL.
+- **`Project=PDE` grep caveat:** the tags use inline-map syntax
+  `- { Key: Project, Value: PDE }`; grep for `Key: Project, Value: PDE` (expect 4), not a
+  bare `Project: PDE` (which returns nothing — a false warning, not a missing tag).
 - **Pipeline-Forensics (`360999005254`) is ZTIE's — never a target.** Management/root
   `467866449172` is zero-touch.

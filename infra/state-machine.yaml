@@ -100,6 +100,14 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub "${NamePrefix}promotion-approval"
+      # At-rest encryption (checkov CKV_AWS_26). Unlike the operational Log Group below,
+      # this topic carries the Step Functions task token + the promotion decision — a
+      # control-plane security channel — so it gets REAL SSE, not a justified skip. The
+      # AWS-managed SNS key (alias/aws/sns) is used deliberately: it satisfies CKV_AWS_26
+      # with zero key-management/rotation overhead and no per-key cost, which is the
+      # right fit at this tier. Swap in a dedicated CMK here if a future requirement
+      # needs key isolation, rotation control, or a cross-account key policy.
+      KmsMasterKeyId: alias/aws/sns
       Tags:
         - { Key: Project, Value: PDE }
         - { Key: Story, Value: "2.2" }

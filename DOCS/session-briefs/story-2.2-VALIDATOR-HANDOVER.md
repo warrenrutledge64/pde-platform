@@ -134,7 +134,7 @@ verdict from the raw output I run for you. Do not rubber-stamp.
    DOCS/session-briefs/story-2.2-LIVE-RUNBOOK.md — you may adopt, reorder, or ADD to
    them, but author the acceptance criteria yourself. These run OFFLINE/CI-side (no AWS
    resource is created in 2.2):
-      python3 infra/validate_state_machine.py             # expect: PASS — all 48 invariants hold
+      python3 infra/validate_state_machine.py             # expect: PASS — all 49 invariants hold
       python3 infra/validate_state_machine.py --self-test # guard flips to FAIL on sabotage (in memory, no disk write)
       pip install cfn-lint checkov
       cfn-lint infra/state-machine.yaml

@@ -201,6 +201,10 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          "Value: PDE" in raw),
         ("every taggable resource is Project=PDE-tagged (topic + log group + role + state machine = 4; managed policies have no Tags)",
          raw.count("Key: Project, Value: PDE") == 4),
+        # --- checkov CKV_AWS_26: SNS at-rest encryption on the approval topic ---
+        #     (REAL SSE, not a skip — the topic carries the task token + decision).
+        ("approval SNS topic has at-rest encryption (checkov CKV_AWS_26)",
+         "KmsMasterKeyId:" in raw),
         # --- checkov CKV_AWS_158: Log Group KMS — satisfied by a justified skip ---
         ("the Log Group carries a justified CKV_AWS_158 KMS suppression (checkov)",
          full.count("checkov:skip=CKV_AWS_158:") == 1),
@@ -301,6 +305,9 @@ def self_test() -> int:
         ("dropped CKV_AWS_158 suppression",
          good.replace("checkov:skip=CKV_AWS_158:", "nope:", 1),
          "CKV_AWS_158 KMS suppression"),
+        ("dropped SNS at-rest encryption (CKV_AWS_26)",
+         good.replace("KmsMasterKeyId: alias/aws/sns", "", 1),
+         "approval SNS topic has at-rest encryption"),
         ("wildcard action injected",
          good.replace("Action: sns:Publish", 'Action: "*"', 1),
          "no full wildcard action"),
