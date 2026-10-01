@@ -15,8 +15,8 @@
   plane, co-resident with ZTIE), `Pipeline-Dev`, `Pipeline-Sandbox`,
   `Pipeline-Prod` (deployment targets). **Home region: `us-east-1`** (pinned at
   Story 1.1; the org trail is multi-region but delivers to this home region).
-- **Last updated:** 2026-09-30 (Story 1.1 authored; awaiting live validation)
-- **Current restore point:** none yet
+- **Last updated:** 2026-10-01 (Story 1.2 authored + offline-proven; awaiting live Option-B validation)
+- **Current restore point:** none yet (`restore/phase-1-green` is cut when Story 1.2's live pass closes Phase 1)
 
 ---
 
@@ -25,6 +25,9 @@
 | Component | Type | Version | Notes |
 |-----------|------|---------|-------|
 | `infra/member-execution-role.yaml` | CloudFormation template | Story 1.1 | Orchestrate-and-pull trust fabric — member exec role the Hub *orchestrator* invokes (RD-006 amended). Offline-proven (21 invariants). Not yet deployed. |
+| `scripts/phase1_gate.py` | Python 3 / Boto3 script | Story 1.2 | Phase-1 gate — Hub (as `pde-hub-orchestrator`) assumes each `pde-member-execution-<env>` role (Dev→Sandbox→Prod) with the ExternalId and prints the returned account ids. Offline-proven (24 invariants). Its live cross-account run is the deferred VD-3b (Phase 2). |
+| `scripts/test_phase1_gate.py` | Python 3 (stdlib) checker | Story 1.2 | Offline proof bar for the Phase-1 gate script — 24 source + behaviour invariants against a fake STS stub (no AWS / no network). |
+| `DOCS/CLOUDSHELL_BOOTSTRAP.md` | Operator runbook | Story 1.2 | Reproducible Pipeline-Hub CloudShell bootstrap — token-auth repo clone (with token-scrub), AWS CLI / Python 3 / Boto3 / cfn-lint tooling, ExternalId-as-env-var, gate-script usage. |
 | `infra/deferred/spoke-execution-role.push-model.yaml` | CloudFormation template (retired) | — | First trust-fabric attempt (Hub-pushes-into-Spoke); superseded by the orchestrate-and-pull model. Preserved for historical reference; do not deploy. |
 | `infra/deferred/cloudtrail-org-baseline.yaml` | CloudFormation template (deferred) | Story 4.1 | Org-wide CloudTrail baseline — **deferred** per RD-007; preserved for historical reference; adapted to Hub-delegated at Phase 4. |
 | AWS CloudFormation | IaC engine | YAML (native) | Sole IaC standard (RD-004); no Terraform. |
