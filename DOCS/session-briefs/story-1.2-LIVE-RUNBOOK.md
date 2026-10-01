@@ -40,32 +40,51 @@
 > that: PATH A has no `set -e`; PATH B runs it inside a child `bash` (a subshell, so it
 > can't kill your session).
 
-### PATH A — named script (RECOMMENDED: 3 short lines, nothing big to mis-paste)
+### PATH A — Secure One-Shot Bootstrap (RECOMMENDED)
 
-Run these **one line at a time**. No `set -e`. The token goes at git's password prompt
-(paste your **PAT**, not an account password); the committed script then sets up the
-credential helper, checks out the branch, and runs the fail-loud VERIFY.
+> **Why this shape (defect fixed 2026-10-01):** an earlier PATH A told you to clone with
+> `https://warrenrutledge64@github.com/...` to force a password prompt — but that leaves
+> `@` in the remote URL, which the VERIFY gate (and `bootstrap_launchpad.sh`) correctly
+> flags as `✗ TOKEN in remote URL`. The operational step contradicted the security gate
+> → guaranteed FAIL. Also, pasting a multi-line block that contains an interactive
+> `read -p` into CloudShell makes the terminal **swallow the next lines as the password
+> input**. This version is **non-interactive**: you put the PAT in the first line, the
+> credential helper is populated **before** the clone, and the clone URL stays clean.
+
+**To avoid CloudShell terminal buffering errors:** paste your Personal Access Token (PAT)
+into the first line of this block in a local text editor, then copy and paste the ENTIRE
+block into the Hub CloudShell at once.
 
 ```bash
+GH_PAT="paste_your_token_here_keep_the_quotes"
+
 cd ~ && rm -rf ~/.git pde-platform
-```
-```bash
-git clone https://warrenrutledge64@github.com/warrenrutledge64/pde-platform.git
-```
-```bash
-cd pde-platform && git checkout feature/story-1.2 && bash scripts/bootstrap_launchpad.sh
+git config --global credential.helper store
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+git clone https://github.com/warrenrutledge64/pde-platform.git
+cd pde-platform && git checkout feature/story-1.2
+unset GH_PAT
+bash scripts/bootstrap_launchpad.sh
 ```
 
 **PASS:** the script ends with **`LAUNCH-PAD VERIFY: PASS`** (`641628980935` confirmed,
-HEAD on `feature/story-1.2`, scripts on disk, no token in `.git/config`).
+HEAD on `feature/story-1.2`, scripts on disk, **no token in `.git/config`** — the clone
+URL is clean because the PAT lives only in `~/.git-credentials`, never in the remote).
+
+> **Secret hygiene:** the PAT is in your clipboard/editor and in `~/.git-credentials`
+> (mode 600) only — never in the remote URL or `.git/config`. After the session:
+> `rm -f ~/.git-credentials`. If the token ever appears in terminal output, rotate it.
 
 ### PATH B — inline one-shot (reset-safe heredoc; copy the WHOLE block)
 
 Runs entirely inside a child `bash` (`bash <<'EOF' … EOF`), so the `set -e` inside it
-can never terminate your interactive session. Copy from `bash <<'EOF'` through `EOF`.
-It prompts once for your PAT (silent) and keeps the token out of the URL/`.git/config`.
+can never terminate your interactive session. **Non-interactive** (no `read` — a `read`
+inside a heredoc would consume the next script line as input): put your PAT in the
+`GH_PAT=` line, then copy from that line through `EOF`.
 
 ```bash
+export GH_PAT="paste_your_token_here_keep_the_quotes"
 bash <<'EOF'
 set -e
 aws sts get-caller-identity --query Account --output text    # MUST print 641628980935
@@ -74,9 +93,8 @@ if [ "$(git -C "$HOME" rev-parse --show-toplevel 2>/dev/null)" = "$HOME" ]; then
 fi
 cd ~ && rm -rf pde-platform
 git config --global credential.helper store
-read -rs -p "GitHub PAT: " GH_PAT && echo
 printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
-chmod 600 ~/.git-credentials && unset GH_PAT
+chmod 600 ~/.git-credentials
 git clone https://github.com/warrenrutledge64/pde-platform.git   # CLEAN url — no token in it
 cd pde-platform
 git fetch origin && git checkout feature/story-1.2
@@ -91,6 +109,7 @@ git config --get remote.origin.url | grep -q '@' && { echo "✗ TOKEN in remote 
 grep -Rqs '@github.com' .git/config && { echo "✗ credential-pattern in .git/config"; ok=0; } || echo "✓ .git/config clean"
 [ "$ok" = 1 ] && echo "LAUNCH-PAD VERIFY: PASS" || echo "LAUNCH-PAD VERIFY: FAIL — do NOT proceed; paste this output back"
 EOF
+unset GH_PAT
 ```
 
 **PASS (either path):** the output ends with **`LAUNCH-PAD VERIFY: PASS`**.

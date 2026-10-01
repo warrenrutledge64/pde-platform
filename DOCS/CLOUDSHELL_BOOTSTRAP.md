@@ -113,16 +113,23 @@ precisely because a token-in-URL clone left the PAT in `.git/config`.)
 > *only* this repository (*contents: read*, plus *write* if you push from here). If a
 > token is ever echoed to the transcript, **rotate it immediately** in GitHub.
 
+> **Non-interactive on purpose:** do NOT use an interactive `read -p` for the PAT in a
+> pasted multi-line block — CloudShell's terminal buffer swallows the following lines as
+> the password input. Put the PAT in the first line, populate the credential helper
+> *before* the clone, and keep the clone URL clean (no `username@` — that `@` would trip
+> the `.git/config`-clean gate).
+
 ```bash
+GH_PAT="paste_your_token_here_keep_the_quotes"
+
 cd ~
-rm -rf pde-platform                                   # clean start (idempotent)
+rm -rf ~/.git pde-platform                            # clean start (idempotent)
 git config --global credential.helper store
-read -rs -p "GitHub PAT: " GH_PAT && echo            # silent; nothing on screen
 printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
 chmod 600 ~/.git-credentials
-unset GH_PAT
 git clone https://github.com/warrenrutledge64/pde-platform.git   # CLEAN url, no token
 cd pde-platform
+unset GH_PAT
 ```
 
 **Check out the story's branch** — PDE work-in-progress lives on a feature branch,
