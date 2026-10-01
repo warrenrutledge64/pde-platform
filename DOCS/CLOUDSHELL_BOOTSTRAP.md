@@ -40,27 +40,28 @@ role) and relaunch CloudShell before doing anything else.
 ## 1. Tooling check (AWS CLI, Python 3 / Boto3, cfn-lint)
 
 AWS CloudShell ships the **AWS CLI v2**, **Python 3**, **pip**, and **boto3**
-preinstalled. Confirm them, then add **cfn-lint** (not preinstalled) into the
-persistent user site so it survives a session recycle.
+preinstalled — and most current CloudShell images also ship **cfn-lint**. Confirm
+them; install cfn-lint only if it is missing.
 
 ```bash
 aws --version                 # aws-cli/2.x …   (preinstalled)
 python3 --version             # Python 3.x      (preinstalled)
-python3 -c "import boto3, sys; print('boto3', boto3.__version__)"   # preinstalled
+python3 -c "import boto3; print('boto3', boto3.__version__)"   # preinstalled
 ```
-
-Install cfn-lint for the current user (persists in `$HOME/.local`):
 
 ```bash
-pip install --user --upgrade cfn-lint
-cfn-lint --version            # confirm it is on PATH; if not, see the note below
+# Install ONLY if cfn-lint is not already present. CloudShell runs pip inside a
+# virtualenv, where `pip install --user` FAILS with "User site-packages are not
+# visible in this virtualenv" — do NOT use --user; a plain install into the active
+# venv is correct.
+cfn-lint --version 2>/dev/null || pip install --upgrade cfn-lint
+cfn-lint --version            # confirm present + on PATH
 ```
 
-> If `cfn-lint` is not found after a `--user` install, add the user bin to PATH for
-> this session (and your `~/.bashrc` to persist it):
-> ```bash
-> export PATH="$HOME/.local/bin:$PATH"
-> ```
+> **Why not `--user`:** CloudShell activates a virtualenv, which disables user
+> site-packages. `pip install --user cfn-lint` therefore errors — but if cfn-lint is
+> already installed (common), that error is harmless noise. The line above sidesteps
+> it: it runs the install only when cfn-lint is actually absent, and without `--user`.
 
 Optional (the fuller static bar used in CI / Story 1.1's runbook):
 

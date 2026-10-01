@@ -77,14 +77,20 @@ last line is **`LAUNCH-PAD VERIFY: PASS`**.
 ```bash
 aws --version                                                # aws-cli/2.x (preinstalled)
 python3 --version                                            # Python 3.x (preinstalled)
-python3 -c "import boto3, sys; print('boto3', boto3.__version__)"   # preinstalled
-pip install --user --upgrade cfn-lint                        # not preinstalled — add it
-export PATH="$HOME/.local/bin:$PATH"
-cfn-lint --version                                           # confirm on PATH
+python3 -c "import boto3; print('boto3', boto3.__version__)" # preinstalled
+# cfn-lint: install ONLY if it is not already present. CloudShell runs pip inside a
+# virtualenv, so `pip install --user` FAILS ("User site-packages are not visible in
+# this virtualenv"). Do NOT use --user; a plain `pip install` into the active venv is
+# correct — and most CloudShell images already ship cfn-lint, so this is often a no-op.
+cfn-lint --version 2>/dev/null || pip install --upgrade cfn-lint
+cfn-lint --version                                           # confirm present + on PATH
 ```
 
 **PASS:** AWS CLI v2, Python 3, boto3, and cfn-lint each print a version with no
-error.
+error. (If `cfn-lint --version` already printed `1.5x.x`, the tool is present and the
+install line is a no-op — that is a PASS, not a failure. The `--user` error you may
+have seen from an older copy of this runbook is harmless because cfn-lint was already
+installed; this updated line avoids it entirely.)
 
 ## STEP 2 — Token-auth repo access (token NEVER in the remote URL)
 
