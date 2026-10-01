@@ -56,21 +56,34 @@ its absence is NOT a Story 1.2 failure. (Author an adversarial check that it is
 correctly DEFERRED/safe, not one that demands it succeed now.) Everything else is fair
 game to attack.
 
+# RE-VALIDATION (attempt 2) — attempt 1 sealed FAIL; the fixes are in the new head
+Attempt 1 (head `fcfe4f3d`) FAILED on two operator-launch-pad defects — the token was
+left in the git remote, and the 1.2 artifacts were not on disk because the live
+CloudShell was never checked out onto this story's branch (a plain `git clone` lands on
+`main`, where the files do not yet exist, so `git show fcfe4f3d` was `invalid object
+name`). Both are fixed in the remediation head below (token-safe credential-helper
+clone, explicit `feature/story-1.2` checkout, and a fail-loud launch-pad VERIFY block).
+Author your DoD fresh and re-run; keep the same adversarial checks.
+
 # WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
 - Story / PR: Story 1.2 — PR #17 (branch `feature/story-1.2` -> `main`).
 - Pinned commits:  base `1ba738bd899911e6e16009c909f0363981724681`
-                   head `fcfe4f3d71ef27ba0a0a02b4eb1569249e87f6d0`
-- Fetch the raw diff yourself (do not trust a summary):
+                   head `677b632bec48e629315a07953b183d396eccad49`  (attempt-2 remediation)
+- The 1.2 artifacts live on the branch `feature/story-1.2`, NOT on `main` (the PR is
+  unmerged). Get on the right code FIRST, or every file check will fail:
     git fetch origin
-    git diff 1ba738bd899911e6e16009c909f0363981724681..fcfe4f3d71ef27ba0a0a02b4eb1569249e87f6d0
+    git checkout feature/story-1.2
+    git rev-parse --abbrev-ref HEAD        # expect: feature/story-1.2
+- Fetch the raw diff yourself (do not trust a summary):
+    git diff 1ba738bd899911e6e16009c909f0363981724681..677b632bec48e629315a07953b183d396eccad49
 - FULL context at the exact head commit (a diff is not enough — read the whole files):
-    git show fcfe4f3d:scripts/phase1_gate.py
-    git show fcfe4f3d:scripts/test_phase1_gate.py
-    git show fcfe4f3d:DOCS/CLOUDSHELL_BOOTSTRAP.md
-    git show fcfe4f3d:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md
-    git show fcfe4f3d:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4)
+    git show 677b632:scripts/phase1_gate.py
+    git show 677b632:scripts/test_phase1_gate.py
+    git show 677b632:DOCS/CLOUDSHELL_BOOTSTRAP.md
+    git show 677b632:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md    # includes the new STEP 2a VERIFY gate
+    git show 677b632:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4; attempt-1 FAIL recorded)
   (Also read the trust-fabric contract the gate script targets, unchanged this story:
-    git show fcfe4f3d:infra/member-execution-role.yaml )
+    git show 677b632:infra/member-execution-role.yaml )
 
 # ENVIRONMENT FACTS (so you can author account-specific steps)
 - Pipeline-Hub (where CloudShell + the gate run): 641628980935
