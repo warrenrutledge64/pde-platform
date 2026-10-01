@@ -68,13 +68,22 @@ Author your DoD fresh and re-run; keep the same adversarial checks.
 ATTEMPT 2 ALSO FAILED — but as an EXECUTION MISMATCH, not a new code defect: the live
 CloudShell ran the OLD token-in-URL command (literal `YOUR_TOKEN` placeholder) and
 landed on a commit (`330487…`) that exists NOWHERE in the repo, so the hardened flow
-was never executed. For attempt 3, make the launch-pad setup a HARD PRECONDITION of your
-DoD: require the operator to run the single **STEP 0 ONE-SHOT BOOTSTRAP** block in
+was never executed. Make the launch-pad setup a HARD PRECONDITION of your DoD: require
+the operator to run the single **STEP 0 ONE-SHOT BOOTSTRAP** block in
 DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md and paste its final `LAUNCH-PAD VERIFY:
 PASS` line (HEAD on `feature/story-1.2`, remediation commit `677b632` present as an
-ancestor — current tip is `6a527a6`, scripts on disk, no token in `.git/config`) BEFORE
+ancestor — current tip is `3923329`, scripts on disk, no token in `.git/config`) BEFORE
 any STEP 1+ output is accepted. If that line is absent, seal FAIL/INCONCLUSIVE on the
 spot — do not evaluate downstream output from a launch pad that is on the wrong code.
+
+ATTEMPT 3 ALSO FAILED — same `330487…` non-repo commit, scripts absent (token WAS
+sanitized this time). ROOT CAUSE finally diagnosed: **the operator's `$HOME`
+(`/home/cloudshell-user`) was itself a stray git repo** (HEAD `3304878 "Initial
+commit"`), so every clone ran against that stray repo and the PDE scripts never landed.
+Fixed two ways in the current head `3923329`: (a) the operator cleaned `~` (`rm -rf
+~/.git`), and (b) the bootstrap + STEP 0 block now **guard against `$HOME` being a git
+repo** and refuse with the exact fix. The attempt-3 verdict also used a STALE handover
+(targeted `fcfe4f3d`) — ensure you are reading THIS copy at head `3923329`.
 
 # NEW CONTEXT SINCE ATTEMPT 2 (govern against stale assumptions — read before authoring)
 A live Hub check during these attempts found **18 pre-existing `pde-*` CloudFormation
@@ -94,23 +103,23 @@ current ground truth:
 # WHAT CHANGED (raw, pulled from the repo yourself — not curated by the builder)
 - Story / PR: Story 1.2 — PR #17 (branch `feature/story-1.2` -> `main`).
 - Pinned commits:  base `1ba738bd899911e6e16009c909f0363981724681`
-                   head `6a527a62bb6ff23aaebbefc5516d035d3008153a`  (current branch tip)
+                   head `3923329` (current branch tip; supersedes 6a527a6 — adds the $HOME-repo guard + attempt-3 FAIL record)
 - The 1.2 artifacts live on the branch `feature/story-1.2`, NOT on `main` (the PR is
   unmerged). Get on the right code FIRST, or every file check will fail:
     git fetch origin
     git checkout feature/story-1.2
     git rev-parse --abbrev-ref HEAD        # expect: feature/story-1.2
 - Fetch the raw diff yourself (do not trust a summary):
-    git diff 1ba738bd899911e6e16009c909f0363981724681..6a527a62bb6ff23aaebbefc5516d035d3008153a
+    git diff 1ba738bd899911e6e16009c909f0363981724681..3923329
 - FULL context at the exact head commit (a diff is not enough — read the whole files):
-    git show 6a527a6:scripts/phase1_gate.py
-    git show 6a527a6:scripts/test_phase1_gate.py
-    git show 6a527a6:scripts/bootstrap_launchpad.sh                   # the named launch-pad bootstrap
-    git show 6a527a6:DOCS/CLOUDSHELL_BOOTSTRAP.md
-    git show 6a527a6:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md    # STEP 0 one-shot bootstrap + VERIFY
-    git show 6a527a6:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4) + OD-004/005/006
+    git show 3923329:scripts/phase1_gate.py
+    git show 3923329:scripts/test_phase1_gate.py
+    git show 3923329:scripts/bootstrap_launchpad.sh                   # the named launch-pad bootstrap (now with the $HOME-repo guard)
+    git show 3923329:DOCS/CLOUDSHELL_BOOTSTRAP.md
+    git show 3923329:DOCS/session-briefs/story-1.2-LIVE-RUNBOOK.md    # STEP 0 one-shot bootstrap + VERIFY ($HOME guard)
+    git show 3923329:governance/RUNBOOK.md        # story ledger + Validation Debt Register (VD-4) + OD-004/005/006
   (Also read the trust-fabric contract the gate script targets, unchanged this story:
-    git show 6a527a6:infra/member-execution-role.yaml )
+    git show 3923329:infra/member-execution-role.yaml )
 
 # ENVIRONMENT FACTS (so you can author account-specific steps)
 - Pipeline-Hub (where CloudShell + the gate run): 641628980935
