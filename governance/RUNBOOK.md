@@ -198,14 +198,13 @@ dummy-payload Step Functions run in 2.3). Carried Phase-2 confirmation
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 2.2 | 3 | ✅ **Statically proven — sealed PASS (2026-10-01, Independent Validator, CI run #36943324686 @ `4aa3e5a`).** `infra/state-machine.yaml` + `infra/validate_state_machine.py` (**49 invariants** + `--self-test`). The checkout-proof CI static bar went green on the fixed+hardened tip: cfn-lint clean, Checkov Passed 62 / Failed 0 / Skipped 3 (CKV_AWS_26 SNS encryption present at line 110; the 1 skip is the justified CKV_AWS_158 log-group suppression), offline checker + `--self-test` ✅. The 8-attempt road to green (attempts 1+2+6 execution/clone failures, 3 a real CKV_AWS_26 FAIL fixed fix-then-validate-once, 4+5 stale-checkout re-runs, 7 an out-of-scope deferred-template failure resolved via `--skip-path infra/deferred` + deferred hardening) is recorded on VD-6 + OD-008. **VD-6 CLEARED; OD-008 PAID.** Does NOT close Phase 2 (2.3 remains; the Phase 2 gate is the dummy-payload run in 2.3). |
+| 2.3 | 4 | ✅ unblocked — deps 2.1 ✅ **and** 2.2 ✅ (sealed PASS 2026-10-01); register empty, gate DISARMED. **First live-deploy story + CLOSES Phase 2.** Handoff authored: [`story-2.3-brief.md`](../DOCS/session-briefs/story-2.3-brief.md) + [`story-2.3-PROMPT.md`](../DOCS/session-briefs/story-2.3-PROMPT.md). |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| 2.3 | 4 | Story 2.2 not yet validated (built + offline-proven, VD-6 open; 2.1 ✅) |
-| 3.1 | 5 | Phase 2 gate not yet passed |
+| 3.1 | 5 | Phase 2 gate (Story 2.3) not yet passed |
 | 3.2 | 6 | Story 3.1 not yet validated |
 | 3.3 | 7 | Story 3.2 not yet validated |
 | 3.4 | 8 | Story 3.3 not yet validated |
