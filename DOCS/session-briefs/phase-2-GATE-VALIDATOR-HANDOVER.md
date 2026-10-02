@@ -24,6 +24,14 @@
 > commands, the phase story set, the scope boundary — is pre-filled from the repo, not from
 > the builder's framing. The validator authors the Definition of Done and the verdict; you
 > run its steps live and paste back the RAW output.
+>
+> **STEP 0 is a HARD PRECONDITION (OD-013).** The attempt-1 gate FAIL (2026-10-02) reported
+> the execution environment was "missing the git repo / BOM / scripts / RESTORE manifest" —
+> but those are all present in the repo; the launch pad was simply never bootstrapped. The
+> fenced block below now opens with a STEP 0 that clones + bootstraps + verifies the launch
+> pad (`LAUNCH-PAD VERIFY: PASS`) and confirms `governance/BOM.md`, `governance/RESTORE.md`,
+> `scripts/`, and the `restore/phase-2-green` tag are on disk BEFORE any gate step. If that
+> verify does not pass, the validator seals **INCONCLUSIVE (Execution Failure)**, not FAIL.
 
 ---
 
@@ -35,6 +43,28 @@ FROM SCRATCH, try to BREAK the integrated phase, and seal a verdict from the raw
 run for you. Do not rubber-stamp. "Each story passed" is NOT a phase pass — the gate is the
 integrated, end-to-end live behaviour of the control plane against its gate statement, plus
 its restore point and its bill of materials.
+
+# STEP 0 — HARD PRECONDITION: BOOTSTRAP THE LAUNCH PAD FIRST (do this BEFORE anything else)
+# (OD-013 — added after the attempt-1 gate FAIL reported "missing git repo / BOM / scripts
+#  / RESTORE manifest". Those files ARE in the repo — that verdict's execution-environment
+#  findings were an UN-BOOTSTRAPPED launch pad, not a deliverable defect. A plain clone can
+#  land on main / the wrong dir, or a stray ~/.git can hijack it. Bootstrap, then verify,
+#  BEFORE you accept any downstream output.)
+#   Run in Pipeline-Hub 641628980935 CloudShell (confirm with `aws sts get-caller-identity`):
+#     cd ~
+#     # Replace REAL_PAT with a real GitHub PAT — never paste the literal <TOKEN>, and QUOTE
+#     # the URL so bash cannot read '<' as a redirect (OD-008 lesson):
+#     git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
+#     cd pde-platform
+#     bash scripts/bootstrap_launchpad.sh      # Hub-account check + $HOME-is-a-repo guard + clean clone + checkout
+#   REQUIRE the printed `LAUNCH-PAD VERIFY: PASS` AND confirm the gate inputs are on disk:
+#     test -f governance/BOM.md && test -f governance/RESTORE.md && test -d scripts \
+#       && git cat-file -t restore/phase-2-green    # expect: tag
+#   If `LAUNCH-PAD VERIFY: PASS` does not print, or any of those files are absent, SEAL
+#   **INCONCLUSIVE (Execution Failure)** on the spot — NOT FAIL. A FAIL means a deliverable
+#   defect; a launch pad that never loaded the code judged nothing. (Preferred, checkout-
+#   proof alternative: run the committed CI static bar so GitHub checks out the head itself.)
+#   Only once the launch pad verifies do you proceed to the gate task below.
 
 # THE GATE REQUIREMENT (in the stakeholder's own words — the one anchor no AI authored)
 [[ State, plainly, what ALL of Phase 2 must do for the PDE control plane to be "done" — the
