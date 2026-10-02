@@ -14,7 +14,7 @@
 > **gaps are marked as gaps**, not papered over. (Same discipline PDE applies to all
 > control mappings: proposed-at-authoring, ratified-on-review, never overclaim.)
 >
-> **Scope = everything in purview.** The ratified decisions RD-001…RD-008, the tracked
+> **Scope = everything in purview.** The ratified decisions RD-001…RD-010, the tracked
 > debt OD-002/OD-003, the human accept/reject gate, and the orchestrate-and-pull
 > control model. Sources of truth remain [`PROJECT_PLAN.md`](PROJECT_PLAN.md) (the RDs)
 > and [`RUNBOOK.md`](RUNBOOK.md) (the debt registers + gates); this Profile maps to
@@ -76,7 +76,7 @@ below and honestly bounded.
 | MANAGE-1.3 (risks prioritized + responded to) | Advancement gate ARMS on open validation debt; deferrals are deliberate, prioritized, and recorded (RD-007). | RUNBOOK gate; RD-007 | Proposed |
 | MANAGE-2.1 (mechanisms to sustain value / go-no-go) | Human accept/reject go/no-go at each promotion; split-brain validation for production. | RD-006; Universal Criterion 2 | Proposed |
 | MANAGE-2.4 (deactivate / roll back) | Restore-point discipline (code + state as one unit); backout in every LIVE-RUNBOOK; revert-don't-forward-patch. | RESTORE; LIVE-RUNBOOKs | Proposed |
-| MANAGE-3.1 (third-party / reused-component risk managed) | Upstream fixes to `SDD-repo-kit`; ZTIE non-destructive co-existence (naming/tagging). | OD-001; Universal Criterion 5 | Proposed |
+| MANAGE-3.1 (third-party / reused-component risk managed) | Upstream fixes to `SDD-repo-kit`; ZTIE non-destructive co-existence (naming/tagging); the ZTIE↔PDE integration is a decoupled, versioned, fail-closed contract (no build-time entanglement between the two products). | OD-001; Universal Criterion 5; RD-010 | Proposed |
 | MANAGE-4.1 (ongoing monitoring; incidents feed improvement) | Warm handoffs fold lessons forward; the doc-consistency gate (`check_docs`) runs on every commit. | METHODOLOGY §5; `.githooks` | Proposed |
 | **GAP** — runtime AI monitoring | **Not yet addressed.** No continuous runtime monitoring of agent behavior in production (there is no production AI runtime yet). Ties to the deferred agent-activity display (OD-003) and deferred org audit (OD-002). | OD-002; OD-003 | Gap (tracked) |
 
