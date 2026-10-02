@@ -185,6 +185,32 @@ import — but for the dummy run to resolve the project, deploy CodeBuild first.
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
 
+# --- SELF-HEALING pre-deploy guard (CANNOT be skipped — attempts 2 & 3 failed because
+#     the dead ROLLBACK_COMPLETE stack was never deleted; VD-7 / OD-009). Define once,
+#     then call before each deploy. It deletes ONLY a pdlv- stack that is in a dead,
+#     un-updatable state (ROLLBACK_COMPLETE / *_FAILED / DELETE_FAILED) and WAITS. ---
+ensure_deployable () {
+  local S="$1"
+  case "$S" in pdlv-*) : ;; *) echo "REFUSING: $S is not a pdlv- stack — STOP"; return 1 ;; esac
+  local ST
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" \
+        --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "ABSENT")
+  echo "$S => $ST"
+  case "$ST" in
+    ROLLBACK_COMPLETE|ROLLBACK_FAILED|CREATE_FAILED|DELETE_FAILED|UPDATE_ROLLBACK_FAILED)
+      echo "  dead stack — deleting before deploy (self-heal)…"
+      aws cloudformation delete-stack --stack-name "$S"
+      aws cloudformation wait stack-delete-complete --stack-name "$S"
+      echo "  $S deleted; ready for a clean create." ;;
+    *_IN_PROGRESS)
+      echo "  $S is $ST — WAIT for it to settle, do not deploy over an in-progress stack"; return 1 ;;
+    ABSENT|CREATE_COMPLETE|UPDATE_COMPLETE) : ;;  # fine to deploy
+    *) echo "  $S is $ST — inspect before deploying"; return 1 ;;
+  esac
+}
+
+ensure_deployable pdlv-codebuild || { echo "guard stop"; }
+
 aws cloudformation deploy \
   --template-file infra/codebuild-projects.yaml \
   --stack-name pdlv-codebuild \
@@ -209,6 +235,11 @@ matches the Story 1.1 member-role trust (do NOT commit it; type it at deploy tim
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+
+# SELF-HEALING guard again (this is the stack that was stuck in ROLLBACK_COMPLETE on
+# attempts 1-3). If you are in a FRESH shell that did not run STEP 2, re-paste the
+# ensure_deployable () {...} definition from STEP 2 first, then:
+ensure_deployable pdlv-state-machine || { echo "guard stop"; }
 
 aws cloudformation deploy \
   --template-file infra/state-machine.yaml \
