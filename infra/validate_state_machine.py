@@ -78,6 +78,9 @@ def _extract_asl(raw_text: str) -> dict | None:
     ``Tags:`` key. Returns the parsed object, or None if it is absent/unparseable
     (so the structural ASL invariants fail loudly rather than silently pass).
     """
+    # The PRODUCTION pipeline is the FIRST state machine in the file, so its is the
+    # first DefinitionString block — this keeps the existing DeployDev/sequence
+    # invariants pointed at the real pipeline (not the gate probe added in Story 2.3).
     m = re.search(r"\n      DefinitionString: \|\n(.*?)\n      Tags:", raw_text, re.DOTALL)
     if not m:
         return None
@@ -89,6 +92,78 @@ def _extract_asl(raw_text: str) -> dict | None:
         return json.loads(dedented)
     except (ValueError, TypeError):
         return None
+
+
+def _definition_block(raw_text: str, sm_resource: str) -> str:
+    """Return the raw text of the DefinitionString JSON for a named state-machine
+    resource (``PromotionStateMachine`` / ``GateProbeStateMachine``), or "" if absent.
+
+    Used to scope security invariants to the RIGHT state machine — e.g. "the probe
+    references no codebuild" must read the probe's definition, not the pipeline's.
+    """
+    m = re.search(
+        sm_resource + r":\s*\n.*?DefinitionString: \|\n(.*?)\n      Tags:",
+        raw_text, re.DOTALL)
+    return m.group(1) if m else ""
+
+
+def _iam_description_values(raw_text: str) -> list[str]:
+    """Return the text of every IAM-resource Description that AWS will validate.
+
+    IAM Role / ManagedPolicy descriptions must match AWS's regex
+    [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]* — a stray em-dash / smart
+    quote (common on paste) makes CreateRole fail and rolls the whole stack back
+    (Story 2.3 attempt 9). We approximate "an IAM resource's Description" as any
+    ``Description:`` whose nearest preceding ``Type:`` is an IAM type. Returns the
+    rendered description strings (folded ``>-`` blocks joined) for the ASCII check.
+    """
+    lines = raw_text.split("\n")
+    # find line indexes of IAM resource Type declarations
+    iam_type_lines = [
+        i for i, ln in enumerate(lines)
+        if re.search(r"Type:\s*AWS::IAM::(Role|ManagedPolicy)\b", ln)
+    ]
+    results: list[str] = []
+    for i, ln in enumerate(lines):
+        m = re.match(r"(\s*)Description:\s*(.*)$", ln)
+        if not m:
+            continue
+        # is the nearest preceding Type: an IAM type?
+        preceding_type = max((t for t in iam_type_lines if t < i), default=None)
+        # and is there no other Type: between it and here (i.e. same resource)?
+        if preceding_type is None:
+            continue
+        between = [j for j, l2 in enumerate(lines)
+                   if preceding_type < j < i and re.match(r"\s*Type:\s*\S", l2)]
+        if between:
+            continue
+        indent, first = m.group(1), m.group(2).strip()
+        if first in (">-", "|", ">", "|-"):
+            # folded/literal block: gather deeper-indented following lines
+            body = []
+            for nxt in lines[i + 1:]:
+                if nxt.strip() == "":
+                    body.append("")
+                    continue
+                if len(nxt) - len(nxt.lstrip()) > len(indent):
+                    body.append(nxt.strip())
+                else:
+                    break
+            results.append(" ".join(body).strip())
+        else:
+            results.append(first.strip('"'))
+    return results
+
+
+_IAM_DESCRIPTION_RE = re.compile(r"[^\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]")
+
+
+def _probe_definition(raw_text: str) -> str:
+    return _definition_block(raw_text, "GateProbeStateMachine")
+
+
+def _promotion_definition(raw_text: str) -> str:
+    return _definition_block(raw_text, "PromotionStateMachine")
 
 
 def run_checks(template_text: str) -> list[tuple[str, bool]]:
@@ -137,8 +212,9 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         (f"template Description within the CFN {CFN_DESCRIPTION_MAX_BYTES}-byte limit (cfn-lint E1003)",
          0 < _description_bytes(full) <= CFN_DESCRIPTION_MAX_BYTES),
         # --- The state machine exists and is STANDARD (approval pauses can outlast EXPRESS) ---
-        ("declares one AWS::StepFunctions::StateMachine",
-         raw.count("Type: AWS::StepFunctions::StateMachine") == 1),
+        ("declares two state machines: the production pipeline + the Story 2.3 gate probe",
+         raw.count("Type: AWS::StepFunctions::StateMachine") == 2
+         and "PromotionStateMachine:" in raw and "GateProbeStateMachine:" in raw),
         ("state machine is STANDARD type (manual-approval pause can outlast EXPRESS)",
          "StateMachineType: STANDARD" in raw),
         # --- ASL is present and parses as JSON ---
@@ -170,10 +246,10 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          _is_approval_pause("AwaitSandboxApproval")),
         ("manual-approval pause before Prod (waitForTaskToken, not a timer)",
          _is_approval_pause("AwaitProdApproval")),
-        ("exactly two waitForTaskToken approval pauses",
-         raw.count("sns:publish.waitForTaskToken") == 2),
-        ("approval pauses carry the Step Functions task token ($$.Task.Token)",
-         raw.count('"taskToken.$": "$$.Task.Token"') == 2),
+        ("the production pipeline has exactly two waitForTaskToken approval pauses",
+         _promotion_definition(full).count("sns:publish.waitForTaskToken") == 2),
+        ("the production approval pauses carry the Step Functions task token ($$.Task.Token)",
+         _promotion_definition(full).count('"taskToken.$": "$$.Task.Token"') == 2),
         ("the pause is NOT faked with a Wait/timer state",
          '"Type": "Wait"' not in raw),
         # --- The deploy tasks START the Story 2.1 pdlv-deploy project ---
@@ -199,15 +275,15 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         # --- Project=PDE tagging on every taggable resource ---
         ("resources tagged Project=PDE",
          "Value: PDE" in raw),
-        ("every taggable resource is Project=PDE-tagged (topic + log group + role + state machine = 4; managed policies have no Tags)",
-         raw.count("Key: Project, Value: PDE") == 4),
+        ("every taggable resource is Project=PDE-tagged (pipeline: topic+log group+role+SM = 4; probe: log group+role+SM = 3; total 7; managed policies have no Tags)",
+         raw.count("Key: Project, Value: PDE") == 7),
         # --- checkov CKV_AWS_26: SNS at-rest encryption on the approval topic ---
         #     (REAL SSE, not a skip — the topic carries the task token + decision).
         ("approval SNS topic has at-rest encryption (checkov CKV_AWS_26)",
          "KmsMasterKeyId:" in raw),
         # --- checkov CKV_AWS_158: Log Group KMS — satisfied by a justified skip ---
-        ("the Log Group carries a justified CKV_AWS_158 KMS suppression (checkov)",
-         full.count("checkov:skip=CKV_AWS_158:") == 1),
+        ("both Log Groups (state machine + gate probe) carry a justified CKV_AWS_158 KMS suppression (checkov)",
+         full.count("checkov:skip=CKV_AWS_158:") == 2),
         # --- Least privilege: NO wildcard admin (Universal Criterion 3) ---
         ("no AdministratorAccess",
          "AdministratorAccess" not in raw),
@@ -232,6 +308,96 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          not re.search(r"Resource:\s*\n\s*-\s*!Sub\s*\"arn:\$\{AWS::Partition\}:iam::.*role/\$\{MemberRoleName\}", raw)),
         ("sns:Publish is scoped to the approval topic (Ref ApprovalTopic), not *",
          "!Ref ApprovalTopic" in raw and "sns:Publish" in raw),
+        # --- EventBridge managed-rule permissions for the codebuild:startBuild.sync
+        #     integration (live-sealed FAIL class, Story 2.3 attempt 1, 2026-10-01):
+        #     at CreateStateMachine time Step Functions calls events:PutRule/PutTargets/
+        #     DescribeRule to provision + validate the managed rule for the
+        #     codebuild:startBuild.sync integration. CORRECTED THROUGH 3 LIVE ATTEMPTS
+        #     (attempts 1, 5, 6): the authorization check does NOT accept a
+        #     resource-SCOPED grant (a literal rule ARN OR the StepFunctionsGetEventsFor*
+        #     family both got AccessDenied, SDK Attempt Count 11), and it is NOT an
+        #     ordering race (an explicit DependsOn did not help). AWS's OWN published IAM
+        #     template for this integration grants exactly these three actions on
+        #     Resource: "*". So the correct, documented grant is the three managed-rule
+        #     actions on "*", bounded to events: rule-management actions only. ---
+        ("SFN role grants the three AWS-documented .sync managed-rule actions (PutRule/PutTargets/DescribeRule)",
+         all(a in raw for a in ("events:PutRule", "events:PutTargets", "events:DescribeRule"))),
+        ("the .sync managed-rule actions are on Resource \"*\" (AWS-documented; a scoped rule ARN gets AccessDenied at CreateStateMachine — attempts 1/5/6)",
+         bool(re.search(
+             # Within the CodeBuildSyncManagedRule statement ONLY (stop at the next
+             # `- Sid:` so we never read a later statement's Resource), the Resource is "*".
+             r"Sid:\s*CodeBuildSyncManagedRule\b"
+             r"(?:(?!-\s*Sid:).)*?"
+             r"Resource:\s*[\"']\*[\"']",
+             raw, re.DOTALL))),
+        ("still least-privilege on the events grant: no events:* wildcard (only the named rule-management actions)",
+         "events:*" not in raw),
+        # --- Step Functions CloudWatch Logs DELIVERY permissions (live-sealed FAIL
+        #     class, Story 2.3 attempt 7, 2026-10-02): CreateStateMachine attaches a log
+        #     DESTINATION, which needs the account-level log-delivery actions + especially
+        #     logs:PutResourcePolicy on Resource "*". PutResourcePolicy scoped to a
+        #     log-group ARN gets "not authorized to access the Log Destination" and rolls
+        #     back. Only the log-WRITE actions (CreateLogStream/PutLogEvents) may be
+        #     scoped to the own log-group ARN. ---
+        ("logs:PutResourcePolicy is in a LogDeliverySetup \"*\" statement and NEVER in a scoped Own*LogGroupOnly statement (account-level; a scoped ARN gets 'not authorized to access the Log Destination' — attempt 7)",
+         "logs:PutResourcePolicy" in raw
+         # it must appear in every LogDeliverySetup "*" block that exists...
+         and all(
+             "logs:PutResourcePolicy" in blk
+             for blk in re.findall(r"Sid:\s*LogDeliverySetup\b((?:(?!-\s*Sid:).)*?)Resource:\s*[\"']\*[\"']", raw, re.DOTALL)
+         )
+         # ...and NEVER inside a scoped Own*LogGroupOnly statement.
+         and not re.search(
+             r"Sid:\s*Own\w*LogGroupOnly\b(?:(?!-\s*Sid:).)*?logs:PutResourcePolicy",
+             raw, re.DOTALL)),
+        ("the account-level log-delivery actions are on Resource \"*\" (CreateLogDelivery present in the \"*\" statement)",
+         bool(re.search(
+             r"Sid:\s*LogDeliverySetup\b"
+             r"(?:(?!-\s*Sid:).)*?logs:CreateLogDelivery"
+             r"(?:(?!-\s*Sid:).)*?Resource:\s*[\"']\*[\"']",
+             raw, re.DOTALL))),
+        # --- PHASE 2 GATE PROBE (Story 2.3): a SEPARATE, structurally non-promoting
+        #     state machine proves the approval pause is reachable WITHOUT a real deploy.
+        #     Security guarantees enforced here so the probe can NEVER become a deploy/
+        #     promotion path, and the PRODUCTION pipeline stays bypass-free. ---
+        ("a separate gate-probe state machine exists (Story 2.3 — proves the pause without a deploy)",
+         "GateProbeStateMachine:" in raw and '!Sub "${NamePrefix}gate-probe"' in raw),
+        ("the gate probe references NO codebuild / startBuild anywhere (cannot deploy or promote)",
+         _probe_definition(full) != ""
+         and "codebuild" not in _probe_definition(full)
+         and "startBuild" not in _probe_definition(full)),
+        ("the gate probe terminates in a Fail state, never Succeed (an approved probe can't read as a promotion)",
+         '"GateProbeReachedPause"' in _probe_definition(full)
+         and '"Type": "Fail"' in _probe_definition(full)
+         and '"Type": "Succeed"' not in _probe_definition(full)),
+        ("the gate-probe role has ONLY publish + logs (no codebuild, no events managed-rule, no sts:AssumeRole into a member)",
+         "!Ref GateProbePublishPolicy" in raw and "!Ref GateProbeLogsPolicy" in raw
+         and not re.search(r"GateProbe\w*Policy:(?:(?!Type: AWS::IAM).)*?(codebuild:|events:PutRule|events:PutTargets|sts:AssumeRole)", raw, re.DOTALL)),
+        # --- PRODUCTION pipeline stays BYPASS-FREE: no input-driven skip. The real
+        #     promotion path must keep all three deploys + both approvals in strict
+        #     order (already checked above) and introduce NO Choice/gateMode branch. ---
+        ("the PRODUCTION promotion pipeline has NO gateMode / input-driven bypass branch",
+         "gateMode" not in _promotion_definition(full)
+         and '"Type": "Choice"' not in _promotion_definition(full)),
+        # --- IAM Description ASCII constraint (live-sealed FAIL class, Story 2.3
+        #     attempt 9): an IAM Role/ManagedPolicy Description with a non-ASCII char
+        #     (em-dash, smart quote) fails AWS's regex at CreateRole and rolls the stack
+        #     back. Every IAM resource Description must be plain ASCII in AWS's allowed
+        #     range. ---
+        ("every IAM Role/ManagedPolicy Description is within AWS's allowed character set (no em-dash/smart-quote — attempt 9)",
+         all(_IAM_DESCRIPTION_RE.search(d) is None for d in _iam_description_values(full))),
+        # --- CloudFormation ORDERING: the state machine must DependsOn its managed
+        #     policies (live-sealed FAIL class, Story 2.3 attempt 5, 2026-10-01): without
+        #     it, CreateStateMachine fires before SyncEventsPolicy is attached/propagated
+        #     and Step Functions' events:PutRule is denied ("not authorized to create
+        #     managed-rule", SDK Attempt Count 11). DependsOn forces the attachments to
+        #     complete first — a pure ordering fix, no privilege change. ---
+        ("the state machine DependsOn its managed policies (ordering: policies attached before CreateStateMachine)",
+         bool(re.search(
+             r"PromotionStateMachine:\s*\n\s*Type:\s*AWS::StepFunctions::StateMachine\s*\n"
+             r"(?:.*\n)*?\s*DependsOn:\s*\n"
+             r"(?:\s*-\s*\w+\s*\n)*?\s*-\s*SyncEventsPolicy\b",
+             raw))),
         # --- Execution role is scoped + trusted only by Step Functions ---
         ("a Step Functions execution role exists",
          "StateMachineExecutionRole:" in raw and "Type: AWS::IAM::Role" in raw),
@@ -321,6 +487,57 @@ def self_test() -> int:
         ("promotion order broken (Dev skips the Sandbox approval)",
          good.replace('"Next": "AwaitSandboxApproval"', '"Next": "DeploySandbox"', 1),
          "promotion order is Dev"),
+        # The live-sealed FAIL class (attempts 1/5/6): scoping the .sync managed-rule
+        # grant to a rule ARN instead of "*" gets AccessDenied at CreateStateMachine.
+        # Re-introduce a scoped resource on that statement — must re-fail the "on
+        # Resource *" invariant.
+        ("SFN managed-rule grant re-scoped to a rule ARN (the attempts-1/5/6 FAIL)",
+         # Flip ONLY the managed-rule statement's Resource "*" to a scoped ARN. The
+         # events statement is the only `Resource: "*"` on its own line (the logs policy
+         # uses `Resource: "*"` too but on a differently-indented line); target the
+         # events one by its unique 12-space indent + exact value.
+         good.replace(
+             '            Resource: "*"',
+             '            Resource:\n              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForCodeBuildStartBuildRule"',
+             1),
+         "sync managed-rule actions are on Resource"),
+        # Over-broad fix regression: events:* must still be rejected.
+        ("events:* broadening injected",
+         good.replace("events:PutTargets", "events:*", 1),
+         "no events:* wildcard"),
+        # The attempt-5 FAIL class: drop the state machine's DependsOn on its policies
+        # (the CreateStateMachine-before-policy-attached ordering race) — must re-fail.
+        ("state machine DependsOn on managed policies removed (the attempt-5 ordering race)",
+         re.sub(r"\n    DependsOn:\n(?:      - \w+\n)+", "\n", good, count=1),
+         "DependsOn its managed policies"),
+        # The attempt-7 FAIL class: remove logs:PutResourcePolicy from the "*" delivery
+        # statement (it would have to be scoped, which gets the Log Destination denial).
+        ("logs:PutResourcePolicy removed from the \"*\" delivery statement (the attempt-7 FAIL)",
+         good.replace("              - logs:PutResourcePolicy\n", ""),  # remove from ALL delivery blocks
+         "logs:PutResourcePolicy is in a LogDeliverySetup"),
+        # Gate-probe security: the probe must never gain a deploy/promote path.
+        ("gate probe given a codebuild/startBuild path (probe must be non-promoting)",
+         good.replace(
+             '"GateProbeReachedPause"',
+             '"DeployViaProbe"', 1).replace(
+             '"GateProbeReachedPause": {\n              "Type": "Fail",',
+             '"DeployViaProbe": {\n              "Type": "Task",\n              "Resource": "arn:aws:states:::codebuild:startBuild.sync",',
+             1),
+         "references NO codebuild / startBuild"),
+        ("gate probe terminal flipped Fail -> Succeed (an approved probe would read as a promotion)",
+         good.replace(
+             '"GateProbeReachedPause": {\n              "Type": "Fail",',
+             '"GateProbeReachedPause": {\n              "Type": "Succeed",', 1),
+         "terminates in a Fail state, never Succeed"),
+        # Production bypass: injecting a gateMode skip into the real pipeline must fail.
+        ("gateMode bypass injected into the PRODUCTION pipeline",
+         good.replace('"StartAt": "DeployDev"', '"StartAt": "DeployDev", "gateMode": true', 1),
+         "PRODUCTION promotion pipeline has NO gateMode"),
+        # The attempt-9 FAIL class: a non-ASCII em-dash in an IAM role Description.
+        ("non-ASCII em-dash injected into an IAM role Description (the attempt-9 FAIL)",
+         good.replace("writes its own logs - nothing else",
+                      "writes its own logs \u2014 nothing else", 1),
+         "within AWS's allowed character set"),
     ]
 
     all_ok = True
