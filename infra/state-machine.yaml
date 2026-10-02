@@ -519,7 +519,7 @@ Resources:
       RoleName: !Sub "${NamePrefix}gate-probe-role"
       Description: >-
         Minimal execution role for the Phase 2 gate probe. Publishes the approval
-        request to the PDE approval topic and writes its own logs — nothing else.
+        request to the PDE approval topic and writes its own logs - nothing else.
         No codebuild, no events managed-rule, no cross-account assume.
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:

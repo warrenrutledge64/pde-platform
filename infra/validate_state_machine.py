@@ -107,6 +107,57 @@ def _definition_block(raw_text: str, sm_resource: str) -> str:
     return m.group(1) if m else ""
 
 
+def _iam_description_values(raw_text: str) -> list[str]:
+    """Return the text of every IAM-resource Description that AWS will validate.
+
+    IAM Role / ManagedPolicy descriptions must match AWS's regex
+    [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]* — a stray em-dash / smart
+    quote (common on paste) makes CreateRole fail and rolls the whole stack back
+    (Story 2.3 attempt 9). We approximate "an IAM resource's Description" as any
+    ``Description:`` whose nearest preceding ``Type:`` is an IAM type. Returns the
+    rendered description strings (folded ``>-`` blocks joined) for the ASCII check.
+    """
+    lines = raw_text.split("\n")
+    # find line indexes of IAM resource Type declarations
+    iam_type_lines = [
+        i for i, ln in enumerate(lines)
+        if re.search(r"Type:\s*AWS::IAM::(Role|ManagedPolicy)\b", ln)
+    ]
+    results: list[str] = []
+    for i, ln in enumerate(lines):
+        m = re.match(r"(\s*)Description:\s*(.*)$", ln)
+        if not m:
+            continue
+        # is the nearest preceding Type: an IAM type?
+        preceding_type = max((t for t in iam_type_lines if t < i), default=None)
+        # and is there no other Type: between it and here (i.e. same resource)?
+        if preceding_type is None:
+            continue
+        between = [j for j, l2 in enumerate(lines)
+                   if preceding_type < j < i and re.match(r"\s*Type:\s*\S", l2)]
+        if between:
+            continue
+        indent, first = m.group(1), m.group(2).strip()
+        if first in (">-", "|", ">", "|-"):
+            # folded/literal block: gather deeper-indented following lines
+            body = []
+            for nxt in lines[i + 1:]:
+                if nxt.strip() == "":
+                    body.append("")
+                    continue
+                if len(nxt) - len(nxt.lstrip()) > len(indent):
+                    body.append(nxt.strip())
+                else:
+                    break
+            results.append(" ".join(body).strip())
+        else:
+            results.append(first.strip('"'))
+    return results
+
+
+_IAM_DESCRIPTION_RE = re.compile(r"[^\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]")
+
+
 def _probe_definition(raw_text: str) -> str:
     return _definition_block(raw_text, "GateProbeStateMachine")
 
@@ -328,6 +379,13 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         ("the PRODUCTION promotion pipeline has NO gateMode / input-driven bypass branch",
          "gateMode" not in _promotion_definition(full)
          and '"Type": "Choice"' not in _promotion_definition(full)),
+        # --- IAM Description ASCII constraint (live-sealed FAIL class, Story 2.3
+        #     attempt 9): an IAM Role/ManagedPolicy Description with a non-ASCII char
+        #     (em-dash, smart quote) fails AWS's regex at CreateRole and rolls the stack
+        #     back. Every IAM resource Description must be plain ASCII in AWS's allowed
+        #     range. ---
+        ("every IAM Role/ManagedPolicy Description is within AWS's allowed character set (no em-dash/smart-quote — attempt 9)",
+         all(_IAM_DESCRIPTION_RE.search(d) is None for d in _iam_description_values(full))),
         # --- CloudFormation ORDERING: the state machine must DependsOn its managed
         #     policies (live-sealed FAIL class, Story 2.3 attempt 5, 2026-10-01): without
         #     it, CreateStateMachine fires before SyncEventsPolicy is attached/propagated
@@ -475,6 +533,11 @@ def self_test() -> int:
         ("gateMode bypass injected into the PRODUCTION pipeline",
          good.replace('"StartAt": "DeployDev"', '"StartAt": "DeployDev", "gateMode": true', 1),
          "PRODUCTION promotion pipeline has NO gateMode"),
+        # The attempt-9 FAIL class: a non-ASCII em-dash in an IAM role Description.
+        ("non-ASCII em-dash injected into an IAM role Description (the attempt-9 FAIL)",
+         good.replace("writes its own logs - nothing else",
+                      "writes its own logs \u2014 nothing else", 1),
+         "within AWS's allowed character set"),
     ]
 
     all_ok = True
