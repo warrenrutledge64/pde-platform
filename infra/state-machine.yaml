@@ -296,6 +296,23 @@ Resources:
   # wait/timer: the execution halts until a human SendTaskSuccess/SendTaskFailure.
   PromotionStateMachine:
     Type: AWS::StepFunctions::StateMachine
+    # LIVE-FIX (Story 2.3 attempt 5, 2026-10-01): the clean-slate deploy STILL rolled
+    # back with "pdlv-promotion-pipeline-role is not authorized to create managed-rule"
+    # (SDK Attempt Count: 11 — Step Functions retried PutRule through the whole window
+    # and stayed denied). ROOT CAUSE was NOT the policy content (the SyncEventsPolicy
+    # already grants the complete .sync managed-rule action set on the right ARN) but a
+    # CloudFormation ORDERING race: `RoleArn: !GetAtt ...Role.Arn` makes the state
+    # machine wait for the ROLE, but NOT for the role's MANAGED-POLICY ATTACHMENTS to
+    # propagate through IAM — so CreateStateMachine fired (and immediately tried
+    # events:PutRule) before SyncEventsPolicy was effective on the role, and IAM denied
+    # it. FIX: an explicit DependsOn on all four managed policies forces CloudFormation
+    # to finish attaching them BEFORE creating the state machine. This changes ONLY
+    # resource ordering — it does not alter least privilege.
+    DependsOn:
+      - StartDeployPolicy
+      - SyncEventsPolicy
+      - PublishApprovalPolicy
+      - StateMachineLogsPolicy
     Properties:
       StateMachineName: !Sub "${NamePrefix}promotion-pipeline"
       StateMachineType: STANDARD

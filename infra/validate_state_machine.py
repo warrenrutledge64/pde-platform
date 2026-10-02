@@ -248,6 +248,18 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          "rule/StepFunctionsGetEventsFor*" in raw),
         ("still least-privilege: no events:* wildcard, no Resource \"*\" on the events policy",
          "events:*" not in raw),
+        # --- CloudFormation ORDERING: the state machine must DependsOn its managed
+        #     policies (live-sealed FAIL class, Story 2.3 attempt 5, 2026-10-01): without
+        #     it, CreateStateMachine fires before SyncEventsPolicy is attached/propagated
+        #     and Step Functions' events:PutRule is denied ("not authorized to create
+        #     managed-rule", SDK Attempt Count 11). DependsOn forces the attachments to
+        #     complete first — a pure ordering fix, no privilege change. ---
+        ("the state machine DependsOn its managed policies (ordering: policies attached before CreateStateMachine)",
+         bool(re.search(
+             r"PromotionStateMachine:\s*\n\s*Type:\s*AWS::StepFunctions::StateMachine\s*\n"
+             r"(?:.*\n)*?\s*DependsOn:\s*\n"
+             r"(?:\s*-\s*\w+\s*\n)*?\s*-\s*SyncEventsPolicy\b",
+             raw))),
         # --- Execution role is scoped + trusted only by Step Functions ---
         ("a Step Functions execution role exists",
          "StateMachineExecutionRole:" in raw and "Type: AWS::IAM::Role" in raw),
@@ -350,6 +362,11 @@ def self_test() -> int:
         ("events:* broadening injected",
          good.replace("events:PutTargets", "events:*", 1),
          "no events:* wildcard"),
+        # The attempt-5 FAIL class: drop the state machine's DependsOn on its policies
+        # (the CreateStateMachine-before-policy-attached ordering race) — must re-fail.
+        ("state machine DependsOn on managed policies removed (the attempt-5 ordering race)",
+         re.sub(r"\n    DependsOn:\n(?:      - \w+\n)+", "\n", good, count=1),
+         "DependsOn its managed policies"),
     ]
 
     all_ok = True
