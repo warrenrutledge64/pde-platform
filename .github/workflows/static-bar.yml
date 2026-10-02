@@ -40,6 +40,21 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Merge-order guard (prevents the fix-after-merge trap, PDE Story 2.2 /
+      # OD-008): a deliverable (infra/**) change must NOT merge into the base
+      # branch while the Validation & Advancement Gate is still ARMED. This turns
+      # the PR red until the story's close-out (sealed Validation Result + ✅ +
+      # cleared Validation Debt entry) is on the branch head. Server-side branch
+      # protection is NOT enforced on a private/free repo, so this red/green CI
+      # signal + the CONTRIBUTING convention ("merge only when green") is the
+      # guard. The --self-test proves the check itself is strictly enforced.
+      - name: Merge-order guard (deliverable + close-out land together)
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 scripts/check_merge_order.py --self-test
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          python3 scripts/check_merge_order.py --base "origin/${{ github.base_ref }}"
+
       - name: Offline invariant checkers (+ in-memory self-test)
         run: |
           python3 infra/validate_state_machine.py
