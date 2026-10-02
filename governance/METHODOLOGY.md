@@ -310,6 +310,19 @@ inventory; if it's in the inventory, it maps to a restore point.*
   more justified paragraph" is how fat enters. A reusable prompt/handoff template is
   **independently audited for fat before it is relied on** (see §4a — the author
   does not self-certify leanness). This is a standing baseline discipline.
+- **Decoupled services integrate via a defined, versioned contract — not a shared
+  build.** When two systems must eventually interoperate, build them as independent
+  services that each ship, validate, and release on their own cadence, coupled only
+  by a small, explicit, versioned interface (derived-data-only and fail-closed at
+  the boundary). Neither side depends on the other's internal build state, so
+  either can run to completion with the other absent; the end-to-end integration is
+  scheduled as its own deliverable **after** both are ready, rather than forcing a
+  premature, moving-target coupling. This keeps each system independently
+  repeatable (ITIL change-enablement: a stable service interface, not a build-time
+  entanglement) and makes the integration a clean, provable deliverable.
+  _(PDE instance: RD-010 / Phase 5 — ZTIE and PDE are decoupled; the one coupling
+  is the versioned ZTIE→PDE hand-off contract + the shared Hub dashboard, delivered
+  only once both products complete.)_
 
 ---
 
