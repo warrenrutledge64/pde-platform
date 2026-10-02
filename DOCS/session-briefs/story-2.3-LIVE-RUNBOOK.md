@@ -131,7 +131,48 @@ aws cloudformation list-stacks \
 ```
 
 > If the `pdlv-` list is non-empty, STOP and reconcile (a leftover from an earlier
-> attempt) before deploying — do not blindly re-deploy over it.
+> attempt) before deploying — do not blindly re-deploy over it. See STEP 1a.
+
+## STEP 1a — Delete any DEAD stack first (MANDATORY on a re-attempt — VD-7 / OD-009)
+
+> **A stack in `ROLLBACK_COMPLETE` CANNOT be updated in place.** If a prior deploy
+> attempt failed (e.g. the attempt-1 `CreateStateMachine` managed-rule `AccessDenied`),
+> CloudFormation leaves the stack in `ROLLBACK_COMPLETE`. A re-run of
+> `cloudformation deploy` against it does NOT redeploy — it fails on the dead stack, no
+> resources are provisioned, and the downstream least-privilege audit + gate run then
+> fail with "resource/parameter not found" errors that LOOK like a deliverable defect
+> but are actually just the dead stack blocking everything. This is exactly what the
+> attempt-2 re-validation hit (VD-7). **Delete the dead stack before re-deploying.**
+
+```bash
+# Target: Pipeline-Hub 641628980935 (us-east-1)
+aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+
+# Check the status of each PDE stack (only act on pdlv-*, NEVER a pde-* / ZTIE stack):
+for S in pdlv-state-machine pdlv-codebuild; do
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" \
+        --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "ABSENT")
+  echo "$S => $ST"
+done
+
+# For ANY pdlv- stack in ROLLBACK_COMPLETE (or *_FAILED), delete it and WAIT:
+#   (do this for pdlv-state-machine first if present, then pdlv-codebuild)
+aws cloudformation delete-stack --stack-name pdlv-state-machine
+aws cloudformation wait stack-delete-complete --stack-name pdlv-state-machine
+# (repeat for pdlv-codebuild only if it is also dead)
+
+# Re-confirm the pdlv- namespace is now clean before deploying the FIXED template:
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE ROLLBACK_COMPLETE \
+                        CREATE_IN_PROGRESS UPDATE_IN_PROGRESS \
+  --query "StackSummaries[?contains(StackName,'pdlv-')].StackName" --output json
+# EXPECT [] — then proceed to STEP 2.
+```
+
+> **Only ever delete `pdlv-`-named stacks.** Never touch a `pde-*` stack (ZTIE's, 18 of
+> them) or anything in management `467866449172` / Pipeline-Forensics `360999005254`.
+> Deleting a dead `pdlv-` stack is non-destructive (it provisioned nothing — it rolled
+> back) and keeps the deploy strictly additive.
 
 ## STEP 2 — Deploy the CodeBuild stack FIRST (`pdlv-codebuild`)
 
