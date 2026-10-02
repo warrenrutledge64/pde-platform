@@ -17,8 +17,8 @@
   Story 1.1; the org trail is multi-region but delivers to this home region).
 - **PDE Hub namespace:** **`pdlv-`** (RD-009). The `pde-*` namespace in the Hub is
   **ZTIE's**, not PDE's — see §2.1 Known co-occupants.
-- **Last updated:** 2026-10-01 (Phase 1 CLOSED — Story 1.2 sealed PASS; `restore/phase-1-green` cut; RD-009 ratified `pdlv-`; ZTIE Hub footprint recorded in §2.1)
-- **Current restore point:** `restore/phase-1-green` — the validated Phase-1 close (Story 1.2 operator launch pad proven live + the orchestrate-and-pull trust fabric from Story 1.1). Git SHA pinned in §4.
+- **Last updated:** 2026-10-02 (Phase 2 CLOSED — Story 2.3 sealed PASS at `d19f92c`; `restore/phase-2-green` cut; Hub control plane `pdlv-codebuild` + `pdlv-promotion-pipeline-stack` + the non-promoting `pdlv-gate-probe` deployed + inventoried in §2)
+- **Current restore point:** `restore/phase-2-green` — the validated Phase-2 close (Story 2.3: Hub control plane deployed, IAM least-privilege, the `pdlv-gate-probe` reached the approval pause). Git SHA pinned in §4. (Prior: `restore/phase-1-green`.)
 
 ---
 
@@ -54,6 +54,16 @@
 | PDE member execution role (Sandbox) | IAM role (CFN stack `pde-trust-fabric`) | `pde-member-execution-sandbox` in `586917955591` | 1 | `restore/phase-1-green` |
 | PDE member execution role (Prod) | IAM role (CFN stack `pde-trust-fabric`) | `pde-member-execution-prod` in `466494951534` | 1 | `restore/phase-1-green` |
 | Hub operator launch pad (CloudShell) | Documented environment (not a deployed resource) | Pipeline-Hub `641628980935` CloudShell — token-auth clone + tooling + committed Phase-1 gate script | 1 | `restore/phase-1-green` |
+| PDE Lint CodeBuild project | CodeBuild project (CFN stack `pdlv-codebuild`) | `pdlv-lint` in `641628980935` | 2 | `restore/phase-2-green` |
+| PDE Deploy CodeBuild project | CodeBuild project (CFN stack `pdlv-codebuild`) | `pdlv-deploy` in `641628980935` | 2 | `restore/phase-2-green` |
+| PDE CodeBuild service role | IAM role (CFN stack `pdlv-codebuild`) | `pdlv-codebuild-service-role` in `641628980935` (+ managed policies `pdlv-codebuild-logs`, `pdlv-codebuild-assume-member`) | 2 | `restore/phase-2-green` |
+| PDE promotion state machine | Step Functions state machine (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-promotion-pipeline` in `641628980935` | 2 | `restore/phase-2-green` |
+| PDE promotion state-machine role | IAM role (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-promotion-pipeline-role` in `641628980935` (+ managed policies `pdlv-sfn-start-deploy`, `pdlv-sfn-sync-events`, `pdlv-sfn-publish-approval`, `pdlv-sfn-logs`) | 2 | `restore/phase-2-green` |
+| PDE promotion approval topic | SNS topic (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-promotion-approval` in `641628980935` (SSE `alias/aws/sns`) | 2 | `restore/phase-2-green` |
+| PDE promotion execution log group | CloudWatch Logs group (CFN stack `pdlv-promotion-pipeline-stack`) | `/aws/vendedlogs/states/pdlv-promotion-pipeline` in `641628980935` | 2 | `restore/phase-2-green` |
+| PDE Phase-2 gate probe state machine | Step Functions state machine (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-gate-probe` in `641628980935` — structurally non-promoting (no deploy state; Fail terminal); proves the approval pause | 2 | `restore/phase-2-green` |
+| PDE gate-probe role | IAM role (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-gate-probe-role` in `641628980935` (+ managed policies `pdlv-gate-probe-publish`, `pdlv-gate-probe-logs`) — publish + own-logs only | 2 | `restore/phase-2-green` |
+| PDE gate-probe log group | CloudWatch Logs group (CFN stack `pdlv-promotion-pipeline-stack`) | `/aws/vendedlogs/states/pdlv-gate-probe` in `641628980935` | 2 | `restore/phase-2-green` |
 
 > The three member roles trust the specific Hub role `pde-hub-orchestrator` + an
 > `sts:ExternalId` (Story 1.1, RD-006). They retain the `pde-member-execution-<env>`
@@ -88,6 +98,7 @@
 | Tag | Phase | Date | Code (git SHA) | State manifest | Notes |
 |-----|-------|------|----------------|----------------|-------|
 | `restore/phase-1-green` | 1 | 2026-10-01 | `7bd6358` (validated commit; annotated tag) | _live-state manifest to be captured by the operator via the RESTORE.md read-only Boto3 capture from Hub CloudShell (Dev/Sandbox/Prod member-role projections + Hub launch-pad); path recorded here on capture_ | Phase 1 close — Story 1.2 sealed PASS (operator launch pad proven live) + Story 1.1 trust fabric. Live cross-account `AssumeRole` deferred (VD-3b, Phase 2). | |
+| `restore/phase-2-green` | 2 | 2026-10-02 | validated at `d19f92c` (Story 2.3 sealed PASS); annotated tag cut at the PR #31 merge commit on `main` (which includes `d19f92c`) | _live-state manifest to be captured by the operator via the RESTORE.md read-only Boto3 capture from Hub CloudShell: the `pdlv-codebuild` + `pdlv-promotion-pipeline-stack` CFN stacks (template_sha256/params/tags), the `pdlv-promotion-pipeline` + `pdlv-gate-probe` state-machine definition SHAs, and the `pdlv-*` IAM roles (trust + attached least-privilege policies); path recorded here on capture_ | Phase 2 close — Story 2.3 sealed PASS: Hub control plane deployed (`pdlv-codebuild` + `pdlv-promotion-pipeline-stack`), IAM audited least-privilege, and the non-promoting `pdlv-gate-probe` reached the `AwaitSandboxApproval` pause with no error. The §2 inventory above maps to this restore point. |
 
 ---
 

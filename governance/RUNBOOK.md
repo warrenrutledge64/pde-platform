@@ -170,22 +170,19 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | | | **Attempt 8 sealed FAIL — BUT the deliverable DEPLOYED CLEAN + PASSED least-privilege; the FAIL is the KNOWN DeployDev dummy-run limitation (2026-10-02, Independent Validator).** Verdict verbatim: _"Verdict: FAIL. The control plane infrastructure successfully deployed (`CREATE_COMPLETE`), and the state machine's IAM execution role strictly adheres to the least-privilege Definition of Done. The attached managed policies correctly scope CodeBuild, SNS, and CloudWatch actions without broad wildcards on target resources, and the role correctly holds no cross-account `sts:AssumeRole` permissions. However, the Phase 2 gate execution failed to reach the `AwaitSandboxApproval` pause state. The Step Functions execution terminated with a `FAILED` status at the `DeployDev` task. The underlying CodeBuild project (`pdlv-deploy`) failed during the `BUILD` phase with `exit status 254` because it attempted to execute `aws sts assume-role` into the `pde-member-execution-dev` role using the dummy payload's generic external ID (`set-this-at-deploy-time`). Because the member account trust is not yet configured for the CodeBuild service role (it expects the Phase 3 Hub orchestrator), the assume-role command was predictably rejected. The execution did not utilize a valid dummy-safe route (such as a temporary trust policy or a no-op buildspec override) to bypass this known limitation, causing a hard failure rather than a smooth transition to the required human-approval pause. FAIL — Infrastructure deployed and IAM passes least-privilege, but the Phase 2 gate execution failed at DeployDev (STS AssumeRole failure) and did not reach the AwaitSandboxApproval pause. 2026-10-01, confirmed by Independent Validator."_ **MAJOR PROGRESS: ALL create-time blockers (attempts 1-7) are RESOLVED — the stack reached `CREATE_COMPLETE` and the IAM passed the least-privilege DoD verbatim.** The remaining FAIL is EXACTLY the DeployDev→cross-account-assume risk flagged in the LIVE-RUNBOOK/handover from the start: `StartAt: DeployDev` runs `codebuild:startBuild.sync` which does `aws sts assume-role` into `pde-member-execution-dev`, whose trust targets the Phase-3 `pde-hub-orchestrator`, NOT the `pdlv-codebuild-service-role` — so a dummy run hard-fails at DeployDev instead of reaching the pause. This is NOT a template defect (the IAM is correct) — it is the dummy-safe route not being wired in. The gate statement requires reaching `AwaitSandboxApproval` WITHOUT IAM/config errors and does NOT require a real cross-account deploy (that is Phase 3). RESOLUTION PENDING STAKEHOLDER CHOICE (see chat): add a permanent gate/dry-run `Choice` entry state that, when the execution input carries a gate flag (e.g. `gateMode:true`), SKIPS DeployDev straight to `AwaitSandboxApproval` (production path unchanged); this is a real feature, not a throwaway hack, and keeps RD-006 intact (no member-trust change). VD-7 stays OPEN; 2.3 stays 🟡 pending the chosen dummy-safe route + Attempt-9 gate pass. | | |
 | | | **Dummy-safe route CHOSEN + built — a SEPARATE gate-probe state machine (Option 1b, stakeholder-approved 2026-10-02; vulnerability-reviewed).** The stakeholder asked whether a dummy-safe route could itself be a vulnerability — yes, if a bypass flag on the REAL pipeline were honored in production (a control-flow bypass / false-attestation vector), or via a temporary member-trust (a standing cross-account hole). So the chosen design adds NO bypass to the production `pdlv-promotion-pipeline` at all. Instead, `infra/state-machine.yaml` now also ships **`pdlv-gate-probe`** — a separate STANDARD state machine that is STRUCTURALLY incapable of promoting: its ASL has exactly two states (`AwaitSandboxApproval` = `sns:publish.waitForTaskToken` → terminal `GateProbeReachedPause` = **`Fail`**, never `Succeed`), references NO `codebuild`/`startBuild` anywhere, and runs as a minimal role (`pdlv-gate-probe-role`) with ONLY `sns:Publish` to the approval topic + its own logs — NO `codebuild:*`, NO `events:` managed-rule, NO `sts:AssumeRole`. Proving the probe reaches the pause (status RUNNING, waiting on the token, no error, no DeployDev event) IS the Phase 2 gate; the probe is aborted, never approved. Offline checker → **60 invariants** (new: probe exists; probe references no codebuild/startBuild; probe terminates in Fail not Succeed; probe role is publish+logs only; PRODUCTION pipeline has NO gateMode/Choice bypass) + matching `--self-test` sabotages (probe given a startBuild path; probe Fail→Succeed; gateMode injected into production — all caught). LIVE-RUNBOOK STEP 5 updated to start `pdlv-gate-probe` (output `GateProbeStateMachineArn`), not the production pipeline. VD-7 stays OPEN; 2.3 stays 🟡 pending the Attempt-9 clean re-deploy + probe gate pass. | | |
 | | | **Attempt 9 sealed FAIL — a non-ASCII character in the NEW gate-probe role Description (my defect, introduced with the probe; 2026-10-02, Independent Validator).** Verdict verbatim: _"Verdict: FAIL. The root cause of the rollback is a syntax constraint violation in the CloudFormation template. The raw event log shows that the newly introduced GateProbeExecutionRole failed creation because its description field contains an invalid character: Resource handler returned message: \"1 validation error detected: Value at 'description' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]* (Service: Iam, Status Code: 400...\". AWS IAM enforces strict regex limitations on role descriptions. This failure almost always happens when a non-standard Unicode character—such as an em-dash (—), smart quote, or formatted text pasted from a rich-text editor—slips into the YAML string. Because the GateProbeExecutionRole was rejected, the StateMachineExecutionRole creation was cancelled, and the entire stack was forced into ROLLBACK_COMPLETE. To move forward, the builder must sanitize the description string for GateProbeExecutionRole in infra/state-machine.yaml, restricting it to standard ASCII characters. The operator must execute the cleanup sweep once more to clear the dead stack before the next attempt. FAIL — pdlv-promotion-pipeline-stack rolled back due to an invalid character constraint violation in the GateProbeExecutionRole description. 2026-10-02, confirmed by Independent Validator."_ **A REAL deliverable defect I introduced with the probe:** the `GateProbeExecutionRole` `Description:` contained an em-dash (U+2014), which is outside AWS IAM's allowed description regex (`\u0020-\u007E\u00A1-\u00FF` — U+2014 is above U+00FF), so `CreateRole` failed and the stack rolled back. (The pre-existing production role description was plain ASCII — which is why attempt 8 deployed; only the newly-added probe role carried the em-dash.) **FIX (fix-then-validate-once):** replaced the em-dash with an ASCII hyphen in the probe role Description. **Folded into the offline bar (§7):** a new helper extracts every `AWS::IAM::Role`/`ManagedPolicy` Description and a 61st invariant asserts each matches AWS's allowed character set (no em-dash/smart-quote), + a `--self-test` sabotage (inject U+2014 into a role Description → re-fails). All 8 IAM descriptions verified clean. This is a class the offline bar CAN catch (static text), so it will never reach a live attempt again. VD-7 stays OPEN; 2.3 stays 🟡 pending the Attempt-10 clean re-deploy. | | |
+| | | **Attempt 10 sealed PASS (2026-10-02, Independent Validator) — VD-7 CLEARED; Phase 2 gate PROVEN.** Verdict verbatim: _"Verdict: PASS. The Phase 2 control plane bootstrap is finally complete and fully verified. The `pdlv-gate-probe` state machine successfully initiated execution and successfully transitioned into the `AwaitSandboxApproval` task state. The execution status correctly remains `RUNNING` as it pauses and waits for the `.waitForTaskToken` callback, confirming that the native Step Functions pause gate is perfectly functional and reachable. Combined with the clean `CREATE_COMPLETE` deployment of the `pdlv-promotion-pipeline-stack` on commit `d19f92c` and the fully audited least-privilege IAM roles from Attempt 10, the Definition of Done has been thoroughly met. PASS — pdlv-promotion-pipeline-stack successfully deployed on commit d19f92c. The pdlv-gate-probe execution successfully reached the AwaitSandboxApproval pause state without error. 2026-10-02, sealed by Independent Validator."_ This is the recorded live pass of the FINAL code the covenant requires. The journey (1 real managed-rule-scope defect → the Resource "*" correction; 1 log-destination PutResourcePolicy-scope defect; 1 DeployDev dummy-run limitation → the separate non-promoting `pdlv-gate-probe`; 1 IAM-description non-ASCII defect; the rest execution/environment blockers — dead stacks, name mismatch) is fully recorded above with each fix folded into the offline bar (now 61 invariants + `--self-test`). **Story 2.3 flips 🟡 → ✅. VD-7 CLEARED. This CLOSES Phase 2.** | 2026-10-02 | **CLEARED** (sealed PASS attempt 10, Independent Validator, commit `d19f92c`; 2.3 ✅; Phase 2 closed) |
 
-**Gate status:** **ARMED** — the Validation Debt Register is non-empty: **VD-7 is OPEN**
-(Story 2.3 attempt 1 sealed FAIL, 2026-10-01, Independent Validator — a real deliverable
-defect: the `pdlv-promotion-pipeline-role` `SyncEventsPolicy` was too tight for the
-`codebuild:startBuild.sync` managed-rule, denying `CreateStateMachine` with "not
-authorized to create managed-rule"; FIXED on `fix/story-2.3-sfn-managed-rule`, awaiting a
-recorded live re-deploy + Phase 2 gate PASS of the fixed template). Reworking the debited
-Story 2.3 is allowed (the covenant working); no NEW tier/feature story may begin until
-VD-7 clears. Story 2.1 (CodeBuild CFN templates) is ✅ (sealed PASS, 2026-10-01, commit
-`aa47f85`, VD-5 CLEARED). Story 2.2 (Step Functions state machine, tier 3) is ✅ —
-statically proven via the checkout-proof CI bar (49 invariants + `--self-test`; cfn-lint
-clean; Checkov 0 failed; VD-6 CLEARED). Phase 1 remains ✅ CLOSED (`restore/phase-1-green`);
-Phase 2 stays open (2.3 remains; the Phase 2 gate is the dummy-payload Step Functions run
-in 2.3). Carried Phase-2 confirmation **VD-3b** (the committed gate script's live
-cross-account `AssumeRole`, run once `pde-hub-orchestrator` exists) is tracked for
-Phase 2, not open debt.
+**Gate status:** **DISARMED** — the Validation Debt Register is empty (VD-7 CLEARED on
+the sealed PASS of Story 2.3, 2026-10-02, Independent Validator, commit `d19f92c`:
+`pdlv-promotion-pipeline-stack` deployed `CREATE_COMPLETE`, IAM audited least-privilege,
+and the `pdlv-gate-probe` execution reached the `AwaitSandboxApproval` `.waitForTaskToken`
+pause and stays `RUNNING` with no error). Story 2.1 ✅ (sealed PASS `aa47f85`, VD-5
+CLEARED), Story 2.2 ✅ (sealed PASS CI #36943324686 `4aa3e5a`, VD-6 CLEARED), Story 2.3 ✅
+(sealed PASS `d19f92c`, VD-7 CLEARED). **Phase 1 ✅ CLOSED (`restore/phase-1-green`);
+Phase 2 ✅ CLOSED (`restore/phase-2-green`).** The advancement gate is satisfied for
+Phase 3 (Story 3.1). Carried Phase-2 confirmation **VD-3b** (the committed gate script's
+live cross-account `AssumeRole`, run once `pde-hub-orchestrator` exists) carries forward
+into Phase 3, not open debt.
 
 ## Operational Debt Register
 
@@ -214,34 +211,38 @@ Phase 2, not open debt.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 2.3 | 4 | ✅ unblocked — deps 2.1 ✅ **and** 2.2 ✅ (sealed PASS 2026-10-01); register empty, gate DISARMED. **First live-deploy story + CLOSES Phase 2.** Handoff authored: [`story-2.3-brief.md`](../DOCS/session-briefs/story-2.3-brief.md) + [`story-2.3-PROMPT.md`](../DOCS/session-briefs/story-2.3-PROMPT.md). |
+| 3.1 | 5 | ✅ unblocked — Phase 2 gate PASSED (Story 2.3 sealed PASS 2026-10-02, `restore/phase-2-green`); register empty, gate DISARMED. **First Phase-3 (Golden Path) story + tier advance 4→5.** Handoff authored: [`story-3.1-brief.md`](../DOCS/session-briefs/story-3.1-brief.md) + [`story-3.1-PROMPT.md`](../DOCS/session-briefs/story-3.1-PROMPT.md). |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| 3.1 | 5 | Phase 2 gate (Story 2.3) not yet passed |
 | 3.2 | 6 | Story 3.1 not yet validated |
 | 3.3 | 7 | Story 3.2 not yet validated |
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Begin Story 2.3** — bootstrap the net-new PDE infra (2.1 +
-2.2) into the Hub via CLI with tightly-scoped IAM, then run the Phase 2 gate.
-Story 2.2 (Step Functions state machine) is **✅ CLOSED** — statically proven by the
-checkout-proof CI static bar (sealed PASS, 2026-10-01, Independent Validator, CI run
-#36943324686 @ `4aa3e5a`): cfn-lint clean, Checkov Passed 62 / Failed 0 / Skipped 3,
-49-invariant offline checker + `--self-test` ✅. **VD-6 CLEARED, OD-008 PAID, the gate is
-DISARMED, and 2.2's advancement gate is satisfied (2.1 ✅ + 2.2 ✅).** Merge the
-reconciliation **PR #25** (`feature/story-2.2` → `main`) so `main` carries the validated
-code (PR #24 merged early at the pre-fix `7814315`; PR #25 lands the fix + the hardening +
-the CI bar + this close-out). 2.2 does NOT close Phase 2 — **2.3 remains, and the Phase 2
-gate is the dummy-payload Step Functions run that must reach the "Awaiting Sandbox Approval"
-paused state with no IAM/config errors.** The durable validation discipline proven this
-story: run the static bar via **CI on the PR head** (checkout-proof — never a hand-pasted
-CloudShell clone, which produced 3 execution failures + 3 stale-checkout misses across 8
-attempts). _(Carried Phase-2 confirmation: **VD-3b** — run the committed
-`scripts/phase1_gate.py` live once `pde-hub-orchestrator` is created in Phase 2.)_
+**Default next action:** **Begin Story 3.1** — author a trivial, zero-cost CloudFormation
+artifact (an empty on-demand DynamoDB table or an SQS queue) to serve as the Golden-Path
+payload that will traverse the pipeline in 3.2–3.4. **Phase 2 is ✅ CLOSED**
+(`restore/phase-2-green`): Story 2.3 sealed PASS 2026-10-02 (Independent Validator, commit
+`d19f92c`) — `pdlv-promotion-pipeline-stack` deployed `CREATE_COMPLETE`, IAM audited
+least-privilege, and the SEPARATE non-promoting `pdlv-gate-probe` reached the
+`AwaitSandboxApproval` `.waitForTaskToken` pause with no error. **VD-7 CLEARED, gate
+DISARMED, 3.1's advancement gate satisfied (Phase 2 gate passed).** Durable lessons from
+2.3's 10 attempts (all folded into `infra/validate_state_machine.py`, 61 invariants +
+`--self-test`): (1) certain AWS service-delivery actions reject a resource-scoped grant and
+require `Resource "*"` — the EventBridge `.sync` managed-rule (`events:PutRule/PutTargets/
+DescribeRule`) and CloudWatch Logs `logs:PutResourcePolicy`; scope the *write* actions, not
+these; (2) a dummy gate run can't do a real cross-account assume (member trust is Phase-3/
+VD-3b) — so the gate is proven by a SEPARATE, structurally non-promoting `pdlv-gate-probe`
+(no deploy state, Fail terminal, publish+logs-only role), keeping the production pipeline
+bypass-free; (3) IAM Role/Policy `Description` must be plain ASCII (an em-dash fails
+`CreateRole`) — now guarded offline; (4) a `ROLLBACK_COMPLETE`/`REVIEW_IN_PROGRESS` stack
+can't be updated in place — the LIVE-RUNBOOK's STEP 1a name-agnostic sweep deletes any dead
+`pdlv-` stack before deploy; (5) always capture the CFN `CREATE_FAILED` `ResourceStatusReason`
+(STEP 3a) — never diagnose from "it rolled back". _(Carried Phase-2 confirmation: **VD-3b** —
+run the committed `scripts/phase1_gate.py` live once `pde-hub-orchestrator` is created.)_
 
 ## Progress Summary
 
@@ -249,7 +250,7 @@ attempts). _(Carried Phase-2 confirmation: **VD-3b** — run the committed
 |-------|-------|------|--------|
 | **0 — Bootstrap** | Author `PROJECT_PLAN.md` (planner) + derive `RUNBOOK.md`, `RESTORE.md`, `BOM.md`; validated. | `check_docs.py` PASSES **and** a human confirms the runbook faithfully mirrors the plan. | ✅ Done (2026-09-30) |
 | **1 — Trust Fabric** | Cross-account IAM trust from the Hub to the Spokes (Spokes trust specific Hub roles, RD-006) + CloudShell bootstrap access. _(Org-wide audit deferred to Phase 4 per RD-007.)_ | **Option B (2026-09-30):** Hub CloudShell reachability + tooling + token-auth repo access proven live, AND the Boto3 gate script (AssumeRole into Dev/Sandbox/Prod → account IDs) authored + committed. The live cross-account `AssumeRole` run is the deferred **VD-3b**, executed in Phase 2 once `pde-hub-orchestrator` exists (not a temporary stand-in). | ✅ Done (2026-10-01) |
-| **2 — PDE Control Plane (The Hub)** | Greenfield serverless engine (Step Functions + CodeBuild) in the Hub, ZTIE-safe, doing cross-account CFN deploys. | The deployed Step Function, triggered with a dummy payload, reaches the "Awaiting Sandbox Approval" paused state with no IAM/config errors. | ⬜ Not Started |
+| **2 — PDE Control Plane (The Hub)** | Greenfield serverless engine (Step Functions + CodeBuild) in the Hub, ZTIE-safe, doing cross-account CFN deploys. | The deployed Step Function, triggered with a dummy payload, reaches the "Awaiting Sandbox Approval" paused state with no IAM/config errors. | ✅ Done (2026-10-02) |
 | **3 — The Golden Path Validation** | Prove end-to-end delivery by sending a real artifact through the pipeline. | The operator queries `Pipeline-Prod` and returns the deployed test artifact's metadata, proving a Hub-orchestrated cross-account production release. | ⬜ Not Started |
 | **4 — Governance Cutover** _(deferred, RD-007)_ | Switch on the org-wide CloudTrail as a Hub-delegated shared control-plane service (RD-006); retire the audit debt (OD-002). Executed after the engine is proven. | From the Hub (delegated CloudTrail admin), the org trail is active (org / multi-region / log-file validation) AND logs land for all `Pipeline-*` accounts. | ⬜ Not Started |
 | **5 — Cross-Project Integration** _(RD-010; scheduled after Phase 4 **and** ZTIE complete)_ | Define/version the ZTIE→PDE hand-off contract + PDE-side contract-gated intake, then pass a real ZTIE-cleared payload end-to-end to `Pipeline-Prod`, surfaced on a unified Hub dashboard. The one deliberate coupling between the two decoupled services. | A real ZTIE-ACCEPTED payload traverses PDE Dev→Sandbox→Prod and the unified dashboard shows the single correlated journey (ZTIE verdict → hand-off → PDE promotion → prod release). | ⬜ Not Started |
@@ -308,7 +309,7 @@ _Gate: A human operator triggers the deployed Step Function in the Hub account w
 |-------|-------|-----------|--------|-----------|-------------|
 | 2.1 | CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes | Phase 1 gate | ✅ | 2026-10-01 | |
 | 2.2 | Step Functions state machine (Dev→Sandbox→Prod promotion + manual approval gates) | Phase 1 gate | ✅ | 2026-10-01 | |
-| 2.3 | Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM | 2.1, 2.2 | 🟡 | | |
+| 2.3 | Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM | 2.1, 2.2 | ✅ | 2026-10-02 | `restore/phase-2-green` |
 
 **2.1 — CodeBuild CloudFormation templates (Lint + Deploy), ZTIE-safe naming prefixes**  ✅ _Done (validated)_
 - Steps: author CloudFormation (YAML) for the PDE CodeBuild projects (a Lint/static-analysis project + a Deployment project) + a least-privilege service role, under the ZTIE-safe **`pdlv-`** naming prefix + `Project=PDE` tags (RD-009 — `pde-` is ZTIE's Hub namespace), so nothing collides with or alters existing ZTIE infrastructure in the Hub (Universal Criterion 5). Prove offline, then the static bar (cfn-lint / Checkov) live. _(2.1 is author + static proof only; the live Hub deploy is Story 2.3.)_
@@ -324,13 +325,13 @@ _Gate: A human operator triggers the deployed Step Function in the Hub account w
 - **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). _(Does NOT close Phase 2 — 2.3 remains; the Phase 2 gate is the dummy-payload Step Functions run in 2.3.)_
 - **Advancement gate:** 2.3 cannot begin until 2.1 + 2.2 are ✅.
 
-**2.3 — Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM**  🟡 _In Progress — attempt 1 sealed FAIL (real defect), fixed, awaiting live re-validation (VD-7)_
+**2.3 — Bootstrap the net-new PDE infra into the Hub via CLI, tightly-scoped IAM**  ✅ _Validated live — sealed PASS 2026-10-02 (VD-7 CLEARED); CLOSES Phase 2_
 - Steps: bootstrap-deploy the PDE infrastructure (2.1 + 2.2) into the existing Hub account via CLI, ensuring the IAM roles deployed are tightly scoped to exactly the PDE tasks (Least Privilege / Zero-Trust). Strictly additive + namespace-isolated from ZTIE.
 - **Attempt 1 — live deploy, sealed FAIL (2026-10-01, Independent Validator):** the live `cloudformation deploy` of `infra/state-machine.yaml` rolled back — `PromotionStateMachine` (`AWS::StepFunctions::StateMachine`) failed `CreateStateMachine` with `AccessDenied`: _"'arn:aws:iam::641628980935:role/pdlv-promotion-pipeline-role' is not authorized to create managed-rule. (Service: Sfn, Status Code: 400)"_. **A REAL deliverable defect** — the `SyncEventsPolicy` scoped the EventBridge `.sync` managed-rule actions to a SINGLE literal rule and omitted `DeleteRule`/`RemoveTargets`, so Step Functions could not manage the rule backing `codebuild:startBuild.sync`. Rollback was clean (transactional — no Hub corruption, no namespace violation, ZTIE `pde-*` untouched; Universal Criterion 5 held). Full verdict verbatim recorded at **VD-7**.
 - **Fix (fix-then-validate-once, branch `fix/story-2.3-sfn-managed-rule`):** the `.sync` managed-rule actions are now the complete AWS-published set (`PutRule`/`PutTargets`/`DescribeRule`/`DeleteRule`/`RemoveTargets`) scoped to the `StepFunctionsGetEventsFor*` rule-name FAMILY in this account+region — still least-privilege (NOT `events:*`, NOT `Resource "*"`). Offline checker hardened to **52 invariants** (complete action set + rule-name-family scope + "no `events:*`" guard) + 3 new `--self-test` sabotages (single-literal-rule reversion / dropped `DeleteRule` / injected `events:*`). The LIVE-RUNBOOK STEP 4b least-privilege expectations were updated to the new action set.
-- **Validation Result:** _FAIL (6 attempts; see VD-7 for each verbatim) — CONFIRMED ROOT CAUSE after attempt 6 isolated it: Step Functions' managed-rule authorization at `CreateStateMachine` for the `codebuild:startBuild.sync` integration does NOT accept a resource-SCOPED `events:PutRule`/`PutTargets`/`DescribeRule` grant (both a literal rule ARN and the `StepFunctionsGetEventsFor*` family got AccessDenied, SDK Attempt Count 11), and it is NOT an attach-ordering race (an explicit `DependsOn` made no difference). AWS's documented IAM template grants those three actions on `Resource: "*"`. Earlier attempt-1 (widen rule scope) and attempt-5 (DependsOn) diagnoses were WRONG and are corrected. Fixed on `fix/story-2.3-sfn-managed-rule`: the three documented managed-rule actions on `Resource: "*"` (bounded to events rule-management only; DependsOn retained as hygiene). Attempts 7 (log-destination `PutResourcePolicy` scope) and 8 (DeployDev dummy-run cross-account assume) followed — each a further, different cause, all recorded in VD-7. By attempt 8 the stack reached `CREATE_COMPLETE` and the IAM passed least-privilege verbatim; the final blocker (dummy run can't do the Phase-3 cross-account assume) is resolved by a SEPARATE, non-promoting `pdlv-gate-probe` state machine (Option 1b — no production bypass, vulnerability-reviewed). Offline 60 invariants + `--self-test`. Re-validation (Attempt 9) pending — clean re-deploy + probe gate pass._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date). This story closes Phase 2 — capture `restore/phase-2-green` + inventory row.
-- **Advancement gate:** Phase 3 (Golden Path) cannot begin until Phase 2's gate passes.
+- **Validation Result:** PASS — `pdlv-promotion-pipeline-stack` deployed `CREATE_COMPLETE` on commit `d19f92c`; the IAM execution roles audited least-privilege (no wildcard/admin, no cross-account `sts:AssumeRole` on the SFN role; the `.sync` managed-rule + log-delivery grants on `Resource "*"` are the AWS-documented service actions; the gate-probe role is publish+logs only); and the SEPARATE non-promoting `pdlv-gate-probe` execution reached the `AwaitSandboxApproval` `.waitForTaskToken` pause and stayed `RUNNING` with no error. Sealed by Independent Validator, 2026-10-02, commit `d19f92c`, on PR #31. It took 10 attempts: real deliverable defects were the managed-rule resource scope (fixed to AWS-documented `Resource "*"`), the log-destination `PutResourcePolicy` scope (moved to `"*"`), the DeployDev dummy-run cross-account-assume limitation (resolved via the non-promoting probe, Option 1b), and a non-ASCII char in the probe role Description (ASCII-sanitized + now guarded offline); the rest were execution/environment blockers (dead `ROLLBACK_COMPLETE` stacks, a stack-name mismatch). Every fix is folded into `infra/validate_state_machine.py` (61 invariants + `--self-test`). VD-7 CLEARED.
+- **On pass (done):** recorded above; row ✅ (Completed 2026-10-02). **This CLOSES Phase 2** — `restore/phase-2-green` cut + BOM §2 inventory updated.
+- **Advancement gate:** Phase 3 (Golden Path) is now unblocked (Phase 2 gate passed).
 
 ---
 
