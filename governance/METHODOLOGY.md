@@ -250,6 +250,29 @@ inventory; if it's in the inventory, it maps to a restore point.*
 - **Verify the real artifact, not the intention.** After a change, confirm the
   *actually-deployed/produced* thing contains the change — the local file passing
   is not proof.
+- **Validate on a checkout-proof target — prefer CI on the PR head over a
+  hand-pasted clone.** A human-driven clone/checkout is the single most common
+  cause of a wasted validation cycle: it can clone the wrong repo, paste a literal
+  placeholder (`<TOKEN>`) that the shell mis-parses so the clone never runs, or
+  check out a stale pre-fix commit — and every one of those produces a verdict that
+  judged *nothing* (or judged the wrong code) while looking like a real result.
+  Run the static bar in **CI triggered on the pull request**, where the platform
+  checks out the exact PR head automatically and no human paste can go wrong; the
+  validator reads the run logs for the pinned head SHA. If a hand-run is
+  unavoidable, use a fresh pinned `--depth 1 --branch` clone with the URL quoted
+  and a real token, then **confirm the target SHA and a positive content-check of
+  the fix before running the failing tool.** _(PDE Story 2.2: 8 attempts to a
+  sealed PASS — 3 execution-failure clones + 3 stale-checkout re-runs — all removed
+  the moment the bar ran via CI on the PR head.)_
+- **When a gate runs more than one tool over the same tree, make their scope
+  match.** A gate composed of several checkers (lint + security scan, etc.) must
+  point every tool at the *same* set of files, or one tool will fail a change on
+  code another tool never looked at. Scope the gate to the **active artifacts the
+  change actually ships**; exclude parked/deferred/retired code consistently across
+  *all* steps (and re-validate that code when it is picked up). _(PDE Story 2.2: a
+  non-recursive `cfn-lint infra/*.yaml` paired with a recursive `checkov -d infra`
+  failed the story's PR on a deferred template neither story owned — fixed by
+  scoping both to the active top-level templates.)_
 - **State your context on every operational command.** If commands run against
   specific environments/accounts, prefix every command block with a banner naming
   where it runs. Confirm the target before destructive actions.
