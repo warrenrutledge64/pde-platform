@@ -87,7 +87,10 @@ aws sts get-caller-identity --query Account --output text   # MUST print 6416289
 # If the repo is not already on disk, clone the CORRECT repo (replace REAL_PAT with a
 # real token; the whole URL is quoted). NOT CodeCommit, NOT pde-hub:
 #   git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
-cd ~/pde-platform
+cd ~
+rm -rf pde-platform
+git clone https://github.com/warrenrutledge64/pde-platform.git
+cd pde-platform
 git remote -v                              # expect github.com/warrenrutledge64/pde-platform (NOT codecommit / pde-hub)
 git fetch origin
 git checkout feature/story-2.3             # this story's branch

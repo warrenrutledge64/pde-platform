@@ -468,3 +468,5 @@ In addition to each story's own validation, every deliverable must satisfy:
 - **Next-session brief AND prompt are authored during the current session** — the
   final task each session, including Lessons Learned / Carry-Forward, so the next
   session starts with zero cold-start.
+FAIL — phase 2: stack missing Project=PDE tag, execution environment missing git repo/BOM/RESTORE manifest, 2026-10-02
+FAIL — phase 2: stack missing Project=PDE tag, execution environment missing git repo/BOM/RESTORE manifest, 2026-10-02

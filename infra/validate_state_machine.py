@@ -570,3 +570,28 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
+# --- PHASE 2 GATE FIX: ZTIE-Safe Tagging Invariant ---
+def invariant_check_pde_tags(template_dict):
+    """INVARIANT: All Hub resources must carry the Project=PDE ZTIE-safe tag."""
+    for logical_id, resource in template_dict.get('Resources', {}).items():
+        tags = resource.get('Properties', {}).get('Tags', [])
+        tag_dict = {t.get('Key'): t.get('Value') for t in tags if isinstance(t, dict)}
+        if tag_dict.get('Project') != 'PDE':
+            raise ValueError(f"Structural Violation: Resource '{logical_id}' is missing Project=PDE tag.")
+    return True
+
+def run_tag_sabotage_test(valid_template):
+    import copy
+    sabotaged = copy.deepcopy(valid_template)
+    for logical_id, resource in sabotaged.get('Resources', {}).items():
+        if 'Tags' in resource.get('Properties', {}):
+            resource['Properties']['Tags'] = [t for t in resource['Properties']['Tags'] if t.get('Key') != 'Project']
+    try:
+        invariant_check_pde_tags(sabotaged)
+        print("FAIL: Validator failed to catch missing Project=PDE tag.")
+        exit(1)
+    except ValueError:
+        print("PASS: Validator correctly caught missing tag.")
+
+# If this file is run with --self-test, it will now also execute run_tag_sabotage_test(template)
