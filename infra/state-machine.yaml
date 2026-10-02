@@ -229,9 +229,22 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Step Functions logging to CloudWatch Logs requires these log-delivery
-          # actions; AWS models them as *-resource actions (they create a service
-          # log-delivery, not a data grant), paired with the specific log-group ARN.
+          # Step Functions logging to CloudWatch Logs requires these log-DELIVERY
+          # actions on Resource "*": they manage an ACCOUNT-LEVEL log delivery + the
+          # account CloudWatch Logs resource-policy, not a per-log-group grant, so AWS
+          # rejects a scoped ARN here. This is the AWS-documented SFN logging policy.
+          #
+          # LIVE-FIX (Story 2.3 attempt 7, 2026-10-02): the deploy got PAST the
+          # EventBridge managed-rule hurdle (the Resource "*" events fix worked) and then
+          # rolled back with "The state machine IAM Role is not authorized to access the
+          # Log Destination". ROOT CAUSE: `logs:PutResourcePolicy` was in the SCOPED
+          # (log-group-ARN) statement below — but PutResourcePolicy is an ACCOUNT-LEVEL
+          # action (it writes the account's CloudWatch Logs resource-policy that lets
+          # Step Functions attach the log destination), so a scoped ARN DENIES it. SAME
+          # class as the events fix: a service log-delivery action requires Resource "*".
+          # FIX: moved logs:PutResourcePolicy up into this "*" delivery statement. Only
+          # the actual log-WRITE actions (CreateLogStream/PutLogEvents) stay scoped to
+          # this state machine's own log-group ARN below.
           - Sid: LogDeliverySetup
             Effect: Allow
             Action:
@@ -240,13 +253,13 @@ Resources:
               - logs:UpdateLogDelivery
               - logs:DeleteLogDelivery
               - logs:ListLogDeliveries
+              - logs:PutResourcePolicy
               - logs:DescribeResourcePolicies
               - logs:DescribeLogGroups
             Resource: "*"
           - Sid: OwnStateMachineLogGroupOnly
             Effect: Allow
             Action:
-              - logs:PutResourcePolicy
               - logs:CreateLogStream
               - logs:PutLogEvents
             Resource:

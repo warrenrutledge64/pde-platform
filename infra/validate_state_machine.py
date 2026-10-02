@@ -256,6 +256,25 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
              raw, re.DOTALL))),
         ("still least-privilege on the events grant: no events:* wildcard (only the named rule-management actions)",
          "events:*" not in raw),
+        # --- Step Functions CloudWatch Logs DELIVERY permissions (live-sealed FAIL
+        #     class, Story 2.3 attempt 7, 2026-10-02): CreateStateMachine attaches a log
+        #     DESTINATION, which needs the account-level log-delivery actions + especially
+        #     logs:PutResourcePolicy on Resource "*". PutResourcePolicy scoped to a
+        #     log-group ARN gets "not authorized to access the Log Destination" and rolls
+        #     back. Only the log-WRITE actions (CreateLogStream/PutLogEvents) may be
+        #     scoped to the own log-group ARN. ---
+        ("logs:PutResourcePolicy is granted on Resource \"*\" (account-level; a scoped ARN gets 'not authorized to access the Log Destination' — attempt 7)",
+         bool(re.search(
+             r"Sid:\s*LogDeliverySetup\b"
+             r"(?:(?!-\s*Sid:).)*?logs:PutResourcePolicy"
+             r"(?:(?!-\s*Sid:).)*?Resource:\s*[\"']\*[\"']",
+             raw, re.DOTALL))),
+        ("the account-level log-delivery actions are on Resource \"*\" (CreateLogDelivery present in the \"*\" statement)",
+         bool(re.search(
+             r"Sid:\s*LogDeliverySetup\b"
+             r"(?:(?!-\s*Sid:).)*?logs:CreateLogDelivery"
+             r"(?:(?!-\s*Sid:).)*?Resource:\s*[\"']\*[\"']",
+             raw, re.DOTALL))),
         # --- CloudFormation ORDERING: the state machine must DependsOn its managed
         #     policies (live-sealed FAIL class, Story 2.3 attempt 5, 2026-10-01): without
         #     it, CreateStateMachine fires before SyncEventsPolicy is attached/propagated
@@ -370,7 +389,7 @@ def self_test() -> int:
              '            Resource: "*"',
              '            Resource:\n              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForCodeBuildStartBuildRule"',
              1),
-         "on Resource \"*\""),
+         "sync managed-rule actions are on Resource"),
         # Over-broad fix regression: events:* must still be rejected.
         ("events:* broadening injected",
          good.replace("events:PutTargets", "events:*", 1),
@@ -380,6 +399,11 @@ def self_test() -> int:
         ("state machine DependsOn on managed policies removed (the attempt-5 ordering race)",
          re.sub(r"\n    DependsOn:\n(?:      - \w+\n)+", "\n", good, count=1),
          "DependsOn its managed policies"),
+        # The attempt-7 FAIL class: remove logs:PutResourcePolicy from the "*" delivery
+        # statement (it would have to be scoped, which gets the Log Destination denial).
+        ("logs:PutResourcePolicy removed from the \"*\" delivery statement (the attempt-7 FAIL)",
+         good.replace("              - logs:PutResourcePolicy\n", "", 1),
+         "logs:PutResourcePolicy is granted on Resource \"*\""),
     ]
 
     all_ok = True
