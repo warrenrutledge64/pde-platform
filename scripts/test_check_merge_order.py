@@ -9,9 +9,12 @@ or via unittest:
 
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
 
-from scripts import check_merge_order as g
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check_merge_order as g
 
 ARMED = "**Gate status:** **ARMED** — the register is non-empty."
 DISARMED = "**Gate status:** **DISARMED** — the register is empty."
