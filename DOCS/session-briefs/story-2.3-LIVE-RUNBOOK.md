@@ -239,7 +239,7 @@ aws cloudformation describe-stacks --stack-name pdlv-codebuild \
   --query "Stacks[0].Outputs" --output table
 ```
 
-## STEP 3 — Deploy the state-machine stack (`pdlv-state-machine`)
+## STEP 3 — Deploy the state-machine stack (`pdlv-promotion-pipeline-stack`)
 
 `ExternalId` is a `NoEcho` secret parameter — pass the **real** shared secret that
 matches the Story 1.1 member-role trust (do NOT commit it; type it at deploy time):
@@ -251,21 +251,21 @@ aws sts get-caller-identity --query Account --output text   # MUST print 6416289
 # SELF-HEALING guard again (this is the stack that was stuck in ROLLBACK_COMPLETE on
 # attempts 1-3). If you are in a FRESH shell that did not run STEP 2, re-paste the
 # ensure_deployable () {...} definition from STEP 2 first, then:
-ensure_deployable pdlv-state-machine || { echo "guard stop"; }
+ensure_deployable pdlv-promotion-pipeline-stack || { echo "guard stop"; }
 
 aws cloudformation deploy \
   --template-file infra/state-machine.yaml \
-  --stack-name pdlv-state-machine \
+  --stack-name pdlv-promotion-pipeline-stack \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides ExternalId="<THE-REAL-SHARED-EXTERNAL-ID>" \
   --tags Project=PDE Story=2.3 Component=state-machine \
   --no-fail-on-empty-changeset
 
-aws cloudformation describe-stacks --stack-name pdlv-state-machine \
+aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].StackStatus" --output text
 
 # Capture outputs — PIN the state-machine ARN for the gate run:
-aws cloudformation describe-stacks --stack-name pdlv-state-machine \
+aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].Outputs" --output table
 ```
 
@@ -291,7 +291,7 @@ aws stepfunctions list-state-machines \
   --query "stateMachines[?starts_with(name,'pdlv-')==\`false\` && contains(name,'pde-')].name" --output json
 
 # Project=PDE tag landed on the state machine + the exec role:
-SM_ARN=$(aws cloudformation describe-stacks --stack-name pdlv-state-machine \
+SM_ARN=$(aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].Outputs[?OutputKey=='PromotionStateMachineArn'].OutputValue" --output text)
 echo "state machine: $SM_ARN"
 aws stepfunctions list-tags-for-resource --resource-arn "$SM_ARN" --output table
@@ -377,7 +377,7 @@ cares about the pause, not the payload content):
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
 
-SM_ARN=$(aws cloudformation describe-stacks --stack-name pdlv-state-machine \
+SM_ARN=$(aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].Outputs[?OutputKey=='PromotionStateMachineArn'].OutputValue" --output text)
 
 EXEC_ARN=$(aws stepfunctions start-execution \
@@ -458,8 +458,9 @@ head, and authors Story 3.1's warm handoff. **This CLOSES Phase 2.**
 - **Zero-touch management/root `467866449172`.** Nothing in 2.3 touches it.
   Pipeline-Forensics `360999005254` is ZTIE's — never a target.
 - **Additive + reversible.** The deploy is net-new `pdlv-` stacks. Back out with
-  `aws cloudformation delete-stack` on `pdlv-state-machine` then `pdlv-codebuild`
-  (importers before exporters) with no effect on ZTIE's `pde-*` or on members.
+  `aws cloudformation delete-stack` on `pdlv-promotion-pipeline-stack` then
+  `pdlv-codebuild` (importers before exporters) with no effect on ZTIE's `pde-*` or on
+  members.
 - **VD-3b opportunity.** If this story stands up a `pde-hub-orchestrator` Hub role (it
   does not, by default — the deploy project runs as `pdlv-codebuild-service-role`),
   run `python3 scripts/phase1_gate.py` live to clear the deferred VD-3b. Otherwise
