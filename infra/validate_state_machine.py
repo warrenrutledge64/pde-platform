@@ -78,6 +78,9 @@ def _extract_asl(raw_text: str) -> dict | None:
     ``Tags:`` key. Returns the parsed object, or None if it is absent/unparseable
     (so the structural ASL invariants fail loudly rather than silently pass).
     """
+    # The PRODUCTION pipeline is the FIRST state machine in the file, so its is the
+    # first DefinitionString block — this keeps the existing DeployDev/sequence
+    # invariants pointed at the real pipeline (not the gate probe added in Story 2.3).
     m = re.search(r"\n      DefinitionString: \|\n(.*?)\n      Tags:", raw_text, re.DOTALL)
     if not m:
         return None
@@ -89,6 +92,27 @@ def _extract_asl(raw_text: str) -> dict | None:
         return json.loads(dedented)
     except (ValueError, TypeError):
         return None
+
+
+def _definition_block(raw_text: str, sm_resource: str) -> str:
+    """Return the raw text of the DefinitionString JSON for a named state-machine
+    resource (``PromotionStateMachine`` / ``GateProbeStateMachine``), or "" if absent.
+
+    Used to scope security invariants to the RIGHT state machine — e.g. "the probe
+    references no codebuild" must read the probe's definition, not the pipeline's.
+    """
+    m = re.search(
+        sm_resource + r":\s*\n.*?DefinitionString: \|\n(.*?)\n      Tags:",
+        raw_text, re.DOTALL)
+    return m.group(1) if m else ""
+
+
+def _probe_definition(raw_text: str) -> str:
+    return _definition_block(raw_text, "GateProbeStateMachine")
+
+
+def _promotion_definition(raw_text: str) -> str:
+    return _definition_block(raw_text, "PromotionStateMachine")
 
 
 def run_checks(template_text: str) -> list[tuple[str, bool]]:
@@ -137,8 +161,9 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         (f"template Description within the CFN {CFN_DESCRIPTION_MAX_BYTES}-byte limit (cfn-lint E1003)",
          0 < _description_bytes(full) <= CFN_DESCRIPTION_MAX_BYTES),
         # --- The state machine exists and is STANDARD (approval pauses can outlast EXPRESS) ---
-        ("declares one AWS::StepFunctions::StateMachine",
-         raw.count("Type: AWS::StepFunctions::StateMachine") == 1),
+        ("declares two state machines: the production pipeline + the Story 2.3 gate probe",
+         raw.count("Type: AWS::StepFunctions::StateMachine") == 2
+         and "PromotionStateMachine:" in raw and "GateProbeStateMachine:" in raw),
         ("state machine is STANDARD type (manual-approval pause can outlast EXPRESS)",
          "StateMachineType: STANDARD" in raw),
         # --- ASL is present and parses as JSON ---
@@ -170,10 +195,10 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          _is_approval_pause("AwaitSandboxApproval")),
         ("manual-approval pause before Prod (waitForTaskToken, not a timer)",
          _is_approval_pause("AwaitProdApproval")),
-        ("exactly two waitForTaskToken approval pauses",
-         raw.count("sns:publish.waitForTaskToken") == 2),
-        ("approval pauses carry the Step Functions task token ($$.Task.Token)",
-         raw.count('"taskToken.$": "$$.Task.Token"') == 2),
+        ("the production pipeline has exactly two waitForTaskToken approval pauses",
+         _promotion_definition(full).count("sns:publish.waitForTaskToken") == 2),
+        ("the production approval pauses carry the Step Functions task token ($$.Task.Token)",
+         _promotion_definition(full).count('"taskToken.$": "$$.Task.Token"') == 2),
         ("the pause is NOT faked with a Wait/timer state",
          '"Type": "Wait"' not in raw),
         # --- The deploy tasks START the Story 2.1 pdlv-deploy project ---
@@ -199,15 +224,15 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         # --- Project=PDE tagging on every taggable resource ---
         ("resources tagged Project=PDE",
          "Value: PDE" in raw),
-        ("every taggable resource is Project=PDE-tagged (topic + log group + role + state machine = 4; managed policies have no Tags)",
-         raw.count("Key: Project, Value: PDE") == 4),
+        ("every taggable resource is Project=PDE-tagged (pipeline: topic+log group+role+SM = 4; probe: log group+role+SM = 3; total 7; managed policies have no Tags)",
+         raw.count("Key: Project, Value: PDE") == 7),
         # --- checkov CKV_AWS_26: SNS at-rest encryption on the approval topic ---
         #     (REAL SSE, not a skip — the topic carries the task token + decision).
         ("approval SNS topic has at-rest encryption (checkov CKV_AWS_26)",
          "KmsMasterKeyId:" in raw),
         # --- checkov CKV_AWS_158: Log Group KMS — satisfied by a justified skip ---
-        ("the Log Group carries a justified CKV_AWS_158 KMS suppression (checkov)",
-         full.count("checkov:skip=CKV_AWS_158:") == 1),
+        ("both Log Groups (state machine + gate probe) carry a justified CKV_AWS_158 KMS suppression (checkov)",
+         full.count("checkov:skip=CKV_AWS_158:") == 2),
         # --- Least privilege: NO wildcard admin (Universal Criterion 3) ---
         ("no AdministratorAccess",
          "AdministratorAccess" not in raw),
@@ -263,18 +288,46 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         #     log-group ARN gets "not authorized to access the Log Destination" and rolls
         #     back. Only the log-WRITE actions (CreateLogStream/PutLogEvents) may be
         #     scoped to the own log-group ARN. ---
-        ("logs:PutResourcePolicy is granted on Resource \"*\" (account-level; a scoped ARN gets 'not authorized to access the Log Destination' — attempt 7)",
-         bool(re.search(
-             r"Sid:\s*LogDeliverySetup\b"
-             r"(?:(?!-\s*Sid:).)*?logs:PutResourcePolicy"
-             r"(?:(?!-\s*Sid:).)*?Resource:\s*[\"']\*[\"']",
-             raw, re.DOTALL))),
+        ("logs:PutResourcePolicy is in a LogDeliverySetup \"*\" statement and NEVER in a scoped Own*LogGroupOnly statement (account-level; a scoped ARN gets 'not authorized to access the Log Destination' — attempt 7)",
+         "logs:PutResourcePolicy" in raw
+         # it must appear in every LogDeliverySetup "*" block that exists...
+         and all(
+             "logs:PutResourcePolicy" in blk
+             for blk in re.findall(r"Sid:\s*LogDeliverySetup\b((?:(?!-\s*Sid:).)*?)Resource:\s*[\"']\*[\"']", raw, re.DOTALL)
+         )
+         # ...and NEVER inside a scoped Own*LogGroupOnly statement.
+         and not re.search(
+             r"Sid:\s*Own\w*LogGroupOnly\b(?:(?!-\s*Sid:).)*?logs:PutResourcePolicy",
+             raw, re.DOTALL)),
         ("the account-level log-delivery actions are on Resource \"*\" (CreateLogDelivery present in the \"*\" statement)",
          bool(re.search(
              r"Sid:\s*LogDeliverySetup\b"
              r"(?:(?!-\s*Sid:).)*?logs:CreateLogDelivery"
              r"(?:(?!-\s*Sid:).)*?Resource:\s*[\"']\*[\"']",
              raw, re.DOTALL))),
+        # --- PHASE 2 GATE PROBE (Story 2.3): a SEPARATE, structurally non-promoting
+        #     state machine proves the approval pause is reachable WITHOUT a real deploy.
+        #     Security guarantees enforced here so the probe can NEVER become a deploy/
+        #     promotion path, and the PRODUCTION pipeline stays bypass-free. ---
+        ("a separate gate-probe state machine exists (Story 2.3 — proves the pause without a deploy)",
+         "GateProbeStateMachine:" in raw and '!Sub "${NamePrefix}gate-probe"' in raw),
+        ("the gate probe references NO codebuild / startBuild anywhere (cannot deploy or promote)",
+         _probe_definition(full) != ""
+         and "codebuild" not in _probe_definition(full)
+         and "startBuild" not in _probe_definition(full)),
+        ("the gate probe terminates in a Fail state, never Succeed (an approved probe can't read as a promotion)",
+         '"GateProbeReachedPause"' in _probe_definition(full)
+         and '"Type": "Fail"' in _probe_definition(full)
+         and '"Type": "Succeed"' not in _probe_definition(full)),
+        ("the gate-probe role has ONLY publish + logs (no codebuild, no events managed-rule, no sts:AssumeRole into a member)",
+         "!Ref GateProbePublishPolicy" in raw and "!Ref GateProbeLogsPolicy" in raw
+         and not re.search(r"GateProbe\w*Policy:(?:(?!Type: AWS::IAM).)*?(codebuild:|events:PutRule|events:PutTargets|sts:AssumeRole)", raw, re.DOTALL)),
+        # --- PRODUCTION pipeline stays BYPASS-FREE: no input-driven skip. The real
+        #     promotion path must keep all three deploys + both approvals in strict
+        #     order (already checked above) and introduce NO Choice/gateMode branch. ---
+        ("the PRODUCTION promotion pipeline has NO gateMode / input-driven bypass branch",
+         "gateMode" not in _promotion_definition(full)
+         and '"Type": "Choice"' not in _promotion_definition(full)),
         # --- CloudFormation ORDERING: the state machine must DependsOn its managed
         #     policies (live-sealed FAIL class, Story 2.3 attempt 5, 2026-10-01): without
         #     it, CreateStateMachine fires before SyncEventsPolicy is attached/propagated
@@ -402,8 +455,26 @@ def self_test() -> int:
         # The attempt-7 FAIL class: remove logs:PutResourcePolicy from the "*" delivery
         # statement (it would have to be scoped, which gets the Log Destination denial).
         ("logs:PutResourcePolicy removed from the \"*\" delivery statement (the attempt-7 FAIL)",
-         good.replace("              - logs:PutResourcePolicy\n", "", 1),
-         "logs:PutResourcePolicy is granted on Resource \"*\""),
+         good.replace("              - logs:PutResourcePolicy\n", ""),  # remove from ALL delivery blocks
+         "logs:PutResourcePolicy is in a LogDeliverySetup"),
+        # Gate-probe security: the probe must never gain a deploy/promote path.
+        ("gate probe given a codebuild/startBuild path (probe must be non-promoting)",
+         good.replace(
+             '"GateProbeReachedPause"',
+             '"DeployViaProbe"', 1).replace(
+             '"GateProbeReachedPause": {\n              "Type": "Fail",',
+             '"DeployViaProbe": {\n              "Type": "Task",\n              "Resource": "arn:aws:states:::codebuild:startBuild.sync",',
+             1),
+         "references NO codebuild / startBuild"),
+        ("gate probe terminal flipped Fail -> Succeed (an approved probe would read as a promotion)",
+         good.replace(
+             '"GateProbeReachedPause": {\n              "Type": "Fail",',
+             '"GateProbeReachedPause": {\n              "Type": "Succeed",', 1),
+         "terminates in a Fail state, never Succeed"),
+        # Production bypass: injecting a gateMode skip into the real pipeline must fail.
+        ("gateMode bypass injected into the PRODUCTION pipeline",
+         good.replace('"StartAt": "DeployDev"', '"StartAt": "DeployDev", "gateMode": true', 1),
+         "PRODUCTION promotion pipeline has NO gateMode"),
     ]
 
     all_ok = True

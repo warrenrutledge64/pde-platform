@@ -401,64 +401,65 @@ done
 > the pause. **The validator decides which route is acceptable for the gate** — present
 > the raw output of whichever you run; if `DeployDev` fails, the gate has NOT passed.
 
-**Route A (preferred — exercise the real state machine, dummy-safe `DeployDev`):**
-Deploy the three Story 1.1 member roles (at least Dev) so they exist, AND for this gate
-make the Dev role trust the `pdlv-codebuild-service-role` the deploy project runs as
-(the production trust path to `pde-hub-orchestrator` / VD-3b is Phase 2). The
-`pdlv-deploy` buildspec's deploy line is already a harmless `echo` (no real stack is
-pushed), so a successful `assume-role` lets `DeployDev` complete and the run advances to
-`AwaitSandboxApproval`. This proves the orchestration end-to-end up to the pause.
+> **DUMMY-SAFE ROUTE (decided 2026-10-02, after attempt 8): a SEPARATE gate-probe state
+> machine — `pdlv-gate-probe`.** Attempt 8 proved the real `pdlv-promotion-pipeline`
+> deploys clean + passes least-privilege, but a dummy run through it hard-fails at
+> `DeployDev` (`sts:assume-role` into `pde-member-execution-dev`, whose trust targets the
+> Phase-3 `pde-hub-orchestrator`, not the CodeBuild role). Rather than weaken the real
+> pipeline with an input-driven bypass (a vulnerability vector) or a temporary member
+> trust (a standing cross-account hole), the template ships a SEPARATE, structurally
+> non-promoting probe: it `StartAt`s the `AwaitSandboxApproval` pause and then terminates
+> in `Fail` — it has NO deploy/CodeBuild state and its role has ONLY `sns:Publish` + its
+> own logs. The PRODUCTION pipeline carries NO bypass branch (zero added attack surface).
+> Proving the probe reaches the pause IS the Phase 2 gate.
 
-**Route B (minimal — assert the pause without a cross-account assume):** if standing up
-member trust is out of scope for this gate, the validator may accept proving the pause
-directly: temporarily point the dummy run at a path where `DeployDev` is a no-op success
-(e.g. a one-off dummy build project the deploy task can start that just `echo`s), OR
-start the execution and show it reaches `AwaitSandboxApproval`. The **validator authors**
-the exact acceptable shape — this runbook does not pre-decide it.
-
-Start the dummy run and observe (the dummy payload is intentionally trivial — the gate
-cares about the pause, not the payload content):
+Start the **gate probe** (not the production pipeline) and observe:
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
 
-SM_ARN=$(aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
-  --query "Stacks[0].Outputs[?OutputKey=='PromotionStateMachineArn'].OutputValue" --output text)
+PROBE_ARN=$(aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
+  --query "Stacks[0].Outputs[?OutputKey=='GateProbeStateMachineArn'].OutputValue" --output text)
+echo "gate probe: $PROBE_ARN"
 
 EXEC_ARN=$(aws stepfunctions start-execution \
-  --state-machine-arn "$SM_ARN" \
-  --name "phase2-gate-dummy-$(date +%s)" \
-  --input '{"artifact":"dummy","note":"phase-2 gate dummy payload"}' \
+  --state-machine-arn "$PROBE_ARN" \
+  --name "phase2-gate-probe-$(date +%s)" \
+  --input '{"probe":true,"note":"phase-2 gate probe — reach the pause, then abort"}' \
   --query executionArn --output text)
 echo "execution: $EXEC_ARN"
 
-# Give DeployDev time to run, then observe. RUNNING + the approval task waiting is the pause.
-sleep 30
+# The probe publishes to the approval topic and WAITS on the task token immediately.
+sleep 15
 aws stepfunctions describe-execution --execution-arn "$EXEC_ARN" \
   --query "{status:status,startDate:startDate,stopDate:stopDate}" --output table
 
-# The authoritative proof — the history shows DeployDev succeeded, then the execution
-# ENTERED AwaitSandboxApproval and is WAITING on the task token (no States.*/IAM error):
+# The authoritative proof — the history shows the execution ENTERED AwaitSandboxApproval
+# and is WAITING on the task token (no States.*/IAM error, no DeployDev at all):
 aws stepfunctions get-execution-history --execution-arn "$EXEC_ARN" \
   --max-results 100 --reverse-order \
   --query "events[].{id:id,type:type,name:stateEnteredEventDetails.name}" --output table
 ```
 
 **What a PASS looks like in the raw output (the validator confirms):**
-- `describe-execution` `status` is **`RUNNING`** (NOT `SUCCEEDED` — it must still be
-  paused; NOT `FAILED`/`TIMED_OUT`/`ABORTED`).
-- `get-execution-history` shows `DeployDev` entered + its `TaskSucceeded`, then a
-  `TaskStateEntered` for **`AwaitSandboxApproval`** and a `TaskScheduled`/
-  `TaskSubmitted` for the `sns:publish.waitForTaskToken` with **no following**
-  `TaskFailed`/`ExecutionFailed`/`ExecutionAborted` event.
-- There is **no** `States.Runtime`, `States.TaskFailed`, access-denied, or
-  configuration error in the history.
+- `describe-execution` `status` is **`RUNNING`** (NOT `SUCCEEDED`/`FAILED`/`TIMED_OUT`/
+  `ABORTED`) — the probe is paused at the approval, waiting on the task token.
+- `get-execution-history` shows the execution **ENTERED `AwaitSandboxApproval`** on an
+  `sns:publish.waitForTaskToken` `TaskScheduled`/`TaskSubmitted`, with **no** following
+  `TaskFailed`/`ExecutionFailed`/`ExecutionAborted` and **no** `States.*`/access-denied
+  error — and there is **no `DeployDev`/CodeBuild event at all** (the probe can't deploy).
+- The probe NEVER reaches `Succeed`; its only terminal is the `Fail`
+  (`GateProbeReachedPause`) that follows a human response — which the gate run does NOT do.
 
-> **If `DeployDev` FAILED** (e.g. `AccessDenied` on `sts:AssumeRole`, or the member role
-> absent), the execution did NOT reach the pause — the gate has NOT passed. Capture the
-> failing `get-execution-history` events verbatim and the `pdlv-deploy` build log, and
-> hand them to the validator; do not retry blindly or fabricate a pause.
+> **If the probe execution FAILS before the pause** (any `States.*`/IAM error on the
+> `sns:publish.waitForTaskToken`), the gate has NOT passed — capture the
+> `get-execution-history` events verbatim and hand them to the validator; do not retry
+> blindly or fabricate a pause.
+>
+> **Note on the production pipeline:** you may ALSO confirm the real `pdlv-promotion-pipeline`
+> exists and is least-privilege (STEP 4) — but do NOT dummy-run it (its `DeployDev` requires
+> the Phase-3 member trust / VD-3b). The gate is proven via the probe.
 
 ### 5a — Leave it paused; do NOT approve (Phase 3)
 
@@ -488,10 +489,12 @@ head, and authors Story 3.1's warm handoff. **This CLOSES Phase 2.**
 
 ## Watch-items
 
-- **`DeployDev` runs before the pause.** The gate's one real failure mode: the dummy
-  run fails at `DeployDev` (the `pdlv-deploy` `sts:assume-role` into
-  `pde-member-execution-dev`) and never reaches `AwaitSandboxApproval`. Use a
-  dummy-safe `DeployDev` (STEP 5) and let the validator decide the acceptable shape.
+- **Prove the gate via the SEPARATE `pdlv-gate-probe`, NOT the production pipeline.** A
+  dummy run through the real `pdlv-promotion-pipeline` hard-fails at `DeployDev`
+  (`sts:assume-role` into the member role, whose trust is Phase-3/VD-3b). The probe is a
+  separate, structurally non-promoting state machine (no deploy state; role has only
+  publish + logs) that reaches the pause with no cross-account dependency. The production
+  pipeline deliberately has NO bypass branch (zero added attack surface).
 - **The pause is the point.** The execution must stay `RUNNING` and WAIT on the token —
   it must NOT auto-advance (that would mean the approval is not a real
   `.waitForTaskToken` pause). Never send the task token in 2.3.

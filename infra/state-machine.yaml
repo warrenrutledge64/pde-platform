@@ -435,6 +435,169 @@ Resources:
         - { Key: Model, Value: orchestrate-and-pull }
         - { Key: ManagedBy, Value: cloudformation }
 
+  # ===========================================================================
+  # PHASE 2 GATE PROBE (Story 2.3, attempt 9) — a SEPARATE, structurally
+  # non-promoting state machine used ONLY to prove the Phase 2 gate: that the
+  # manual-approval pause (sns:publish.waitForTaskToken) is reachable with no
+  # IAM/config error, WITHOUT a real cross-account deploy.
+  #
+  # WHY SEPARATE (chosen over an in-pipeline gateMode flag, 2026-10-02): the
+  # production PromotionStateMachine above carries NO bypass branch at all — there
+  # is no input-driven way to skip a DeployX or an approval in the real pipeline,
+  # so the gate capability adds ZERO production attack surface. The probe is
+  # structurally INCAPABLE of promoting:
+  #   * its ASL has NO Deploy* task and references codebuild NOWHERE — it cannot
+  #     start a build or assume any member role;
+  #   * it ends in a Fail terminal (GateProbeReachedPause), never Succeed — an
+  #     approved probe can never report "promotion succeeded";
+  #   * its role has ONLY sns:Publish to the approval topic + its own logs — no
+  #     codebuild:*, no events: managed-rule (no .sync task), no sts:AssumeRole.
+  # The probe is meant to reach the pause and then be ABORTED (never approved).
+
+  # Probe role logs policy — write its own execution logs only.
+  GateProbeLogsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}gate-probe-logs"
+      Description: Deliver the Phase 2 gate-probe execution logs to its own pdlv- log group only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: LogDeliverySetup
+            Effect: Allow
+            Action:
+              - logs:CreateLogDelivery
+              - logs:GetLogDelivery
+              - logs:UpdateLogDelivery
+              - logs:DeleteLogDelivery
+              - logs:ListLogDeliveries
+              - logs:PutResourcePolicy
+              - logs:DescribeResourcePolicies
+              - logs:DescribeLogGroups
+            Resource: "*"
+          - Sid: OwnLogGroupOnly
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !GetAtt GateProbeLogGroup.Arn
+              - !Sub "${GateProbeLogGroup.Arn}:*"
+
+  # Probe role publish policy — publish ONLY to the approval topic (same topic the
+  # real pipeline uses, so the pause behaviour is identical). Nothing else.
+  GateProbePublishPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}gate-probe-publish"
+      Description: Publish the gate-probe approval request to the PDE approval topic only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublishApprovalTopicOnly
+            Effect: Allow
+            Action: sns:Publish
+            Resource:
+              - !Ref ApprovalTopic
+
+  GateProbeLogGroup:
+    Type: AWS::Logs::LogGroup
+    # checkov:skip=CKV_AWS_158:PDE gate-probe operational logs (non-sensitive control-plane probe telemetry); SSE via the AWS-owned key suffices at this tier — a CMK is unjustified overhead (same rationale as the state-machine log group).
+    Properties:
+      LogGroupName: !Sub "/aws/vendedlogs/states/${NamePrefix}gate-probe"
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.3" }
+        - { Key: Component, Value: gate-probe }
+
+  # Probe execution role — trusted only by Step Functions; ONLY publish + own logs.
+  # Deliberately NO codebuild, NO events managed-rule, NO sts:AssumeRole.
+  GateProbeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${NamePrefix}gate-probe-role"
+      Description: >-
+        Minimal execution role for the Phase 2 gate probe. Publishes the approval
+        request to the PDE approval topic and writes its own logs — nothing else.
+        No codebuild, no events managed-rule, no cross-account assume.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: StepFunctionsServiceTrust
+            Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+      ManagedPolicyArns:
+        - !Ref GateProbePublishPolicy
+        - !Ref GateProbeLogsPolicy
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.3" }
+        - { Key: Component, Value: gate-probe }
+        - { Key: ManagedBy, Value: cloudformation }
+
+  # The gate-probe state machine — STARTS at the approval pause, then FAILS.
+  # It has exactly two states and references NO deploy/codebuild resource, so it
+  # cannot promote or deploy anything. Proving it reaches AwaitSandboxApproval
+  # without error IS the Phase 2 gate.
+  GateProbeStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn:
+      - GateProbePublishPolicy
+      - GateProbeLogsPolicy
+    Properties:
+      StateMachineName: !Sub "${NamePrefix}gate-probe"
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt GateProbeExecutionRole.Arn
+      LoggingConfiguration:
+        Level: ALL
+        IncludeExecutionData: false
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt GateProbeLogGroup.Arn
+      TracingConfiguration:
+        Enabled: true
+      DefinitionSubstitutions:
+        ApprovalTopicArn: !Ref ApprovalTopic
+      DefinitionString: |
+        {
+          "Comment": "PDE Phase 2 gate PROBE: prove the manual-approval pause is reachable with no IAM/config error, WITHOUT any deploy. StartAt the pause; terminate in Fail (never Succeed) so an approved probe can never read as a promotion. No Deploy/CodeBuild state exists.",
+          "StartAt": "AwaitSandboxApproval",
+          "States": {
+            "AwaitSandboxApproval": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish.waitForTaskToken",
+              "Parameters": {
+                "TopicArn": "${ApprovalTopicArn}",
+                "Message": {
+                  "stage": "Awaiting Sandbox Approval",
+                  "probe": true,
+                  "note": "PHASE 2 GATE PROBE — non-promoting; abort after confirming the pause",
+                  "taskToken.$": "$$.Task.Token",
+                  "executionId.$": "$$.Execution.Id"
+                }
+              },
+              "Next": "GateProbeReachedPause"
+            },
+            "GateProbeReachedPause": {
+              "Type": "Fail",
+              "Error": "GateProbeComplete",
+              "Cause": "Phase 2 gate probe reached the approval pause; it does not promote. Abort/ignore this execution."
+            }
+          }
+        }
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "2.3" }
+        - { Key: Component, Value: gate-probe }
+        - { Key: ManagedBy, Value: cloudformation }
+
 # ---------------------------------------------------------------------------
 # OUTPUTS
 # ---------------------------------------------------------------------------
@@ -463,3 +626,9 @@ Outputs:
     Value: !GetAtt StateMachineExecutionRole.Arn
     Export:
       Name: pdlv-promotion-pipeline-role-arn
+
+  GateProbeStateMachineArn:
+    Description: ARN of the Phase 2 gate PROBE state machine (Story 2.3 starts a dummy run against THIS to prove the approval pause is reachable — it cannot deploy or promote).
+    Value: !Ref GateProbeStateMachine
+    Export:
+      Name: pdlv-gate-probe-arn
