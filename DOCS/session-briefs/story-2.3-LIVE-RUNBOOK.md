@@ -159,6 +159,7 @@ aws sts get-caller-identity --query Account --output text   # MUST print 6416289
 DEAD=$(aws cloudformation list-stacks \
   --stack-status-filter ROLLBACK_COMPLETE ROLLBACK_FAILED CREATE_FAILED \
                         DELETE_FAILED UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE \
+                        REVIEW_IN_PROGRESS \
   --query "StackSummaries[?contains(StackName,'pdlv-')].StackName" --output text)
 echo "dead pdlv- stacks: ${DEAD:-<none>}"
 
@@ -176,7 +177,7 @@ done
 # Re-confirm the pdlv- namespace has NO dead stack left before deploying the FIXED template:
 aws cloudformation list-stacks \
   --stack-status-filter ROLLBACK_COMPLETE ROLLBACK_FAILED CREATE_FAILED DELETE_FAILED \
-                        UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE \
+                        UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE REVIEW_IN_PROGRESS \
   --query "StackSummaries[?contains(StackName,'pdlv-')].StackName" --output json
 # EXPECT [] — then proceed to STEP 2.
 ```
@@ -209,7 +210,7 @@ ensure_deployable () {
         --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "ABSENT")
   echo "$S => $ST"
   case "$ST" in
-    ROLLBACK_COMPLETE|ROLLBACK_FAILED|CREATE_FAILED|DELETE_FAILED|UPDATE_ROLLBACK_FAILED)
+    ROLLBACK_COMPLETE|ROLLBACK_FAILED|CREATE_FAILED|DELETE_FAILED|UPDATE_ROLLBACK_FAILED|REVIEW_IN_PROGRESS)
       echo "  dead stack — deleting before deploy (self-heal)…"
       aws cloudformation delete-stack --stack-name "$S"
       aws cloudformation wait stack-delete-complete --stack-name "$S"

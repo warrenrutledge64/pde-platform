@@ -234,19 +234,27 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          "!Ref ApprovalTopic" in raw and "sns:Publish" in raw),
         # --- EventBridge managed-rule permissions for the codebuild:startBuild.sync
         #     integration (live-sealed FAIL class, Story 2.3 attempt 1, 2026-10-01):
-        #     at CreateStateMachine time Step Functions must be able to MANAGE the
-        #     StepFunctionsGetEventsFor* rule, or the deploy rolls back with
-        #     "is not authorized to create managed-rule". The role needs the COMPLETE
-        #     lifecycle action set, and the resource must cover the rule-name FAMILY
-        #     (not one literal rule) — while staying least-privilege (NOT events:*,
-        #     NOT Resource "*"). ---
-        ("SFN role has the complete .sync managed-rule action set (Put/Describe/Delete rule + Put/Remove targets)",
-         all(a in raw for a in (
-             "events:PutRule", "events:PutTargets", "events:DescribeRule",
-             "events:DeleteRule", "events:RemoveTargets"))),
-        ("the .sync managed-rule actions are scoped to the StepFunctionsGetEventsFor* rule-name family (resolves the CreateStateMachine managed-rule denial)",
-         "rule/StepFunctionsGetEventsFor*" in raw),
-        ("still least-privilege: no events:* wildcard, no Resource \"*\" on the events policy",
+        #     at CreateStateMachine time Step Functions calls events:PutRule/PutTargets/
+        #     DescribeRule to provision + validate the managed rule for the
+        #     codebuild:startBuild.sync integration. CORRECTED THROUGH 3 LIVE ATTEMPTS
+        #     (attempts 1, 5, 6): the authorization check does NOT accept a
+        #     resource-SCOPED grant (a literal rule ARN OR the StepFunctionsGetEventsFor*
+        #     family both got AccessDenied, SDK Attempt Count 11), and it is NOT an
+        #     ordering race (an explicit DependsOn did not help). AWS's OWN published IAM
+        #     template for this integration grants exactly these three actions on
+        #     Resource: "*". So the correct, documented grant is the three managed-rule
+        #     actions on "*", bounded to events: rule-management actions only. ---
+        ("SFN role grants the three AWS-documented .sync managed-rule actions (PutRule/PutTargets/DescribeRule)",
+         all(a in raw for a in ("events:PutRule", "events:PutTargets", "events:DescribeRule"))),
+        ("the .sync managed-rule actions are on Resource \"*\" (AWS-documented; a scoped rule ARN gets AccessDenied at CreateStateMachine — attempts 1/5/6)",
+         bool(re.search(
+             # Within the CodeBuildSyncManagedRule statement ONLY (stop at the next
+             # `- Sid:` so we never read a later statement's Resource), the Resource is "*".
+             r"Sid:\s*CodeBuildSyncManagedRule\b"
+             r"(?:(?!-\s*Sid:).)*?"
+             r"Resource:\s*[\"']\*[\"']",
+             raw, re.DOTALL))),
+        ("still least-privilege on the events grant: no events:* wildcard (only the named rule-management actions)",
          "events:*" not in raw),
         # --- CloudFormation ORDERING: the state machine must DependsOn its managed
         #     policies (live-sealed FAIL class, Story 2.3 attempt 5, 2026-10-01): without
@@ -349,15 +357,20 @@ def self_test() -> int:
         ("promotion order broken (Dev skips the Sandbox approval)",
          good.replace('"Next": "AwaitSandboxApproval"', '"Next": "DeploySandbox"', 1),
          "promotion order is Dev"),
-        # The live-sealed FAIL (Story 2.3 attempt 1): the .sync managed-rule scope
-        # reverted to a SINGLE literal rule — must re-fail the rule-name-family check.
-        ("SFN managed-rule scope reverted to a single literal rule (the attempt-1 FAIL)",
-         good.replace("rule/StepFunctionsGetEventsFor*", "rule/SomeOtherRule", 1),
-         "StepFunctionsGetEventsFor* rule-name family"),
-        # Incomplete managed-rule lifecycle actions (DeleteRule dropped).
-        ("SFN managed-rule action set incomplete (DeleteRule dropped)",
-         good.replace("- events:DeleteRule\n", "", 1),
-         "complete .sync managed-rule action set"),
+        # The live-sealed FAIL class (attempts 1/5/6): scoping the .sync managed-rule
+        # grant to a rule ARN instead of "*" gets AccessDenied at CreateStateMachine.
+        # Re-introduce a scoped resource on that statement — must re-fail the "on
+        # Resource *" invariant.
+        ("SFN managed-rule grant re-scoped to a rule ARN (the attempts-1/5/6 FAIL)",
+         # Flip ONLY the managed-rule statement's Resource "*" to a scoped ARN. The
+         # events statement is the only `Resource: "*"` on its own line (the logs policy
+         # uses `Resource: "*"` too but on a differently-indented line); target the
+         # events one by its unique 12-space indent + exact value.
+         good.replace(
+             '            Resource: "*"',
+             '            Resource:\n              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForCodeBuildStartBuildRule"',
+             1),
+         "on Resource \"*\""),
         # Over-broad fix regression: events:* must still be rejected.
         ("events:* broadening injected",
          good.replace("events:PutTargets", "events:*", 1),

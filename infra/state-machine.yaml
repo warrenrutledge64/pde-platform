@@ -182,22 +182,28 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
+          # LIVE-FIX (Story 2.3 attempt 6, 2026-10-02): a scoped rule-ARN resource on
+          # these events actions STILL produced "not authorized to create managed-rule"
+          # (AccessDenied, SDK Attempt Count 11) even after the attempt-5 DependsOn
+          # ordering fix. ROOT CAUSE (corrects attempts 1 & 5): at CreateStateMachine
+          # time Step Functions calls events:PutRule/PutTargets/DescribeRule to
+          # provision + validate the managed rule for the codebuild:startBuild.sync
+          # integration, and that authorization check does NOT accept a resource-SCOPED
+          # grant — AWS's OWN published IAM template for this integration
+          # (service-integration-iam-templates / codebuild-iam) grants these three
+          # actions on Resource: "*". The scoping was the defect, not the ordering and
+          # not the action set. FIX: grant exactly the three AWS-documented managed-rule
+          # actions on Resource "*" (bounded to events: rule MANAGEMENT only — no other
+          # events action, no other service). This is the accepted, documented pattern
+          # for .sync integrations; the "*" is required because the managed rule's ARN
+          # is not matchable at the authorization check.
           - Sid: CodeBuildSyncManagedRule
             Effect: Allow
             Action:
               - events:PutTargets
               - events:PutRule
               - events:DescribeRule
-              - events:DeleteRule
-              - events:RemoveTargets
-            Resource:
-              # The StepFunctionsGetEventsFor* rule-name FAMILY (not a single literal
-              # rule, not "*"): bounded to the Step Functions-managed .sync rules in
-              # this account+region. Resolves the CreateStateMachine managed-rule denial
-              # while staying least-privilege (the only EventBridge rules it can touch
-              # are the ones Step Functions itself creates for the .sync pattern).
-              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForCodeBuildStartBuildRule"
-              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsFor*"
+            Resource: "*"
 
   # Publish the approval request (with the task token) to THIS approval topic only.
   PublishApprovalPolicy:
