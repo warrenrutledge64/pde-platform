@@ -197,6 +197,7 @@ Resources:
           # events action, no other service). This is the accepted, documented pattern
           # for .sync integrations; the "*" is required because the managed rule's ARN
           # is not matchable at the authorization check.
+          # checkov:skip=CKV_AWS_111:Step Functions .sync integration requires unscoped Resource "*" for events:PutRule/PutTargets/DescribeRule.
           - Sid: CodeBuildSyncManagedRule
             Effect: Allow
             Action:
