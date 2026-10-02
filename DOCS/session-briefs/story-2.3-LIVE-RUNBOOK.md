@@ -144,27 +144,39 @@ aws cloudformation list-stacks \
 > but are actually just the dead stack blocking everything. This is exactly what the
 > attempt-2 re-validation hit (VD-7). **Delete the dead stack before re-deploying.**
 
+> **⚠️ NAME-AGNOSTIC — delete the dead stack by WHATEVER it is named (attempt-4 lesson,
+> VD-7).** Attempts 2-4 kept failing on a stack the validator reported as
+> **`pdlv-promotion-pipeline-stack`**, but the manual delete targeted `pdlv-state-machine`
+> (this runbook's name) — a DIFFERENT name, so the dead stack was never removed. Do NOT
+> assume the stack name; SWEEP the whole `pdlv-` namespace for any dead stack and delete
+> each by its real name. (Whatever the deploy script named it, it starts with `pdlv-`.)
+
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
 
-# Check the status of each PDE stack (only act on pdlv-*, NEVER a pde-* / ZTIE stack):
-for S in pdlv-state-machine pdlv-codebuild; do
-  ST=$(aws cloudformation describe-stacks --stack-name "$S" \
-        --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "ABSENT")
-  echo "$S => $ST"
+# Find EVERY pdlv- stack in a dead/un-updatable state — by whatever name it has:
+DEAD=$(aws cloudformation list-stacks \
+  --stack-status-filter ROLLBACK_COMPLETE ROLLBACK_FAILED CREATE_FAILED \
+                        DELETE_FAILED UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE \
+  --query "StackSummaries[?contains(StackName,'pdlv-')].StackName" --output text)
+echo "dead pdlv- stacks: ${DEAD:-<none>}"
+
+# Delete each dead pdlv- stack by its REAL name and WAIT (only pdlv-*, never pde-*/ZTIE):
+for S in $DEAD; do
+  case "$S" in
+    pdlv-*) echo "deleting dead stack $S…"
+            aws cloudformation delete-stack --stack-name "$S"
+            aws cloudformation wait stack-delete-complete --stack-name "$S"
+            echo "  $S deleted." ;;
+    *)      echo "REFUSING to touch non-pdlv stack $S" ;;
+  esac
 done
 
-# For ANY pdlv- stack in ROLLBACK_COMPLETE (or *_FAILED), delete it and WAIT:
-#   (do this for pdlv-state-machine first if present, then pdlv-codebuild)
-aws cloudformation delete-stack --stack-name pdlv-state-machine
-aws cloudformation wait stack-delete-complete --stack-name pdlv-state-machine
-# (repeat for pdlv-codebuild only if it is also dead)
-
-# Re-confirm the pdlv- namespace is now clean before deploying the FIXED template:
+# Re-confirm the pdlv- namespace has NO dead stack left before deploying the FIXED template:
 aws cloudformation list-stacks \
-  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE ROLLBACK_COMPLETE \
-                        CREATE_IN_PROGRESS UPDATE_IN_PROGRESS \
+  --stack-status-filter ROLLBACK_COMPLETE ROLLBACK_FAILED CREATE_FAILED DELETE_FAILED \
+                        UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE \
   --query "StackSummaries[?contains(StackName,'pdlv-')].StackName" --output json
 # EXPECT [] — then proceed to STEP 2.
 ```
