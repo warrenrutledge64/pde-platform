@@ -264,6 +264,19 @@ inventory; if it's in the inventory, it maps to a restore point.*
   the fix before running the failing tool.** _(PDE Story 2.2: 8 attempts to a
   sealed PASS — 3 execution-failure clones + 3 stale-checkout re-runs — all removed
   the moment the bar ran via CI on the PR head.)_
+- **Merge the deliverable and its close-out together — never land the artifact
+  ahead of its validated ledger.** A story's PR must carry BOTH the deliverable
+  AND its close-out (sealed Validation Result recorded, status ✅, Validation Debt
+  entry cleared → gate DISARMED) before it merges to the trunk. If the deliverable
+  merges first and the close-out follows later, the trunk carries the deployed
+  artifact with a stale ledger (the story reads 🟡 though it passed) and strands any
+  validation-time fixes on a branch ahead of the trunk — the **fix-after-merge
+  trap**. Enforce it where the merge happens: a CI merge-order guard
+  (`scripts/check_merge_order.py`) that turns a deliverable PR red while the gate is
+  ARMED, plus the convention "merge only when green" (server-side branch protection
+  is not enforced on a private/free repo, so the red/green signal is the guard).
+  _(PDE Story 2.2: the deliverable merged early at PRs #24 and #25, forcing two
+  after-the-fact reconciliation PRs; OD-008.)_
 - **When a gate runs more than one tool over the same tree, make their scope
   match.** A gate composed of several checkers (lint + security scan, etc.) must
   point every tool at the *same* set of files, or one tool will fail a change on
