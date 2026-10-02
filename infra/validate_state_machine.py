@@ -232,6 +232,22 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          not re.search(r"Resource:\s*\n\s*-\s*!Sub\s*\"arn:\$\{AWS::Partition\}:iam::.*role/\$\{MemberRoleName\}", raw)),
         ("sns:Publish is scoped to the approval topic (Ref ApprovalTopic), not *",
          "!Ref ApprovalTopic" in raw and "sns:Publish" in raw),
+        # --- EventBridge managed-rule permissions for the codebuild:startBuild.sync
+        #     integration (live-sealed FAIL class, Story 2.3 attempt 1, 2026-10-01):
+        #     at CreateStateMachine time Step Functions must be able to MANAGE the
+        #     StepFunctionsGetEventsFor* rule, or the deploy rolls back with
+        #     "is not authorized to create managed-rule". The role needs the COMPLETE
+        #     lifecycle action set, and the resource must cover the rule-name FAMILY
+        #     (not one literal rule) — while staying least-privilege (NOT events:*,
+        #     NOT Resource "*"). ---
+        ("SFN role has the complete .sync managed-rule action set (Put/Describe/Delete rule + Put/Remove targets)",
+         all(a in raw for a in (
+             "events:PutRule", "events:PutTargets", "events:DescribeRule",
+             "events:DeleteRule", "events:RemoveTargets"))),
+        ("the .sync managed-rule actions are scoped to the StepFunctionsGetEventsFor* rule-name family (resolves the CreateStateMachine managed-rule denial)",
+         "rule/StepFunctionsGetEventsFor*" in raw),
+        ("still least-privilege: no events:* wildcard, no Resource \"*\" on the events policy",
+         "events:*" not in raw),
         # --- Execution role is scoped + trusted only by Step Functions ---
         ("a Step Functions execution role exists",
          "StateMachineExecutionRole:" in raw and "Type: AWS::IAM::Role" in raw),
@@ -321,6 +337,19 @@ def self_test() -> int:
         ("promotion order broken (Dev skips the Sandbox approval)",
          good.replace('"Next": "AwaitSandboxApproval"', '"Next": "DeploySandbox"', 1),
          "promotion order is Dev"),
+        # The live-sealed FAIL (Story 2.3 attempt 1): the .sync managed-rule scope
+        # reverted to a SINGLE literal rule — must re-fail the rule-name-family check.
+        ("SFN managed-rule scope reverted to a single literal rule (the attempt-1 FAIL)",
+         good.replace("rule/StepFunctionsGetEventsFor*", "rule/SomeOtherRule", 1),
+         "StepFunctionsGetEventsFor* rule-name family"),
+        # Incomplete managed-rule lifecycle actions (DeleteRule dropped).
+        ("SFN managed-rule action set incomplete (DeleteRule dropped)",
+         good.replace("- events:DeleteRule\n", "", 1),
+         "complete .sync managed-rule action set"),
+        # Over-broad fix regression: events:* must still be rejected.
+        ("events:* broadening injected",
+         good.replace("events:PutTargets", "events:*", 1),
+         "no events:* wildcard"),
     ]
 
     all_ok = True

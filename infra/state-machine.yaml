@@ -158,11 +158,27 @@ Resources:
   # The .sync (startBuild.sync) integration uses a managed CloudWatch Events rule to
   # learn when the build completes. These are the exact actions Step Functions needs
   # for the CodeBuild .sync pattern, scoped to the AWS-managed rule name.
+  #
+  # LIVE-FIX (Story 2.3 validation attempt 1, 2026-10-01, Independent Validator FAIL):
+  # the deploy rolled back with CreateStateMachine AccessDenied — "'...:role/
+  # pdlv-promotion-pipeline-role' is not authorized to create managed-rule". At
+  # CreateStateMachine time Step Functions validates it can MANAGE the EventBridge
+  # rule that backs the codebuild:startBuild.sync integration. Two gaps caused the
+  # denial: (1) the rule-name was scoped to the SINGLE literal
+  # StepFunctionsGetEventsForCodeBuildStartBuildRule, but the service manages the rule
+  # under the StepFunctionsGetEventsFor* name family — a one-literal scope is too tight
+  # for the .sync validation; (2) the lifecycle actions were incomplete — managing the
+  # rule needs DeleteRule + RemoveTargets as well as PutRule/PutTargets/DescribeRule.
+  # FIX (still least privilege — NOT events:* and NOT Resource "*"): grant the exact
+  # AWS-published managed-rule action set, scoped to the StepFunctionsGetEventsFor*
+  # rule-name family in THIS account+region only. This is the AWS IAM template for the
+  # .sync pattern (service-integration-iam-templates); it is bounded to the Step
+  # Functions-managed rules, not arbitrary EventBridge rules.
   SyncEventsPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: !Sub "${NamePrefix}sfn-sync-events"
-      Description: Manage ONLY the CodeBuild .sync managed rule (startBuild.sync).
+      Description: Manage ONLY the Step Functions-managed .sync rules (startBuild.sync).
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -172,8 +188,16 @@ Resources:
               - events:PutTargets
               - events:PutRule
               - events:DescribeRule
+              - events:DeleteRule
+              - events:RemoveTargets
             Resource:
+              # The StepFunctionsGetEventsFor* rule-name FAMILY (not a single literal
+              # rule, not "*"): bounded to the Step Functions-managed .sync rules in
+              # this account+region. Resolves the CreateStateMachine managed-rule denial
+              # while staying least-privilege (the only EventBridge rules it can touch
+              # are the ones Step Functions itself creates for the .sync pattern).
               - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForCodeBuildStartBuildRule"
+              - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsFor*"
 
   # Publish the approval request (with the task token) to THIS approval topic only.
   PublishApprovalPolicy:

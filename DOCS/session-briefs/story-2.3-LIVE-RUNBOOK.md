@@ -246,6 +246,13 @@ done
   is the `pdlv-promotion-approval` topic ARN (not `*`); its `logs:*` `Resource: "*"`
   entries are the AWS-required log-*delivery* setup only (write actions are scoped to
   its own log group ARN).
+- The state-machine role's EventBridge grant (the `codebuild:startBuild.sync` managed
+  rule) is the complete lifecycle set `events:PutRule/PutTargets/DescribeRule/DeleteRule/
+  RemoveTargets` **scoped to the `rule/StepFunctionsGetEventsFor*` rule-name family**
+  in this account+region — NOT `events:*`, NOT `Resource "*"`. _(Attempt-1 FAIL class,
+  VD-7: a one-literal-rule scope + missing `DeleteRule`/`RemoveTargets` denied
+  `CreateStateMachine` with "not authorized to create managed-rule" and rolled the
+  stack back. Confirm the deployed policy shows the family-scoped, complete set.)_
 - The state-machine role holds **NO** `sts:AssumeRole` into any member role (that power
   lives ONLY in `pdlv-codebuild-service-role`, scoped to the three named
   `pde-member-execution-<env>` ARNs — RD-006).
