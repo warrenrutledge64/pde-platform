@@ -269,6 +269,51 @@ aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].Outputs" --output table
 ```
 
+## STEP 3a — If the deploy ROLLED BACK, capture the FAILURE REASON (MANDATORY — VD-7)
+
+> **A `ROLLBACK_COMPLETE`/`CREATE_FAILED` is NEVER acceptable as "it rolled back."**
+> Attempt 5 rolled back on a clean slate with no cause recorded, which cost a cycle —
+> the fix for any rollback requires the CloudFormation **first-failure event**, not the
+> symptom. If STEP 3's status is anything other than `CREATE_COMPLETE`/`UPDATE_COMPLETE`,
+> run this and paste the raw output to the validator/builder BEFORE deleting the stack.
+
+```bash
+# Target: Pipeline-Hub 641628980935 (us-east-1)
+# The FIRST resource that failed + the EXACT reason (this is the diagnostic line):
+aws cloudformation describe-stack-events --stack-name pdlv-promotion-pipeline-stack \
+  --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[Timestamp,LogicalResourceId,ResourceStatusReason]" \
+  --output table
+
+# Full ordered event trail (oldest first) if the above is not enough:
+aws cloudformation describe-stack-events --stack-name pdlv-promotion-pipeline-stack \
+  --query "reverse(StackEvents[].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason])" \
+  --output table
+```
+
+> **To preserve the failed resource for inspection** (CloudFormation auto-deletes it on
+> rollback), re-deploy the state-machine stack with rollback DISABLED so the failed
+> resource + its reason survive — then read the events above, then delete:
+>
+> ```bash
+> # (after STEP 1a has cleared any dead stack) create with on-failure DO_NOTHING:
+> aws cloudformation create-stack \
+>   --stack-name pdlv-promotion-pipeline-stack \
+>   --template-body file://infra/state-machine.yaml \
+>   --capabilities CAPABILITY_NAMED_IAM \
+>   --on-failure DO_NOTHING \
+>   --parameters ParameterKey=ExternalId,ParameterValue="<THE-REAL-SHARED-EXTERNAL-ID>" \
+>   --tags Key=Project,Value=PDE Key=Story,Value=2.3 Key=Component,Value=state-machine
+> aws cloudformation wait stack-create-complete --stack-name pdlv-promotion-pipeline-stack || true
+> aws cloudformation describe-stack-events --stack-name pdlv-promotion-pipeline-stack \
+>   --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[LogicalResourceId,ResourceStatusReason]" \
+>   --output table
+> ```
+>
+> **Do NOT patch the template blindly on "it rolled back."** The builder fixes
+> fix-then-validate-once ONLY against the captured `ResourceStatusReason` (that is how
+> the attempt-1 managed-rule defect was fixed from its exact error string). Hand the
+> reason back; a template edit without it risks another wasted cycle.
+
 ## STEP 4 — Verify the REAL deployed resources (never trust the green line)
 
 > Standing lesson (doubly relevant on the first live deploy): a `✅ CREATE_COMPLETE`
