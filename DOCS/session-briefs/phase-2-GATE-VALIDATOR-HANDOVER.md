@@ -26,12 +26,20 @@
 > run its steps live and paste back the RAW output.
 >
 > **STEP 0 is a HARD PRECONDITION (OD-013).** The attempt-1 gate FAIL (2026-10-02) reported
-> the execution environment was "missing the git repo / BOM / scripts / RESTORE manifest" —
-> but those are all present in the repo; the launch pad was simply never bootstrapped. The
-> fenced block below now opens with a STEP 0 that clones + bootstraps + verifies the launch
-> pad (`LAUNCH-PAD VERIFY: PASS`) and confirms `governance/BOM.md`, `governance/RESTORE.md`,
-> `scripts/`, and the `restore/phase-2-green` tag are on disk BEFORE any gate step. If that
-> verify does not pass, the validator seals **INCONCLUSIVE (Execution Failure)**, not FAIL.
+> the execution environment was "missing the git repo / BOM / scripts / RESTORE manifest",
+> and attempt-2 (2026-10-03) again flagged "RESTORE.md missing" — but `governance/RESTORE.md`
+> has existed since the greenfield bootstrap (on both `main` and `feature/story-1.2`). The
+> root cause was that STEP 0 delegated to `scripts/bootstrap_launchpad.sh`, which is a
+> STORY-1.2-specific bootstrap: it checks out `feature/story-1.2` and verifies only Story-1.2
+> files, never the Phase-2 target or `governance/RESTORE.md`/`BOM.md`. STEP 0 is now a
+> SELF-CONTAINED Phase-2 bootstrap that checks out the CI-GREEN `main` (the OD-012
+> reconciliation target, NOT the stale `restore/phase-2-green` tag `3c42d03`, NOT
+> `feature/story-1.2`) and verifies the Phase-2 file set (`governance/RESTORE.md`,
+> `governance/BOM.md`, `RUNBOOK.md`, the state-machine template + checker + deploy-tag guard)
+> and the CKV_AWS_111 reconciliation marker, printing `PHASE-2 LAUNCH-PAD VERIFY: PASS`
+> before any gate step. If it does not pass, the validator seals **INCONCLUSIVE (Execution
+> Failure)**, not FAIL — and a reported "RESTORE.md missing" when the file IS in the repo is
+> itself the signal the launch pad is on the wrong branch.
 
 ---
 
@@ -50,21 +58,50 @@ its restore point and its bill of materials.
 #  findings were an UN-BOOTSTRAPPED launch pad, not a deliverable defect. A plain clone can
 #  land on main / the wrong dir, or a stray ~/.git can hijack it. Bootstrap, then verify,
 #  BEFORE you accept any downstream output.)
+#   ⚠ DO NOT run `scripts/bootstrap_launchpad.sh` for THIS gate — it is a STORY-1.2-specific
+#   bootstrap: it hard-codes `git checkout feature/story-1.2` and verifies only Story-1.2
+#   files (phase1_gate.py, member-execution-role.yaml, …). It does NOT check out the Phase-2
+#   target and does NOT verify governance/RESTORE.md or governance/BOM.md — which is exactly
+#   why attempt-2 (2026-10-03) reported a FALSE "RESTORE.md missing": the launch pad was on
+#   the wrong branch, not that the file is absent (governance/RESTORE.md has existed since
+#   the greenfield bootstrap, on both main and feature/story-1.2). For a PHASE-2 gate, run
+#   this SELF-CONTAINED STEP 0 instead (checks out the Phase-2 target + the Phase-2 file set):
+#
 #   Run in Pipeline-Hub 641628980935 CloudShell (confirm with `aws sts get-caller-identity`):
-#     cd ~
+#     cd ~ && rm -rf pde-platform
 #     # Replace REAL_PAT with a real GitHub PAT — never paste the literal <TOKEN>, and QUOTE
 #     # the URL so bash cannot read '<' as a redirect (OD-008 lesson):
 #     git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
 #     cd pde-platform
-#     bash scripts/bootstrap_launchpad.sh      # Hub-account check + $HOME-is-a-repo guard + clean clone + checkout
-#   REQUIRE the printed `LAUNCH-PAD VERIFY: PASS` AND confirm the gate inputs are on disk:
-#     test -f governance/BOM.md && test -f governance/RESTORE.md && test -d scripts \
-#       && git cat-file -t restore/phase-2-green    # expect: tag
-#   If `LAUNCH-PAD VERIFY: PASS` does not print, or any of those files are absent, SEAL
-#   **INCONCLUSIVE (Execution Failure)** on the spot — NOT FAIL. A FAIL means a deliverable
-#   defect; a launch pad that never loaded the code judged nothing. (Preferred, checkout-
-#   proof alternative: run the committed CI static bar so GitHub checks out the head itself.)
-#   Only once the launch pad verifies do you proceed to the gate task below.
+#     # The Phase-2 re-validation target is the CI-GREEN main (which carries the OD-012
+#     # CKV_AWS_111 reconciliation), NOT the stale restore/phase-2-green tag 3c42d03 and NOT
+#     # feature/story-1.2. Resolve + confirm it live:
+#     git fetch origin --tags && git checkout main && git reset --hard origin/main
+#     git log --oneline -1
+#     # Fail-loud PHASE-2 launch-pad VERIFY (note: RESTORE.md/BOM.md live under governance/):
+#     ok=1
+#     for f in governance/RESTORE.md governance/BOM.md governance/RUNBOOK.md \
+#              infra/state-machine.yaml infra/validate_state_machine.py \
+#              scripts/check_deploy_tags.py; do
+#       [ -f "$f" ] && echo "PASS on disk: $f" || { echo "FAIL MISSING: $f"; ok=0; }
+#     done
+#     grep -q 'checkov:skip=CKV_AWS_111' infra/state-machine.yaml \
+#       && echo "PASS: CKV_AWS_111 reconciliation present (CI-green target)" \
+#       || { echo "FAIL: on a pre-reconciliation commit — checkout origin/main"; ok=0; }
+#     git cat-file -t restore/phase-2-green >/dev/null 2>&1 \
+#       && echo "PASS: restore/phase-2-green tag resolvable" || { echo "FAIL: tag missing"; ok=0; }
+#     [ "$ok" = 1 ] && echo "PHASE-2 LAUNCH-PAD VERIFY: PASS" \
+#       || echo "PHASE-2 LAUNCH-PAD VERIFY: FAIL — do NOT proceed; paste this output back"
+#
+#   REQUIRE a printed `PHASE-2 LAUNCH-PAD VERIFY: PASS` before any gate step. If it prints
+#   FAIL (any file missing, or the CKV_AWS_111 line absent = a pre-reconciliation checkout),
+#   SEAL **INCONCLUSIVE (Execution Failure)** on the spot — NOT FAIL. A FAIL means a
+#   deliverable defect; a launch pad that never loaded the right code judged nothing. A
+#   reported "RESTORE.md missing" when `governance/RESTORE.md` IS in the repo is itself the
+#   signal the launch pad is on the wrong branch — re-run this STEP 0. (Preferred, checkout-
+#   proof alternative for the OFFLINE arm: read the committed CI static bar run on main's
+#   head — GitHub checks out the exact commit, so no local checkout can go stale.)
+#   Only once the Phase-2 launch pad verifies do you proceed to the gate task below.
 
 # THE GATE REQUIREMENT (in the stakeholder's own words — the one anchor no AI authored)
 [[ State, plainly, what ALL of Phase 2 must do for the PDE control plane to be "done" — the
