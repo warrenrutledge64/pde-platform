@@ -65,6 +65,8 @@ jobs:
           python3 infra/validate_state_machine.py --self-test
           python3 infra/validate_codebuild_projects.py
           python3 infra/validate_codebuild_projects.py --self-test
+          python3 infra/validate_golden_path_artifact.py
+          python3 infra/validate_golden_path_artifact.py --self-test
 
       # Deploy-tag guard (OD-012 — folds the Phase-2 gate FAIL into the offline
       # bar): the live-deployed pdlv-promotion-pipeline-stack lacked the mandatory
