@@ -92,36 +92,17 @@ Parameters:
 Resources:
 
   # --- Approval SNS topic ------------------------------------------------------
-  # The native manual-approval paused states publish the approval request (incl. the
-  # Step Functions task token) here; a human approver resumes the execution with
-  # SendTaskSuccess (or fails it with SendTaskFailure). The execution role may ONLY
-  # publish to THIS topic (least privilege) — not sns:* on *.
   ApprovalTopic:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub "${NamePrefix}promotion-approval"
-      # At-rest encryption (checkov CKV_AWS_26). Unlike the operational Log Group below,
-      # this topic carries the Step Functions task token + the promotion decision — a
-      # control-plane security channel — so it gets REAL SSE, not a justified skip. The
-      # AWS-managed SNS key (alias/aws/sns) is used deliberately: it satisfies CKV_AWS_26
-      # with zero key-management/rotation overhead and no per-key cost, which is the
-      # right fit at this tier. Swap in a dedicated CMK here if a future requirement
-      # needs key isolation, rotation control, or a cross-account key policy.
       KmsMasterKeyId: alias/aws/sns
       Tags:
         - { Key: Project, Value: PDE }
         - { Key: Story, Value: "2.2" }
         - { Key: Component, Value: state-machine }
 
-  # --- State-machine execution log group (own namespace, bounded retention) ---
-  # KMS (CKV_AWS_158): this group holds PDE Step Functions execution telemetry
-  # (state transitions + the promotion flow) in the Hub control-plane account —
-  # operational control-plane logging, NOT customer, forensic, or regulated data. A
-  # dedicated CMK is deliberately NOT provisioned at this tier: it adds key
-  # management/rotation overhead + per-request cost with no corresponding
-  # data-sensitivity need, and SSE with the CloudWatch Logs AWS-owned key already
-  # encrypts the data at rest. Revisit if a future PDE flow is made to log sensitive
-  # values (then provision a CMK + KmsKeyId here). Suppressed with reason:
+  # --- State-machine execution log group --------------------------------------
   StateMachineLogGroup:
     Type: AWS::Logs::LogGroup
     # checkov:skip=CKV_AWS_158:PDE Step Functions operational logs (non-sensitive control-plane execution telemetry); SSE via the AWS-owned key suffices at this tier — a CMK is unjustified overhead (see comment above).
@@ -134,10 +115,6 @@ Resources:
         - { Key: Component, Value: state-machine }
 
   # --- Least-privilege permissions for the state machine ----------------------
-  # Start/describe/stop EXACTLY the Story 2.1 pdlv-deploy project (by its specific
-  # ARN) — NOT codebuild:*, NOT a wildcard resource. This is the only "deploy"
-  # power the orchestrator holds; the cross-account deploy itself is done by the
-  # 2.1 CodeBuild service role (which assumes the member roles). 2.2 only STARTS it.
   StartDeployPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -155,25 +132,6 @@ Resources:
             Resource:
               - !Sub "arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${DeployProjectName}"
 
-  # The .sync (startBuild.sync) integration uses a managed CloudWatch Events rule to
-  # learn when the build completes. These are the exact actions Step Functions needs
-  # for the CodeBuild .sync pattern, scoped to the AWS-managed rule name.
-  #
-  # LIVE-FIX (Story 2.3 validation attempt 1, 2026-10-01, Independent Validator FAIL):
-  # the deploy rolled back with CreateStateMachine AccessDenied — "'...:role/
-  # pdlv-promotion-pipeline-role' is not authorized to create managed-rule". At
-  # CreateStateMachine time Step Functions validates it can MANAGE the EventBridge
-  # rule that backs the codebuild:startBuild.sync integration. Two gaps caused the
-  # denial: (1) the rule-name was scoped to the SINGLE literal
-  # StepFunctionsGetEventsForCodeBuildStartBuildRule, but the service manages the rule
-  # under the StepFunctionsGetEventsFor* name family — a one-literal scope is too tight
-  # for the .sync validation; (2) the lifecycle actions were incomplete — managing the
-  # rule needs DeleteRule + RemoveTargets as well as PutRule/PutTargets/DescribeRule.
-  # FIX (still least privilege — NOT events:* and NOT Resource "*"): grant the exact
-  # AWS-published managed-rule action set, scoped to the StepFunctionsGetEventsFor*
-  # rule-name family in THIS account+region only. This is the AWS IAM template for the
-  # .sync pattern (service-integration-iam-templates); it is bounded to the Step
-  # Functions-managed rules, not arbitrary EventBridge rules.
   SyncEventsPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -182,21 +140,6 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # LIVE-FIX (Story 2.3 attempt 6, 2026-10-02): a scoped rule-ARN resource on
-          # these events actions STILL produced "not authorized to create managed-rule"
-          # (AccessDenied, SDK Attempt Count 11) even after the attempt-5 DependsOn
-          # ordering fix. ROOT CAUSE (corrects attempts 1 & 5): at CreateStateMachine
-          # time Step Functions calls events:PutRule/PutTargets/DescribeRule to
-          # provision + validate the managed rule for the codebuild:startBuild.sync
-          # integration, and that authorization check does NOT accept a resource-SCOPED
-          # grant — AWS's OWN published IAM template for this integration
-          # (service-integration-iam-templates / codebuild-iam) grants these three
-          # actions on Resource: "*". The scoping was the defect, not the ordering and
-          # not the action set. FIX: grant exactly the three AWS-documented managed-rule
-          # actions on Resource "*" (bounded to events: rule MANAGEMENT only — no other
-          # events action, no other service). This is the accepted, documented pattern
-          # for .sync integrations; the "*" is required because the managed rule's ARN
-          # is not matchable at the authorization check.
           # checkov:skip=CKV_AWS_111:Step Functions .sync integration requires unscoped Resource "*" for events:PutRule/PutTargets/DescribeRule.
           - Sid: CodeBuildSyncManagedRule
             Effect: Allow
@@ -206,7 +149,6 @@ Resources:
               - events:DescribeRule
             Resource: "*"
 
-  # Publish the approval request (with the task token) to THIS approval topic only.
   PublishApprovalPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -221,7 +163,6 @@ Resources:
             Resource:
               - !Ref ApprovalTopic
 
-  # Write execution logs to THIS state machine's own log group only.
   StateMachineLogsPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -230,22 +171,6 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Step Functions logging to CloudWatch Logs requires these log-DELIVERY
-          # actions on Resource "*": they manage an ACCOUNT-LEVEL log delivery + the
-          # account CloudWatch Logs resource-policy, not a per-log-group grant, so AWS
-          # rejects a scoped ARN here. This is the AWS-documented SFN logging policy.
-          #
-          # LIVE-FIX (Story 2.3 attempt 7, 2026-10-02): the deploy got PAST the
-          # EventBridge managed-rule hurdle (the Resource "*" events fix worked) and then
-          # rolled back with "The state machine IAM Role is not authorized to access the
-          # Log Destination". ROOT CAUSE: `logs:PutResourcePolicy` was in the SCOPED
-          # (log-group-ARN) statement below — but PutResourcePolicy is an ACCOUNT-LEVEL
-          # action (it writes the account's CloudWatch Logs resource-policy that lets
-          # Step Functions attach the log destination), so a scoped ARN DENIES it. SAME
-          # class as the events fix: a service log-delivery action requires Resource "*".
-          # FIX: moved logs:PutResourcePolicy up into this "*" delivery statement. Only
-          # the actual log-WRITE actions (CreateLogStream/PutLogEvents) stay scoped to
-          # this state machine's own log-group ARN below.
           - Sid: LogDeliverySetup
             Effect: Allow
             Action:
@@ -268,8 +193,6 @@ Resources:
               - !Sub "${StateMachineLogGroup.Arn}:*"
 
   # --- The state-machine execution role ---------------------------------------
-  # Trusted ONLY by Step Functions; attaches the four scoped managed policies above.
-  # No wildcards, no account-wide admin grant.
   StateMachineExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -304,30 +227,8 @@ Resources:
         - { Key: ManagedBy, Value: cloudformation }
 
   # --- The promotion state machine --------------------------------------------
-  # STANDARD type: the manual-approval states pause with .waitForTaskToken, which can
-  # outlast the 5-minute EXPRESS ceiling (a human approves on their own clock). The
-  # definition sequences:
-  #   DeployDev -> AwaitSandboxApproval (PAUSE) -> DeploySandbox
-  #             -> AwaitProdApproval (PAUSE) -> DeployProd -> PromotionSucceeded
-  # Each DeployX task is codebuild:startBuild.sync against the SPECIFIC pdlv-deploy
-  # project, overriding TARGET_ROLE_ARN + EXTERNAL_ID for that environment's member
-  # role; the deploy ACTION runs locally in the member via that assumed role (RD-006).
-  # Each AwaitXApproval is sns:publish.waitForTaskToken — a NATIVE paused state, not a
-  # wait/timer: the execution halts until a human SendTaskSuccess/SendTaskFailure.
   PromotionStateMachine:
     Type: AWS::StepFunctions::StateMachine
-    # LIVE-FIX (Story 2.3 attempt 5, 2026-10-01): the clean-slate deploy STILL rolled
-    # back with "pdlv-promotion-pipeline-role is not authorized to create managed-rule"
-    # (SDK Attempt Count: 11 — Step Functions retried PutRule through the whole window
-    # and stayed denied). ROOT CAUSE was NOT the policy content (the SyncEventsPolicy
-    # already grants the complete .sync managed-rule action set on the right ARN) but a
-    # CloudFormation ORDERING race: `RoleArn: !GetAtt ...Role.Arn` makes the state
-    # machine wait for the ROLE, but NOT for the role's MANAGED-POLICY ATTACHMENTS to
-    # propagate through IAM — so CreateStateMachine fired (and immediately tried
-    # events:PutRule) before SyncEventsPolicy was effective on the role, and IAM denied
-    # it. FIX: an explicit DependsOn on all four managed policies forces CloudFormation
-    # to finish attaching them BEFORE creating the state machine. This changes ONLY
-    # resource ordering — it does not alter least privilege.
     DependsOn:
       - StartDeployPolicy
       - SyncEventsPolicy
@@ -437,25 +338,7 @@ Resources:
         - { Key: ManagedBy, Value: cloudformation }
 
   # ===========================================================================
-  # PHASE 2 GATE PROBE (Story 2.3, attempt 9) — a SEPARATE, structurally
-  # non-promoting state machine used ONLY to prove the Phase 2 gate: that the
-  # manual-approval pause (sns:publish.waitForTaskToken) is reachable with no
-  # IAM/config error, WITHOUT a real cross-account deploy.
-  #
-  # WHY SEPARATE (chosen over an in-pipeline gateMode flag, 2026-10-02): the
-  # production PromotionStateMachine above carries NO bypass branch at all — there
-  # is no input-driven way to skip a DeployX or an approval in the real pipeline,
-  # so the gate capability adds ZERO production attack surface. The probe is
-  # structurally INCAPABLE of promoting:
-  #   * its ASL has NO Deploy* task and references codebuild NOWHERE — it cannot
-  #     start a build or assume any member role;
-  #   * it ends in a Fail terminal (GateProbeReachedPause), never Succeed — an
-  #     approved probe can never report "promotion succeeded";
-  #   * its role has ONLY sns:Publish to the approval topic + its own logs — no
-  #     codebuild:*, no events: managed-rule (no .sync task), no sts:AssumeRole.
-  # The probe is meant to reach the pause and then be ABORTED (never approved).
-
-  # Probe role logs policy — write its own execution logs only.
+  # PHASE 2 GATE PROBE
   GateProbeLogsPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -485,8 +368,6 @@ Resources:
               - !GetAtt GateProbeLogGroup.Arn
               - !Sub "${GateProbeLogGroup.Arn}:*"
 
-  # Probe role publish policy — publish ONLY to the approval topic (same topic the
-  # real pipeline uses, so the pause behaviour is identical). Nothing else.
   GateProbePublishPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -503,7 +384,7 @@ Resources:
 
   GateProbeLogGroup:
     Type: AWS::Logs::LogGroup
-    # checkov:skip=CKV_AWS_158:PDE gate-probe operational logs (non-sensitive control-plane probe telemetry); SSE via the AWS-owned key suffices at this tier — a CMK is unjustified overhead (same rationale as the state-machine log group).
+    # checkov:skip=CKV_AWS_158:PDE gate-probe operational logs (non-sensitive control-plane probe telemetry); SSE via the AWS-owned key suffices at this tier.
     Properties:
       LogGroupName: !Sub "/aws/vendedlogs/states/${NamePrefix}gate-probe"
       RetentionInDays: !Ref LogRetentionDays
@@ -512,16 +393,12 @@ Resources:
         - { Key: Story, Value: "2.3" }
         - { Key: Component, Value: gate-probe }
 
-  # Probe execution role — trusted only by Step Functions; ONLY publish + own logs.
-  # Deliberately NO codebuild, NO events managed-rule, NO sts:AssumeRole.
   GateProbeExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${NamePrefix}gate-probe-role"
       Description: >-
-        Minimal execution role for the Phase 2 gate probe. Publishes the approval
-        request to the PDE approval topic and writes its own logs - nothing else.
-        No codebuild, no events managed-rule, no cross-account assume.
+        Minimal execution role for the Phase 2 gate probe.
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -543,10 +420,6 @@ Resources:
         - { Key: Component, Value: gate-probe }
         - { Key: ManagedBy, Value: cloudformation }
 
-  # The gate-probe state machine — STARTS at the approval pause, then FAILS.
-  # It has exactly two states and references NO deploy/codebuild resource, so it
-  # cannot promote or deploy anything. Proving it reaches AwaitSandboxApproval
-  # without error IS the Phase 2 gate.
   GateProbeStateMachine:
     Type: AWS::StepFunctions::StateMachine
     DependsOn:
@@ -568,7 +441,7 @@ Resources:
         ApprovalTopicArn: !Ref ApprovalTopic
       DefinitionString: |
         {
-          "Comment": "PDE Phase 2 gate PROBE: prove the manual-approval pause is reachable with no IAM/config error, WITHOUT any deploy. StartAt the pause; terminate in Fail (never Succeed) so an approved probe can never read as a promotion. No Deploy/CodeBuild state exists.",
+          "Comment": "PDE Phase 2 gate PROBE.",
           "StartAt": "AwaitSandboxApproval",
           "States": {
             "AwaitSandboxApproval": {
@@ -589,7 +462,7 @@ Resources:
             "GateProbeReachedPause": {
               "Type": "Fail",
               "Error": "GateProbeComplete",
-              "Cause": "Phase 2 gate probe reached the approval pause; it does not promote. Abort/ignore this execution."
+              "Cause": "Phase 2 gate probe reached the approval pause; it does not promote."
             }
           }
         }
@@ -629,7 +502,7 @@ Outputs:
       Name: pdlv-promotion-pipeline-role-arn
 
   GateProbeStateMachineArn:
-    Description: ARN of the Phase 2 gate PROBE state machine (Story 2.3 starts a dummy run against THIS to prove the approval pause is reachable — it cannot deploy or promote).
+    Description: ARN of the Phase 2 gate PROBE state machine.
     Value: !Ref GateProbeStateMachine
     Export:
       Name: pdlv-gate-probe-arn
