@@ -265,6 +265,18 @@ aws cloudformation deploy \
 aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].StackStatus" --output text
 
+# MANDATORY STACK-TAG VERIFY (OD-012 — the Phase-2 gate FAILed because the LIVE stack
+# lacked Project=PDE even though this deploy line carries --tags Project=PDE; a later
+# ad-hoc create-stack/update without --tags, or a deviation from this runbook, drops it).
+# The stack-level tag comes from the DEPLOY COMMAND, not the template — so verify the
+# LIVE result, never trust the green deploy line. This MUST print PASS before proceeding:
+aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
+  --query "Stacks[0].Tags" --output table
+aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
+  --query "length(Stacks[0].Tags[?Key=='Project' && Value=='PDE'])" --output text \
+  | grep -qx 1 && echo "TAG VERIFY: PASS — Project=PDE present on the live stack" \
+  || { echo "TAG VERIFY: FAIL — stack is MISSING Project=PDE (OD-012). Re-deploy with --tags Project=PDE; do NOT proceed to the gate."; }
+
 # Capture outputs — PIN the state-machine ARN for the gate run:
 aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].Outputs" --output table

@@ -94,21 +94,26 @@ def _run_governance_gate(root: Path) -> int:
 
 
 def _run_guard_tests(root: Path) -> int:
-    """Run the merge-order guard's offline tests (fail-open on absence)."""
-    test = root / "scripts" / "test_check_merge_order.py"
-    if not test.exists():
-        return 0
-    result = subprocess.run(
-        [sys.executable, "-m", "unittest", "scripts.test_check_merge_order"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        sys.stderr.write(result.stdout + result.stderr)
-        sys.stderr.write("\npre-commit: merge-order guard tests failed (see above).\n")
-    return result.returncode
+    """Run the offline guard tests (fail-open on absence of each)."""
+    modules = ["scripts.test_check_merge_order", "scripts.test_check_deploy_tags"]
+    for module in modules:
+        test_path = root / (module.replace(".", "/") + ".py")
+        if not test_path.exists():
+            continue  # guard not adopted -> skip
+        result = subprocess.run(
+            [sys.executable, "-m", "unittest", module],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            sys.stderr.write(result.stdout + result.stderr)
+            sys.stderr.write(
+                f"\npre-commit: guard tests failed ({module}, see above).\n"
+            )
+            return result.returncode
+    return 0
 
 
 def main() -> int:

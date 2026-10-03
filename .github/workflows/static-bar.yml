@@ -1,5 +1,9 @@
 name: PDE infra static bar
 
+# No-op touch (2026-10-03): trigger a FRESH CI run on a new PR head so the latest
+# check is unambiguously green — superseding a stale "Re-run jobs" of the pre-fix
+# commit 7df7f91 (which legitimately fails CKV_AWS_111; the fix is on 7358608+).
+#
 # Checkout-proof validation (OD-007 clear-by #3; OD-008 escalation): GitHub checks
 # out the EXACT PR head commit automatically, so a validator reading these logs can
 # never be looking at a stale local checkout (the attempt 3-5 failure mode, where a
@@ -61,6 +65,19 @@ jobs:
           python3 infra/validate_state_machine.py --self-test
           python3 infra/validate_codebuild_projects.py
           python3 infra/validate_codebuild_projects.py --self-test
+
+      # Deploy-tag guard (OD-012 — folds the Phase-2 gate FAIL into the offline
+      # bar): the live-deployed pdlv-promotion-pipeline-stack lacked the mandatory
+      # Project=PDE stack tag. That tag is applied by the DEPLOY COMMAND, not the
+      # template (bare-resource YAML), so this guard proves every pdlv- deploy
+      # invocation in the committed LIVE-RUNBOOKs carries --tags Project=PDE. It
+      # cannot see live AWS (the operator's post-deploy describe-stacks VERIFY +
+      # the gate's BOM reconciliation do that) — it guarantees the PROCEDURE never
+      # silently drops the tag. The --self-test proves the guard is strict.
+      - name: Deploy-tag guard (every pdlv- deploy carries Project=PDE)
+        run: |
+          python3 scripts/check_deploy_tags.py --self-test
+          python3 scripts/check_deploy_tags.py
 
       - name: Install the static-analysis bar
         run: pip install --quiet cfn-lint checkov

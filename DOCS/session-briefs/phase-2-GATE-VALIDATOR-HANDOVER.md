@@ -24,6 +24,14 @@
 > commands, the phase story set, the scope boundary — is pre-filled from the repo, not from
 > the builder's framing. The validator authors the Definition of Done and the verdict; you
 > run its steps live and paste back the RAW output.
+>
+> **STEP 0 is a HARD PRECONDITION (OD-013).** The attempt-1 gate FAIL (2026-10-02) reported
+> the execution environment was "missing the git repo / BOM / scripts / RESTORE manifest" —
+> but those are all present in the repo; the launch pad was simply never bootstrapped. The
+> fenced block below now opens with a STEP 0 that clones + bootstraps + verifies the launch
+> pad (`LAUNCH-PAD VERIFY: PASS`) and confirms `governance/BOM.md`, `governance/RESTORE.md`,
+> `scripts/`, and the `restore/phase-2-green` tag are on disk BEFORE any gate step. If that
+> verify does not pass, the validator seals **INCONCLUSIVE (Execution Failure)**, not FAIL.
 
 ---
 
@@ -35,6 +43,28 @@ FROM SCRATCH, try to BREAK the integrated phase, and seal a verdict from the raw
 run for you. Do not rubber-stamp. "Each story passed" is NOT a phase pass — the gate is the
 integrated, end-to-end live behaviour of the control plane against its gate statement, plus
 its restore point and its bill of materials.
+
+# STEP 0 — HARD PRECONDITION: BOOTSTRAP THE LAUNCH PAD FIRST (do this BEFORE anything else)
+# (OD-013 — added after the attempt-1 gate FAIL reported "missing git repo / BOM / scripts
+#  / RESTORE manifest". Those files ARE in the repo — that verdict's execution-environment
+#  findings were an UN-BOOTSTRAPPED launch pad, not a deliverable defect. A plain clone can
+#  land on main / the wrong dir, or a stray ~/.git can hijack it. Bootstrap, then verify,
+#  BEFORE you accept any downstream output.)
+#   Run in Pipeline-Hub 641628980935 CloudShell (confirm with `aws sts get-caller-identity`):
+#     cd ~
+#     # Replace REAL_PAT with a real GitHub PAT — never paste the literal <TOKEN>, and QUOTE
+#     # the URL so bash cannot read '<' as a redirect (OD-008 lesson):
+#     git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
+#     cd pde-platform
+#     bash scripts/bootstrap_launchpad.sh      # Hub-account check + $HOME-is-a-repo guard + clean clone + checkout
+#   REQUIRE the printed `LAUNCH-PAD VERIFY: PASS` AND confirm the gate inputs are on disk:
+#     test -f governance/BOM.md && test -f governance/RESTORE.md && test -d scripts \
+#       && git cat-file -t restore/phase-2-green    # expect: tag
+#   If `LAUNCH-PAD VERIFY: PASS` does not print, or any of those files are absent, SEAL
+#   **INCONCLUSIVE (Execution Failure)** on the spot — NOT FAIL. A FAIL means a deliverable
+#   defect; a launch pad that never loaded the code judged nothing. (Preferred, checkout-
+#   proof alternative: run the committed CI static bar so GitHub checks out the head itself.)
+#   Only once the launch pad verifies do you proceed to the gate task below.
 
 # THE GATE REQUIREMENT (in the stakeholder's own words — the one anchor no AI authored)
 [[ State, plainly, what ALL of Phase 2 must do for the PDE control plane to be "done" — the
@@ -64,10 +94,21 @@ its restore point and its bill of materials.
 
 # THE PHASE TARGET (pinned read-only — reproducible by anyone from the SHA)
 - Phase: 2 — PDE Control Plane (The Hub)
-- Restore tag: restore/phase-2-green   commit: 3c42d0313f34cd1d61e95576380b55506958edaf   (annotated: yes)
+- Restore tag (as cut at Story-2.3 close): restore/phase-2-green   commit: 3c42d0313f34cd1d61e95576380b55506958edaf   (annotated: yes)
   (The validated Story-2.3 commit `d19f92c` is an ancestor of this merge commit — confirm
    with `git merge-base --is-ancestor d19f92c 3c42d03`.)
-- Reproduce the phase code:  git fetch origin --tags && git checkout 3c42d0313f34cd1d61e95576380b55506958edaf
+- ⚠ STALE-BASELINE NOTICE (OD-012 / CKV_AWS_111, 2026-10-02): the `3c42d03` baseline FAILS the
+  CI static bar — Checkov CKV_AWS_111 flags the AWS-mandated `events:Put*` `Resource "*"` on
+  `SyncEventsPolicy` (a latent finding that Story 2.3's live-deploy validation never ran
+  through CI). The RE-VALIDATION TARGET is therefore NOT `3c42d03` but the NEW, CI-GREEN
+  commit that carries the justified `checkov:skip=CKV_AWS_111:` reconciliation (+ the
+  matching offline invariant, 62 total). Resolve the target LIVE — do NOT pin a SHA here (a
+  pinned SHA goes stale): `git fetch origin && git rev-parse origin/<the-reconciliation-branch>`,
+  confirm `grep -n 'checkov:skip=CKV_AWS_111' infra/state-machine.yaml` returns a hit AND the
+  CI static bar is GREEN on that head, BEFORE any gate step. On a sealed PASS the stakeholder
+  RE-CUTS `restore/phase-2-green` at that CI-green commit (RESTORE.md rule 4) — the frozen
+  tag is only trustworthy once its baseline passes the full bar.
+- Reproduce the phase code:  git fetch origin && git checkout <the CI-green reconciliation commit>  (NOT 3c42d03 — see the stale-baseline notice)
 - State manifest (RESTORE.md rule 4 — tag PAIRED WITH a verified manifest): per BOM §4 the
   live-state manifest for restore/phase-2-green is "to be captured" (tracked as OD-010) — so
   the restore point's STATE HALF is a FINDING to weigh (see #3), not a silent pass.
@@ -115,7 +156,7 @@ its restore point and its bill of materials.
    condition, labeling the account each runs in (all Hub 641628980935; I run
    `aws sts get-caller-identity` first and trust the OUTPUT). The offline proof available
    with no network:
-      python3 infra/validate_state_machine.py            # expect: PASS — all 61 invariants hold
+      python3 infra/validate_state_machine.py            # expect: PASS — all invariants hold (the checker prints its own count; it was 61 at tag 3c42d03, 62 after the OD-012/CKV_AWS_111 reconciliation)
       python3 infra/validate_state_machine.py --self-test # guard flips to FAIL on every sabotage
    LIVE (Hub CloudShell): describe the deployed pdlv-codebuild + pdlv-promotion-pipeline-stack
    stacks + their landed roles/policies (least-privilege, pdlv-/Project=PDE), and START THE
