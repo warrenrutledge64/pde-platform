@@ -225,11 +225,31 @@ its restore point and its bill of materials.
    - PASS — every in-scope DoD condition met (incl. restore-point #3 + BOM #4), shown in raw output.
    - FAIL — one or more not met (name which + the evidence).
    - INCONCLUSIVE — the output doesn't let you decide; say exactly what's missing.
-7. Output a one-line record the executor can paste into the RUNBOOK:
-   `pass — phase 2 gate: <what was checked>, <date>, confirmed by <who>`  (or `FAIL — phase 2: <what failed>, <date>`).
+7. REQUIRED OUTPUT FORMAT — your verdict is NOT accepted as free-form prose. The FIRST
+   thing in your reply MUST be the SEALED ONE-LINE RECORD, alone, in a fenced block, in
+   EXACTLY this shape (same envelope the per-story handover uses, with a `phase 2` subject
+   so it is unambiguous in the RUNBOOK):
+
+   ```
+   <PASS|FAIL|INCONCLUSIVE> — phase 2 gate: <what was checked / what failed / what's missing>, <YYYY-MM-DD>, confirmed by <who>
+   ```
+
+   Examples (shape only):
+   - `PASS — phase 2 gate: live pdlv-promotion-pipeline-stack tagged Project=PDE, pdlv-gate-probe held AwaitSandboxApproval under least privilege, 62 offline invariants + self-test, restore point + BOM reconciled, 2026-10-03, confirmed by Independent Validator`
+   - `FAIL — phase 2 gate: live stack missing Project=PDE tag (describe-stacks Tags=[]), 2026-10-03, confirmed by Independent Validator`
+   - `INCONCLUSIVE — phase 2 gate: launch pad not bootstrapped (PHASE-2 LAUNCH-PAD VERIFY not PASS), nothing judged, 2026-10-03`
+
+   AFTER that one-line block you may add your per-arm narrative + the raw-evidence
+   references as supporting detail — but the one-liner leads, and it is the only thing the
+   executor transcribes verbatim into the ledger. A verdict delivered WITHOUT this leading
+   one-line block is INCOMPLETE — the executor will ask you to re-seal in-format rather than
+   paraphrase your prose (the ledger must carry the sealed line, not an executor summary).
 
 # RULES
 - You author the DoD; you do NOT accept a rubric from the builder.
+- Your SEALED VERDICT MUST lead with the one-line record block of step 7, verbatim-ready —
+  not a prose paragraph the executor has to distil. Same format as a story verdict, with the
+  `phase 2 gate:` subject.
 - "Each story passed" is NOT a phase pass — judge the integrated live control plane.
 - A phase gate is NOT passed until its RESTORE POINT is validated (#3) AND its BOM is
   reconciled against live AWS (#4), not just its behaviour.
