@@ -1,5 +1,9 @@
 name: PDE infra static bar
 
+# No-op touch (2026-10-03): trigger a FRESH CI run on a new PR head so the latest
+# check is unambiguously green — superseding a stale "Re-run jobs" of the pre-fix
+# commit 7df7f91 (which legitimately fails CKV_AWS_111; the fix is on 7358608+).
+#
 # Checkout-proof validation (OD-007 clear-by #3; OD-008 escalation): GitHub checks
 # out the EXACT PR head commit automatically, so a validator reading these logs can
 # never be looking at a stale local checkout (the attempt 3-5 failure mode, where a
