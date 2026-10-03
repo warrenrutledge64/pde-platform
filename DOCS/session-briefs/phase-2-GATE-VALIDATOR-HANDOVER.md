@@ -94,10 +94,21 @@ its restore point and its bill of materials.
 
 # THE PHASE TARGET (pinned read-only — reproducible by anyone from the SHA)
 - Phase: 2 — PDE Control Plane (The Hub)
-- Restore tag: restore/phase-2-green   commit: 3c42d0313f34cd1d61e95576380b55506958edaf   (annotated: yes)
+- Restore tag (as cut at Story-2.3 close): restore/phase-2-green   commit: 3c42d0313f34cd1d61e95576380b55506958edaf   (annotated: yes)
   (The validated Story-2.3 commit `d19f92c` is an ancestor of this merge commit — confirm
    with `git merge-base --is-ancestor d19f92c 3c42d03`.)
-- Reproduce the phase code:  git fetch origin --tags && git checkout 3c42d0313f34cd1d61e95576380b55506958edaf
+- ⚠ STALE-BASELINE NOTICE (OD-012 / CKV_AWS_111, 2026-10-02): the `3c42d03` baseline FAILS the
+  CI static bar — Checkov CKV_AWS_111 flags the AWS-mandated `events:Put*` `Resource "*"` on
+  `SyncEventsPolicy` (a latent finding that Story 2.3's live-deploy validation never ran
+  through CI). The RE-VALIDATION TARGET is therefore NOT `3c42d03` but the NEW, CI-GREEN
+  commit that carries the justified `checkov:skip=CKV_AWS_111:` reconciliation (+ the
+  matching offline invariant, 62 total). Resolve the target LIVE — do NOT pin a SHA here (a
+  pinned SHA goes stale): `git fetch origin && git rev-parse origin/<the-reconciliation-branch>`,
+  confirm `grep -n 'checkov:skip=CKV_AWS_111' infra/state-machine.yaml` returns a hit AND the
+  CI static bar is GREEN on that head, BEFORE any gate step. On a sealed PASS the stakeholder
+  RE-CUTS `restore/phase-2-green` at that CI-green commit (RESTORE.md rule 4) — the frozen
+  tag is only trustworthy once its baseline passes the full bar.
+- Reproduce the phase code:  git fetch origin && git checkout <the CI-green reconciliation commit>  (NOT 3c42d03 — see the stale-baseline notice)
 - State manifest (RESTORE.md rule 4 — tag PAIRED WITH a verified manifest): per BOM §4 the
   live-state manifest for restore/phase-2-green is "to be captured" (tracked as OD-010) — so
   the restore point's STATE HALF is a FINDING to weigh (see #3), not a silent pass.
@@ -145,7 +156,7 @@ its restore point and its bill of materials.
    condition, labeling the account each runs in (all Hub 641628980935; I run
    `aws sts get-caller-identity` first and trust the OUTPUT). The offline proof available
    with no network:
-      python3 infra/validate_state_machine.py            # expect: PASS — all 61 invariants hold
+      python3 infra/validate_state_machine.py            # expect: PASS — all invariants hold (the checker prints its own count; it was 61 at tag 3c42d03, 62 after the OD-012/CKV_AWS_111 reconciliation)
       python3 infra/validate_state_machine.py --self-test # guard flips to FAIL on every sabotage
    LIVE (Hub CloudShell): describe the deployed pdlv-codebuild + pdlv-promotion-pipeline-stack
    stacks + their landed roles/policies (least-privilege, pdlv-/Project=PDE), and START THE

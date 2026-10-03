@@ -284,6 +284,13 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         # --- checkov CKV_AWS_158: Log Group KMS — satisfied by a justified skip ---
         ("both Log Groups (state machine + gate probe) carry a justified CKV_AWS_158 KMS suppression (checkov)",
          full.count("checkov:skip=CKV_AWS_158:") == 2),
+        # --- checkov CKV_AWS_111: the AWS-mandated events-rule-management Resource "*"
+        #     on SyncEventsPolicy carries a justified skip (the "*" is required by the
+        #     codebuild:startBuild.sync managed-rule authz check; still bounded to the
+        #     three named events: actions + no events:* — see the named-actions invariant
+        #     below). Exactly ONE such suppression, on SyncEventsPolicy.
+        ("SyncEventsPolicy carries a justified CKV_AWS_111 suppression for the AWS-mandated events rule-management Resource \"*\" (checkov)",
+         full.count("checkov:skip=CKV_AWS_111:") == 1),
         # --- Least privilege: NO wildcard admin (Universal Criterion 3) ---
         ("no AdministratorAccess",
          "AdministratorAccess" not in raw),
@@ -471,6 +478,9 @@ def self_test() -> int:
         ("dropped CKV_AWS_158 suppression",
          good.replace("checkov:skip=CKV_AWS_158:", "nope:", 1),
          "CKV_AWS_158 KMS suppression"),
+        ("dropped CKV_AWS_111 suppression on SyncEventsPolicy",
+         good.replace("checkov:skip=CKV_AWS_111:", "nope:", 1),
+         "CKV_AWS_111 suppression"),
         ("dropped SNS at-rest encryption (CKV_AWS_26)",
          good.replace("KmsMasterKeyId: alias/aws/sns", "", 1),
          "approval SNS topic has at-rest encryption"),

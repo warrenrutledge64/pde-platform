@@ -101,7 +101,9 @@ to Dev; 3.3 promotes to Sandbox; 3.4 releases to Prod.
 ### Lessons Learned / Carry-Forward *(authored at the end of Story 2.3 — actual lessons)*
 
 - **Phase 2 took 10 live attempts to a sealed PASS — every durable lesson is now an
-  offline invariant** in `infra/validate_state_machine.py` (61 invariants + `--self-test`).
+  offline invariant** in `infra/validate_state_machine.py` (62 invariants + `--self-test`;
+  the 62nd is the OD-012 justified `checkov:skip=CKV_AWS_111:` on the AWS-mandated
+  `events:Put*` `Resource "*"`, added when the CI static bar surfaced that latent finding).
   The real deliverable defects were all one class: **AWS service-delivery actions that
   reject a resource-scoped IAM grant and require `Resource "*"`** — the EventBridge `.sync`
   managed-rule (`events:PutRule/PutTargets/DescribeRule`) and CloudWatch Logs

@@ -176,6 +176,18 @@ Resources:
   # Functions-managed rules, not arbitrary EventBridge rules.
   SyncEventsPolicy:
     Type: AWS::IAM::ManagedPolicy
+    # checkov:skip=CKV_AWS_111:ACCEPTED RISK (justified) — the three events: rule-management
+    #   actions (PutRule/PutTargets/DescribeRule) are granted on Resource "*" because this is
+    #   AWS's OWN published IAM pattern for the codebuild:startBuild.sync integration: at
+    #   CreateStateMachine time Step Functions provisions + validates its managed EventBridge
+    #   rule, and that authorization check does NOT accept a resource-SCOPED ARN (the managed
+    #   rule's ARN is not matchable at authz time — a scoped grant produced AccessDenied, see
+    #   the Story-2.3 attempt-6 root-cause comment below). The write access IS constrained in
+    #   every way AWS permits: bounded to events: RULE MANAGEMENT only (no events:*, no other
+    #   service), exactly the three documented actions, and NO other write grant. This mirrors
+    #   the existing justified CKV_AWS_158 Log-Group suppressions and the Story-2.3 sealed-PASS
+    #   finding ("the only * resources are structurally mandated by AWS"). The offline checker
+    #   (validate_state_machine.py) still enforces the named-actions-only / no-events:* bound.
     Properties:
       ManagedPolicyName: !Sub "${NamePrefix}sfn-sync-events"
       Description: Manage ONLY the Step Functions-managed .sync rules (startBuild.sync).
