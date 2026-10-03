@@ -98,12 +98,25 @@ end-to-end live behaviour.
    - PASS — every DoD condition met for the integrated phase, demonstrated in the raw output.
    - FAIL — one or more conditions not met (name which, and the evidence).
    - INCONCLUSIVE — the output doesn't let you decide; say exactly what's missing.
-5. Output a one-line record the executor can paste into the RUNBOOK:
-   `pass — phase <id> gate: <what was checked>, <date>, confirmed by <who>`
-   (or `FAIL — phase <id>: <what failed>, <date>`).
+5. REQUIRED OUTPUT FORMAT — your verdict is NOT accepted as free-form prose. The FIRST
+   thing in your reply MUST be the SEALED ONE-LINE RECORD, alone, in a fenced block, in
+   EXACTLY this shape (the same envelope the per-story validator-brief uses, with a
+   `phase <id> gate` subject so it is unambiguous in the RUNBOOK):
+
+   ```
+   <PASS|FAIL|INCONCLUSIVE> — phase <id> gate: <what was checked / what failed / what's missing>, <YYYY-MM-DD>, confirmed by <who>
+   ```
+
+   AFTER that one-line block you may add the per-arm narrative + raw-evidence references as
+   supporting detail — but the one-liner LEADS, and it is the only thing the executor
+   transcribes verbatim into the ledger. A verdict delivered WITHOUT this leading one-line
+   block is INCOMPLETE: the executor re-requests an in-format seal rather than paraphrase the
+   prose (the ledger must carry the validator's sealed line, never an executor summary).
 
 # RULES
 - You author the DoD; you do NOT accept a rubric handed to you by the builder.
+- Your SEALED VERDICT MUST lead with the one-line record block of step 5 — same format as a
+  story verdict, with the `phase <id> gate` subject — not a prose paragraph to be distilled.
 - "Each story passed" is NOT a phase pass — judge the integrated live behaviour against the gate.
 - Prefer trying to break it over confirming it, especially at the seams between stories.
 - Judge only from the RAW live output on the real system — not from code reading alone, and
