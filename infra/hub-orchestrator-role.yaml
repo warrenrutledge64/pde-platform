@@ -1,0 +1,194 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 3.2 (Phase 3; RD-003/004/006/009). The unified Pipeline-Hub orchestrator
+  (pde-hub-orchestrator) that closes VD-3b and completes the two-hop deploy chain: the
+  pdlv-deploy CodeBuild service role assumes THIS role, and THIS role is the single
+  Hub principal the Story 1.1 member roles trust (pde-member-execution-<env> +
+  ExternalId, unchanged). A PURE PASS-THROUGH: its only permission is sts:AssumeRole
+  on the three member ARNs, its trust is pinned to the specific CodeBuild service role
+  (never the Hub root), and a permissions boundary caps it there so identity-policy
+  drift cannot escalate it. ZTIE-safe (RD-009): the pdlv- namespace for the Hub STACK
+  resources; the role keeps the name pde-hub-orchestrator (the Phase-1 trust principal).
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  NamePrefix:
+    Type: String
+    Description: >-
+      PDE Hub-side naming prefix for the pdlv- resources in this stack (the
+      permissions-boundary managed policy). MUST be pdlv- (RD-009): pde- is ZTIE's
+      namespace in Pipeline-Hub and pdlv- is substring-disjoint from it.
+    Default: pdlv-
+    AllowedPattern: "^pdlv-$"
+    ConstraintDescription: Must be exactly "pdlv-" (RD-009 - ZTIE-safe prefix).
+
+  OrchestratorRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Hub orchestrator role. MUST stay pde-hub-orchestrator:
+      this is the specific principal the Story 1.1 member-role trust policies already
+      name (infra/member-execution-role.yaml HubOrchestratorRoleName default) and the
+      Phase-1 gate script (scripts/phase1_gate.py) runs as. Renaming it would break
+      the already-deployed member trust. It keeps the pde- prefix deliberately (it is
+      the identity the Phase-1 fabric is built around), NOT the Hub pdlv- prefix.
+    Default: pde-hub-orchestrator
+    AllowedPattern: "^pde-hub-orchestrator$"
+    ConstraintDescription: Must be exactly "pde-hub-orchestrator" (the Phase-1 member-trust principal).
+
+  CodeBuildServiceRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Story 2.1 pdlv-deploy CodeBuild service role that is the
+      ONLY principal allowed to assume this orchestrator (hop 1 of the two-hop chain).
+      Its ARN is constructed from this account id + this name; pinning the trust to
+      this specific role (never the Hub root) is what makes the orchestrator a genuine
+      cross-account chokepoint.
+    Default: pdlv-codebuild-service-role
+    AllowedPattern: "^pdlv-[A-Za-z0-9+=,.@_-]{1,56}$"
+    ConstraintDescription: Must be a pdlv--prefixed role name (the CodeBuild service role).
+
+  DevAccountId:
+    Type: String
+    Description: Pipeline-Dev member account ID.
+    Default: "946509368326"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  SandboxAccountId:
+    Type: String
+    Description: Pipeline-Sandbox member account ID.
+    Default: "586917955591"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  ProdAccountId:
+    Type: String
+    Description: Pipeline-Prod member account ID.
+    Default: "466494951534"
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  MemberRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Story 1.1 member execution role this orchestrator assumes
+      in each member account (hop 2). These roles live in the MEMBER accounts, not the
+      Hub, so they keep their pde-member-execution-<env> names (RD-009). The <env>
+      suffix is appended per environment below.
+    Default: pde-member-execution
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,56}$"
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Permissions boundary (the non-escalatable ceiling) ---------------------
+  # A structural fail-safe (defense-in-depth): the orchestrator's identity policy
+  # below is already minimal (sts:AssumeRole on exactly the three member ARNs), so
+  # this boundary is redundant on day one BY DESIGN. Its durable value is future-
+  # proofing: a permissions boundary caps the MAXIMUM a principal can ever do, so if
+  # someone later attaches an overly-permissive policy to this role, the effective
+  # permission is still the INTERSECTION with this boundary — the environment simply
+  # drops the escalated request. For the one Hub role that can reach into every
+  # member account, that non-escalation guarantee is worth the extra resource.
+  OrchestratorPermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}hub-orchestrator-boundary"
+      Description: Permissions-boundary ceiling for the PDE Hub orchestrator - caps it at AssumeRole into the three member roles only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BoundaryAssumeMembersOnly
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
+              - !Sub "arn:${AWS::Partition}:iam::${SandboxAccountId}:role/${MemberRoleName}-sandbox"
+              - !Sub "arn:${AWS::Partition}:iam::${ProdAccountId}:role/${MemberRoleName}-prod"
+
+  # --- The orchestrator's identity policy (minimal, pass-through) -------------
+  # The ONLY thing this role can do: assume the three named member roles. No local
+  # Hub permissions whatsoever — no cloudformation, no s3, no logs, no ssm (it is
+  # deliberately BLIND to the ExternalId SSM parameter; only the deploy engine reads
+  # that secret, at hop 2). This is identical in scope to the boundary above (belt +
+  # suspenders): the identity policy grants, the boundary caps, and both agree.
+  OrchestratorAssumeMembersPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}hub-orchestrator-assume-members"
+      Description: The sole PDE Hub orchestrator permission - assume ONLY the three member execution roles (pass-through identity).
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AssumeSpecificMemberExecutionRolesOnly
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
+              - !Sub "arn:${AWS::Partition}:iam::${SandboxAccountId}:role/${MemberRoleName}-sandbox"
+              - !Sub "arn:${AWS::Partition}:iam::${ProdAccountId}:role/${MemberRoleName}-prod"
+
+  # --- The Hub orchestrator role (the unified cross-account chokepoint) -------
+  # Trust is pinned to EXACTLY the pdlv-deploy CodeBuild service role (hop 1) - never
+  # the Hub account root. Combined with the member trust (which names THIS role +
+  # ExternalId), the chain is: pdlv-codebuild-service-role -> pde-hub-orchestrator ->
+  # pde-member-execution-<env>, and each link trusts exactly one specific principal.
+  # The boundary makes the role non-escalatable regardless of future identity edits.
+  HubOrchestratorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref OrchestratorRoleName
+      Description: >-
+        PDE unified Hub orchestrator (pass-through). Assumable ONLY by the pdlv-deploy
+        CodeBuild service role (hop 1); may itself assume ONLY the three member
+        execution roles (hop 2). No local Hub permissions; capped by a permissions
+        boundary so it cannot be escalated. This decouples the member trust fabric
+        from the Hub deploy engine (RD-006 orchestrate-and-pull).
+      MaxSessionDuration: 3600
+      PermissionsBoundary: !Ref OrchestratorPermissionsBoundary
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: TrustOnlyTheCodeBuildDeployServiceRole
+            Effect: Allow
+            Principal:
+              # A SPECIFIC role ARN - not arn:aws:iam::<hub>:root. Only the pdlv-deploy
+              # CodeBuild service role can step into the orchestrator.
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CodeBuildServiceRoleName}"
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref OrchestratorAssumeMembersPolicy
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "3.2" }
+        - { Key: Component, Value: hub-orchestrator }
+        - { Key: Model, Value: orchestrate-and-pull }
+        - { Key: Phase, Value: "3" }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  HubOrchestratorRoleArn:
+    Description: ARN of the PDE unified Hub orchestrator role (the two-hop middle identity).
+    Value: !GetAtt HubOrchestratorRole.Arn
+    Export:
+      Name: pdlv-hub-orchestrator-role-arn
+
+  HubOrchestratorRoleName:
+    Description: Name of the PDE Hub orchestrator role (matches the Phase-1 member-trust principal).
+    Value: !Ref HubOrchestratorRole
+
+  OrchestratorPermissionsBoundaryArn:
+    Description: ARN of the permissions-boundary managed policy capping the orchestrator.
+    Value: !Ref OrchestratorPermissionsBoundary
+    Export:
+      Name: pdlv-hub-orchestrator-boundary-arn

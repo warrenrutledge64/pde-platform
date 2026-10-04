@@ -53,6 +53,20 @@ Parameters:
     Default: pde-
     AllowedPattern: "^[a-z][a-z0-9-]{1,15}$"
 
+  ArtifactPrefix:
+    Type: String
+    Description: >-
+      ZTIE-safe Hub/pipeline resource prefix for the PDE ARTIFACTS this member role
+      deploys locally (RD-009). This is DISTINCT from RolePrefix: the role itself keeps
+      the pde- name (it is the Phase-1 trust principal the Hub names), but the deployed
+      artifact stacks + their resources use pdlv- (substring-disjoint from ZTIE's pde-*
+      so the member's local-execution grants are walled off from the ZTIE namespace).
+      The Story 3.1 Golden-Path artifact deploys as a pdlv- stack / pdlv- DynamoDB
+      table, so the local CFN + DynamoDB grants below are scoped to exactly pdlv-*.
+    Default: pdlv-
+    AllowedPattern: "^pdlv-$"
+    ConstraintDescription: Must be exactly "pdlv-" (RD-009 — ZTIE-safe artifact prefix).
+
   EnvironmentName:
     Type: String
     Description: Which member this role is being deployed into (for naming/tagging).
@@ -77,6 +91,11 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
+          # CloudFormation stack lifecycle, scoped to the pdlv- ARTIFACT namespace
+          # (RD-009) — NOT the pde- role namespace. The Story 3.1 Golden-Path artifact
+          # deploys as a pdlv- stack, so this is what the local deploy actually needs;
+          # scoping to pdlv-* walls the member's execution grants off from ZTIE's pde-*
+          # stacks in the same account. NOT AdministratorAccess, NOT a wildcard stack.
           - Sid: LocalCloudFormationStackOps
             Effect: Allow
             Action:
@@ -95,7 +114,34 @@ Resources:
               - cloudformation:ValidateTemplate
               - cloudformation:TagResource
               - cloudformation:UntagResource
-            Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${RolePrefix}*/*"
+            Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${ArtifactPrefix}*/*"
+          # The actual resource the Golden-Path artifact creates: an on-demand
+          # DynamoDB table. Scoped STRICTLY to pdlv-* table names (RD-009) in this
+          # account — these actions can touch ONLY pdlv- tables, never a pde- (ZTIE)
+          # table. The action set is the CONCRETE table-lifecycle set CloudFormation
+          # needs to create/update/delete + describe/tag the artifact table (NOT a
+          # dynamodb:* service wildcard; least privilege, and avoids a checkov
+          # action-wildcard finding). No data-plane item actions (the artifact is
+          # empty; the pipeline is a correctness probe, not a datastore).
+          - Sid: LocalPdlvDynamoDbArtifactOnly
+            Effect: Allow
+            Action:
+              - dynamodb:CreateTable
+              - dynamodb:DeleteTable
+              - dynamodb:UpdateTable
+              - dynamodb:DescribeTable
+              - dynamodb:DescribeContinuousBackups
+              - dynamodb:DescribeTimeToLive
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:UpdateTimeToLive
+              - dynamodb:ListTagsOfResource
+              - dynamodb:TagResource
+              - dynamodb:UntagResource
+            Resource:
+              - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ArtifactPrefix}*"
+              - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ArtifactPrefix}*/index/*"
+          # Describe/list are account-level reads CloudFormation needs; they expose no
+          # mutate power and cannot be ARN-scoped.
           - Sid: ReadOnlyDescribe
             Effect: Allow
             Action:

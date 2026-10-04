@@ -120,19 +120,60 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         ("no attached AWS-managed admin/poweruser policy ARN",
          "iam::aws:policy/AdministratorAccess" not in raw
          and "iam::aws:policy/PowerUserAccess" not in raw),
-        # --- RD-006 orchestrate-and-pull: cross-account power is ONLY AssumeRole
-        #     into the SPECIFIC member roles, no broad Hub deploy policy ---
+        # --- RD-006 orchestrate-and-pull, Story 3.2 TWO-HOP: the service role's only
+        #     cross-account power is sts:AssumeRole into the SINGLE Hub orchestrator
+        #     role (hop 1); the orchestrator does the member assume (hop 2). No broad
+        #     Hub deploy policy; the service role holds NO direct member-assume. ---
         ("the only cross-account action is sts:AssumeRole",
          "sts:AssumeRole" in raw),
-        ("assume targets the SPECIFIC member execution roles (role/<name>-<env>)",
-         "role/${MemberRoleName}-dev" in raw
-         and "role/${MemberRoleName}-sandbox" in raw
-         and "role/${MemberRoleName}-prod" in raw),
-        ("deploy project has NO direct cloudformation:* grant (deploy runs in-member)",
+        ("service-role assume targets ONLY the Hub orchestrator role (hop 1)",
+         "role/${OrchestratorRoleName}" in raw),
+        # The member ARN may appear ONLY as the hop-2 TARGET_ROLE_ARN env-var VALUE
+        # (what the buildspec assumes), NEVER as an IAM policy Resource grant on the
+        # service role. So: no policy-list "- ...role/${MemberRoleName}-<env>" line.
+        ("service role has NO direct member-role assume GRANT (orchestrator does hop 2)",
+         not re.search(r"-\s+!Sub\s+\"arn:[^\"]*role/\$\{MemberRoleName\}-(dev|sandbox|prod)\"", raw)),
+        ("orchestrator role name param is pinned to pde-hub-orchestrator",
+         bool(re.search(r'AllowedPattern:\s*"\^pde-hub-orchestrator\$"', raw))),
+        ("deploy project has NO direct cloudformation:* GRANT (deploy runs in-member)",
          "cloudformation:CreateStack" not in raw
          and "cloudformation:ExecuteChangeSet" not in raw),
         ("member role name param is the Story 1.1 role (pde-member-execution)",
          bool(re.search(r"Default:\s*pde-member-execution\b", raw))),
+        # --- Story 3.2 secret-at-the-edge: the two /pdlv/ SecureStrings are resolved
+        #     at runtime (PARAMETER_STORE), scoped to EXACTLY those two params, and
+        #     NEVER passed as plaintext / committed. ---
+        ("ExternalId + repo token resolved via PARAMETER_STORE (not PLAINTEXT secrets)",
+         raw.count("Type: PARAMETER_STORE") == 2),
+        ("the ExternalId SSM param is /pdlv/ namespaced",
+         bool(re.search(r"Default:\s*/pdlv/[A-Za-z0-9_./-]*external-id", raw))),
+        ("the repo-token SSM param is /pdlv/ namespaced",
+         bool(re.search(r"Default:\s*/pdlv/[A-Za-z0-9_./-]*repo-token", raw))),
+        ("ssm:GetParameter scoped to the two named /pdlv/ parameter ARNs only",
+         "ssm:GetParameter" in raw
+         and "parameter${ExternalIdParameterName}" in raw
+         and "parameter${RepoTokenParameterName}" in raw),
+        ("kms:Decrypt is constrained to via-SSM only (kms:ViaService)",
+         "kms:Decrypt" in raw and "kms:ViaService" in raw),
+        ("no plaintext ExternalId / repo-token value in the template",
+         "set-this-at-deploy-time" not in raw
+         and "x-access-token:ghp_" not in raw),
+        # --- The deploy buildspec is a REAL two-hop deploy, not a stub ---
+        ("deploy buildspec performs HOP 1 (assume the orchestrator)",
+         "assume-role --role-arn \"$ORCHESTRATOR_ROLE_ARN\"" in raw),
+        ("deploy buildspec performs HOP 2 (assume the member with --external-id)",
+         "assume-role --role-arn \"$TARGET_ROLE_ARN\"" in raw
+         and "--external-id \"$EXTERNAL_ID\"" in raw),
+        ("deploy buildspec fast-fails on an empty ExternalId / repo token",
+         "EXTERNAL_ID is empty" in raw and "REPO_TOKEN is empty" in raw),
+        ("deploy buildspec keeps secrets out of the log (set +x)",
+         "set +x" in raw),
+        ("deploy buildspec runs a REAL cloudformation deploy of the artifact",
+         "cloudformation deploy" in raw and "$ARTIFACT_STACK_NAME" in raw),
+        ("the in-member deploy carries the Project=PDE stack tag (OD-012)",
+         bool(re.search(r"--tags\s+Project=PDE\b", raw))),
+        ("deploy buildspec VERIFIES the live result (describe-stacks + describe-table)",
+         "cloudformation describe-stacks" in raw and "dynamodb describe-table" in raw),
         # --- Service role is scoped + trusted only by CodeBuild ---
         ("a CodeBuild service role exists",
          "CodeBuildServiceRole:" in raw and "Type: AWS::IAM::Role" in raw),
@@ -210,6 +251,24 @@ def self_test() -> int:
         ("wildcard action injected",
          good.replace("Action: sts:AssumeRole", 'Action: "*"', 1),
          "no full wildcard action"),
+        # Story 3.2: a plaintext ExternalId secret regression (back to PARAMETER_STORE
+        # -> PLAINTEXT) must be caught — the secret must stay resolved at the edge.
+        ("ExternalId downgraded from PARAMETER_STORE to PLAINTEXT",
+         good.replace("Type: PARAMETER_STORE", "Type: PLAINTEXT", 1),
+         "resolved via PARAMETER_STORE"),
+        # Story 3.2: dropping the hop-2 --external-id (the Phase-1 member trust needs
+        # it) must be caught.
+        ("hop-2 --external-id dropped",
+         good.replace('--external-id "$EXTERNAL_ID"', ""),
+         "performs HOP 2"),
+        # Story 3.2: broadening the service-role assume back to a direct member-role
+        # grant (bypassing the orchestrator chokepoint) must be caught.
+        ("direct member-assume grant re-introduced on the service role",
+         good.replace(
+             '              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrchestratorRoleName}"',
+             '              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"',
+             1),
+         "NO direct member-role assume GRANT"),
     ]
 
     all_ok = True
