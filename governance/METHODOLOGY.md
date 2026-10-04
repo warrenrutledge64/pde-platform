@@ -223,6 +223,19 @@ Every working session — no exceptions — follows this shape:
   state of the system, operator/UX lessons, and watch-items. Favor lessons from
   the live run over pre-run guesses. A handoff with an empty lessons section is
   incomplete.
+- **Surface the validator kickoff block IN THE REPLY — do not merely write it to a
+  file.** When a story is built and ready for its independent live validation, the
+  close-out is **incomplete until the paste-ready validator block is emitted in the
+  chat response itself** (the fenced prompt from the story's VALIDATOR-HANDOVER,
+  plus the one line "hand this to a fresh/independent validator; fill the one
+  `[[ ]]`"). The human must never have to ask for it, and must not have to open a
+  long file and extract it. Rationale: the validator handover is a *long* document
+  written for the validator; the human's recurring action ("here is the thing to
+  paste") is a *short* cue that must not be buried inside it (RD-008 — length
+  dilutes salience; a buried load-bearing instruction gets skimmed past). Treat
+  "author the validator prompt" as "author it **and** paste the ready-to-use block
+  into the response." A close-out that names a validation step without surfacing its
+  runnable kickoff block is incomplete — the same bar as an empty lessons section.
 
 ---
 
@@ -250,6 +263,24 @@ inventory; if it's in the inventory, it maps to a restore point.*
 - **Verify the real artifact, not the intention.** After a change, confirm the
   *actually-deployed/produced* thing contains the change — the local file passing
   is not proof.
+- **Deploy the branch under test, then PROVE the live resource changed, BEFORE you
+  validate it.** A live validation judges whatever is *actually deployed*, not the
+  code on the branch — so a validation run against infrastructure that was never
+  updated from the branch judges the OLD artifact and produces a verdict that
+  looks real but tested nothing. Any live runbook that stands on pre-existing infra
+  MUST, as a **blocking pre-condition of the run**: (1) deploy the branch's
+  template(s) into the target from the story's checkout; (2) VERIFY the live
+  resource actually changed — read a branch-specific marker off the deployed thing
+  (a new tag/version/policy statement/env var), never trust the green deploy line;
+  and only then (3) exercise it. Treat a verdict whose findings all describe a
+  *prior* version of the resource (old tag, old scope, a leftover placeholder) as
+  the signature of this stale-deploy miss — an **execution failure to be re-run on
+  the real deliverable**, not a defect of the branch code. _(PDE Story 3.2 attempt 1:
+  the pipeline was triggered against the un-redeployed Phase-1 member role —
+  `Story=1.1` tag, `pde-*` scope, no DynamoDB grant, placeholder ExternalId — so the
+  sealed FAIL's three findings were all against code the branch had already fixed;
+  the fix was to make "redeploy-from-branch + verify the live role changed" a
+  blocking STEP ahead of triggering, with a pre-flight gate on the trigger step.)_
 - **Validate on a checkout-proof target — prefer CI on the PR head over a
   hand-pasted clone.** A human-driven clone/checkout is the single most common
   cause of a wasted validation cycle: it can clone the wrong repo, paste a literal
