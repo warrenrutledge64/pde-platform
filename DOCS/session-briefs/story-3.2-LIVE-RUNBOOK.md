@@ -75,15 +75,38 @@ git remote -v                              # confirm github.com/warrenrutledge64
 git fetch origin
 git checkout feature/story-3.2
 git reset --hard origin/feature/story-3.2
-git rev-parse --abbrev-ref HEAD            # expect feature/story-3.2
-git log --oneline -1                       # the HEAD under test
-# Fail loud if the deliverables are not on disk:
-for f in infra/hub-orchestrator-role.yaml infra/codebuild-projects.yaml \
-         infra/state-machine.yaml infra/member-execution-role.yaml \
-         infra/golden-path-artifact.yaml; do
-  test -f "$f" || { echo "LAUNCH-PAD VERIFY: FAIL ($f missing)"; break; }
-done && echo "LAUNCH-PAD VERIFY: PASS"
 ```
+
+**STEP 0 LAUNCH-PAD LOCK (mechanical, fail-loud — paste as one block).** This is the
+guard for the attempt-2 miss: in a fresh/lost CloudShell the operator ran commands from
+OUTSIDE the clone (`git rev-parse HEAD` → "fatal: not a git repository"), so the STEP
+2a-2d deploys never ran and the pipeline hit stale infra. This block HARD-EXITS unless
+you are inside the clone, on `feature/story-3.2`, with every deliverable on disk — run it
+and every later step from this same shell/directory:
+
+```bash
+# Target: Pipeline-Hub 641628980935 (us-east-1)  — run from ~/pde-platform
+{
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || { echo "LAUNCH-PAD LOCK: FAIL — not inside a git repo (cd into ~/pde-platform first)"; exit 1; }
+  BR=$(git rev-parse --abbrev-ref HEAD)
+  [ "$BR" = "feature/story-3.2" ] \
+    || { echo "LAUNCH-PAD LOCK: FAIL — on branch '$BR', expected feature/story-3.2"; exit 1; }
+  git remote get-url origin | grep -q 'warrenrutledge64/pde-platform' \
+    || { echo "LAUNCH-PAD LOCK: FAIL — origin is not warrenrutledge64/pde-platform"; exit 1; }
+  for f in infra/hub-orchestrator-role.yaml infra/codebuild-projects.yaml \
+           infra/state-machine.yaml infra/member-execution-role.yaml \
+           infra/golden-path-artifact.yaml scripts/preflight_story_3_2.py; do
+    test -f "$f" || { echo "LAUNCH-PAD LOCK: FAIL — $f missing (wrong checkout)"; exit 1; }
+  done
+  echo "LAUNCH-PAD LOCK: PASS — $(git rev-parse --abbrev-ref HEAD) @ $(git log --oneline -1)"
+}
+```
+
+> Do not proceed past a `LAUNCH-PAD LOCK: FAIL`. Every subsequent STEP (2a-2d deploys,
+> the preflight, STEP 4 trigger) assumes you are in THIS shell, in THIS directory, on
+> this branch. If your CloudShell session drops or you open a new tab, re-run this block
+> before continuing — losing the working directory is the attempt-2 failure.
 
 **Populate the two `/pdlv/` SecureStrings (idempotent — safe to re-run).** These are
 the secret-at-the-edge inputs the deploy project resolves at runtime; they must exist

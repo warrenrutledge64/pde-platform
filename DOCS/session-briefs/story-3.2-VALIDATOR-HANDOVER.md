@@ -124,6 +124,16 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
     python3 infra/validate_state_machine.py && python3 infra/validate_state_machine.py --self-test
     python3 infra/validate_golden_path_artifact.py && python3 infra/validate_golden_path_artifact.py --self-test
   (These are structural guards, NOT a live proof — the live Dev deploy below is the bar.)
+- OPERATOR PRECONDITION (not your rubric): `scripts/preflight_story_3_2.py` reads the LIVE
+  Hub+Dev resources and hard-fails unless they match the Story-3.2 baseline — it exists ONLY
+  to stop a validation run against STALE, un-redeployed infra (both prior attempts failed that
+  way; attempt 2 ran from outside the clone so the deploys never happened). It is a
+  builder-authored ENVIRONMENT GATE, in the same category as "are you in the right account /
+  the right clone" — it is NOT your acceptance criteria. Use it (or your own equivalent) only
+  to confirm the live infra IS the branch under test; then author your OWN Definition of Done
+  and judge the deliverable independently from the raw output. A green preflight is a gate to
+  START validating — NEVER a reason to seal PASS. Do not inherit the builder's checks as your
+  verdict (split-brain, METHODOLOGY §4a).
 
 # ENVIRONMENT FACTS (so you can author account-specific steps)
 - Pipeline-Hub (orchestrates; where you start the pipeline + inspect the execution,
