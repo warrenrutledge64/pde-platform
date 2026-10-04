@@ -276,18 +276,32 @@ ORCH=$(aws sts assume-role \
 
 ## STEP 4 — Trigger the pipeline (the first real end-to-end run)
 
-> ### 🚦 PRE-FLIGHT GATE (do NOT start the pipeline until BOTH are confirmed)
-> This gate exists because attempt 1 (2026-10-04) FAILED by triggering the pipeline against
-> the un-redeployed Phase-1 role. Both must be true at this moment:
-> 1. **STEP 2d VERIFY passed** — the live `pde-member-execution-dev` role shows `Story=3.2`,
->    a `pdlv-`-scoped CFN+DynamoDB grant, and a real (non-placeholder) ExternalId.
-> 2. **STEP 0 secrets populated** — both `/pdlv/` SecureStrings exist with REAL values:
->    ```bash
->    # Target: Pipeline-Hub 641628980935 (us-east-1)
->    aws ssm get-parameter --name /pdlv/promotion/external-id --query "Parameter.Type" --output text  # SecureString
->    aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type" --output text  # SecureString
->    ```
-> If either is not confirmed, STOP — a run now re-creates the attempt-1 FAIL.
+> ### 🚦 PRE-FLIGHT GATE — MECHANICAL, not prose (do NOT start the pipeline until it PASSES)
+> This gate exists because attempts 1 AND 2 (2026-10-04) FAILED by triggering the pipeline
+> against **un-redeployed, stale infra** (a June-10 legacy `pde-hub-orchestrator`, the pre-3.2
+> state machine/buildspec, the `Story=1.1` Dev member role) — in attempt 2 the operator was
+> not even inside the clone (`git rev-parse HEAD` -> "fatal: not a git repository"), so the
+> STEP 2a-2d `cloudformation deploy` commands never ran. Prose "please deploy first" gates
+> kept being skipped, so this is now a MECHANICAL check that reads the LIVE resources and
+> hard-fails unless they match the Story-3.2 baseline:
+>
+> ```bash
+> # Target: Pipeline-Hub 641628980935 (us-east-1), with Dev 946509368326 read access
+> # (run from INSIDE the feature/story-3.2 clone — confirm first):
+> git rev-parse --abbrev-ref HEAD && git log --oneline -1   # MUST be feature/story-3.2 (NOT "fatal: not a git repository")
+> python3 scripts/preflight_story_3_2.py --hub-profile <hub> --dev-profile <dev>
+> ```
+>
+> It MUST print `preflight_story_3_2: PASS`. A FAIL (exit 1) means the branch is NOT deployed
+> — go back and run STEP 2a-2d, then re-run the preflight. An ENV error (exit 2) means a
+> credentials/account read problem — fix that; it is not a baseline result. Do NOT trigger the
+> pipeline on anything but a printed PASS.
+>
+> Also confirm both `/pdlv/` SecureStrings exist with REAL values (STEP 0):
+> ```bash
+> aws ssm get-parameter --name /pdlv/promotion/external-id --query "Parameter.Type" --output text  # SecureString
+> aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type" --output text  # SecureString
+> ```
 
 Start the production `pdlv-promotion-pipeline`. DeployDev is the first state; it starts
 the `pdlv-deploy` CodeBuild project, which does the two-hop deploy into Dev and then the
