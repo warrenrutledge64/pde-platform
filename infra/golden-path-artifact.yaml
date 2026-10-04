@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  PDE Story 3.1 (Phase 3, The Golden Path; RD-003/004/009). A trivial, zero-cost
+  CloudFormation artifact that serves as the Golden-Path test PAYLOAD traversing
+  the PDE promotion pipeline Dev -> Sandbox -> Prod in Stories 3.2-3.4. It is a
+  SINGLE empty on-demand DynamoDB table (PAY_PER_REQUEST, no provisioned capacity,
+  no streams, no GSIs, no CMK, no PITR) so the blast radius of the first real
+  end-to-end pipeline run is one empty, free, disposable table and there is no
+  standing cost. ZTIE-safe pdlv- name + Project=PDE tags (RD-009; pde- is ZTIE's).
+  Author + static proof only in 3.1 - the first live deploy is Story 3.2, THROUGH
+  the pipeline (never by hand).
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+
+  NamePrefix:
+    Type: String
+    Description: >-
+      PDE resource naming prefix. MUST be pdlv- (RD-009): pde- is ZTIE's namespace
+      in Pipeline-Hub, and pdlv- is substring-disjoint from pde so it never collides
+      with - nor is swept up by inventory filters that match - the ZTIE pde-* set.
+    Default: pdlv-
+    AllowedPattern: "^pdlv-$"
+    ConstraintDescription: Must be exactly "pdlv-" (RD-009 - ZTIE-safe prefix).
+
+  ArtifactName:
+    Type: String
+    Description: >-
+      Short suffix identifying this Golden-Path payload resource. Combined with the
+      pdlv- prefix to form the table name. Kept generic (not env-specific) because
+      the SAME artifact is promoted unchanged Dev -> Sandbox -> Prod.
+    Default: golden-path-artifact
+    AllowedPattern: "^[a-z][a-z0-9-]{1,48}$"
+    ConstraintDescription: Lowercase letters, digits and hyphens only (1-49 chars).
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- The Golden-Path payload: one empty, on-demand, zero-cost table ---------
+  # Deliberately minimal. BillingMode PAY_PER_REQUEST means NO provisioned
+  # read/write capacity to pay for; an empty table with on-demand billing incurs
+  # no standing charge. A single string partition key is the smallest valid
+  # schema. No streams, no global/local secondary indexes, no customer-managed KMS
+  # key, no point-in-time recovery - every one of those would add cost and/or an
+  # extra resource, which defeats the purpose of a free, disposable test payload.
+  GoldenPathTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${NamePrefix}${ArtifactName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      # SSESpecification intentionally omitted -> encryption at rest with the
+      # AWS-owned DynamoDB key (always on, free). A customer-managed CMK adds cost
+      # and key-management overhead that is unjustified for a disposable, zero-data
+      # Golden-Path test payload - this is a pipeline-correctness probe, not a data
+      # store. Point-in-time recovery is likewise omitted (adds cost; there is no
+      # durable data to recover). Both are justified checkov skips below.
+      # checkov:skip=CKV_AWS_119:Golden-Path test payload (empty, disposable, zero data) - AWS-owned-key SSE suffices; a CMK is unjustified cost/overhead for a free pipeline-correctness probe.
+      # checkov:skip=CKV_AWS_28:Golden-Path test payload holds no durable data - point-in-time recovery adds cost with nothing to recover; intentionally disabled to keep the artifact zero-cost.
+      Tags:
+        - { Key: Project, Value: PDE }
+        - { Key: Story, Value: "3.1" }
+        - { Key: Component, Value: golden-path-artifact }
+        - { Key: Phase, Value: "3" }
+        - { Key: ManagedBy, Value: cloudformation }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+
+  GoldenPathTableName:
+    Description: Name of the Golden-Path payload DynamoDB table (the pipeline promotes this).
+    Value: !Ref GoldenPathTable
+    Export:
+      Name: !Sub "${NamePrefix}golden-path-artifact-table-name"
+
+  GoldenPathTableArn:
+    Description: ARN of the Golden-Path payload DynamoDB table.
+    Value: !GetAtt GoldenPathTable.Arn
+    Export:
+      Name: !Sub "${NamePrefix}golden-path-artifact-table-arn"

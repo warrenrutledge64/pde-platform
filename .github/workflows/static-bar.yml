@@ -44,27 +44,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Merge-order guard (prevents the fix-after-merge trap, PDE Story 2.2 /
-      # OD-008): a deliverable (infra/**) change must NOT merge into the base
-      # branch while the Validation & Advancement Gate is still ARMED. This turns
-      # the PR red until the story's close-out (sealed Validation Result + ✅ +
-      # cleared Validation Debt entry) is on the branch head. Server-side branch
-      # protection is NOT enforced on a private/free repo, so this red/green CI
-      # signal + the CONTRIBUTING convention ("merge only when green") is the
-      # guard. The --self-test proves the check itself is strictly enforced.
-      - name: Merge-order guard (deliverable + close-out land together)
-        if: github.event_name == 'pull_request'
-        run: |
-          python3 scripts/check_merge_order.py --self-test
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          python3 scripts/check_merge_order.py --base "origin/${{ github.base_ref }}"
-
       - name: Offline invariant checkers (+ in-memory self-test)
         run: |
           python3 infra/validate_state_machine.py
           python3 infra/validate_state_machine.py --self-test
           python3 infra/validate_codebuild_projects.py
           python3 infra/validate_codebuild_projects.py --self-test
+          python3 infra/validate_golden_path_artifact.py
+          python3 infra/validate_golden_path_artifact.py --self-test
 
       # Deploy-tag guard (OD-012 — folds the Phase-2 gate FAIL into the offline
       # bar): the live-deployed pdlv-promotion-pipeline-stack lacked the mandatory
@@ -96,3 +83,29 @@ jobs:
 
       - name: Checkov (security bar — expect 0 failed; CKV_AWS_158 SKIPPED, CKV_AWS_26 fixed)
         run: checkov -d infra --framework cloudformation --skip-path infra/deferred
+
+      # Merge-order guard (prevents the fix-after-merge trap, PDE Story 2.2 /
+      # OD-008): a deliverable (infra/**) change must NOT merge into the base
+      # branch while the Validation & Advancement Gate is still ARMED. This turns
+      # the PR red until the story's close-out (sealed Validation Result + ✅ +
+      # cleared Validation Debt entry) is on the branch head. Server-side branch
+      # protection is NOT enforced on a private/free repo, so this red/green CI
+      # signal + the CONTRIBUTING convention ("merge only when green") is the
+      # guard. The --self-test proves the check itself is strictly enforced.
+      #
+      # It runs LAST and with `if: always()` ON PURPOSE: a deliverable PR
+      # legitimately sits with the gate ARMED (and the guard RED) for the whole
+      # time the story is in independent validation. Running the guard last means
+      # the static-analysis evidence above (cfn-lint / Checkov / the offline
+      # checkers) is ALWAYS produced on every PR run — so the independent
+      # validator can read a green static bar on the PR head while the guard is
+      # still (correctly) red — and the guard STILL fails the job (turning the PR
+      # red) until the close-out disarms the gate at head. The merge-gate behaviour
+      # is unchanged; only the step order is, so the gate is never the thing that
+      # hides the static-bar signal.
+      - name: Merge-order guard (deliverable + close-out land together)
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python3 scripts/check_merge_order.py --self-test
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          python3 scripts/check_merge_order.py --base "origin/${{ github.base_ref }}"

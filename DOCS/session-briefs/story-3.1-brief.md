@@ -12,8 +12,8 @@
 |-------|-------|
 | **Phase** | 3 — The Golden Path Validation |
 | **Build tier** | 5 (depends on the Phase 2 gate ✅ — a tier advance over tier 4) |
-| **Date** | _(fill at session start)_ |
-| **Status** | Not Started |
+| **Date** | 2026-10-03 (authored; awaiting independent validation) |
+| **Status** | 🟡 In Progress (built + offline-proven; VD-8 open) |
 | **Builds from restore point** | `restore/phase-2-green` — **re-cut 2026-10-03 to the gate-passing commit `8f85740`** (the PR #37 close-out merge; supersedes the stale `3c42d03`). |
 | **Session goal** | Author a minimal, zero-cost CloudFormation artifact (e.g. an empty on-demand DynamoDB table OR an SQS queue) that will serve as the Golden-Path payload traversing the PDE pipeline Dev→Sandbox→Prod. Offline-prove it (lint clean, single trivial resource, `pdlv-`/`Project=PDE`). Nothing is deployed in 3.1. |
 
