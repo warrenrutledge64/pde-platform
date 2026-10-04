@@ -171,12 +171,17 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | | | **Dummy-safe route CHOSEN + built — a SEPARATE gate-probe state machine (Option 1b, stakeholder-approved 2026-10-02; vulnerability-reviewed).** The stakeholder asked whether a dummy-safe route could itself be a vulnerability — yes, if a bypass flag on the REAL pipeline were honored in production (a control-flow bypass / false-attestation vector), or via a temporary member-trust (a standing cross-account hole). So the chosen design adds NO bypass to the production `pdlv-promotion-pipeline` at all. Instead, `infra/state-machine.yaml` now also ships **`pdlv-gate-probe`** — a separate STANDARD state machine that is STRUCTURALLY incapable of promoting: its ASL has exactly two states (`AwaitSandboxApproval` = `sns:publish.waitForTaskToken` → terminal `GateProbeReachedPause` = **`Fail`**, never `Succeed`), references NO `codebuild`/`startBuild` anywhere, and runs as a minimal role (`pdlv-gate-probe-role`) with ONLY `sns:Publish` to the approval topic + its own logs — NO `codebuild:*`, NO `events:` managed-rule, NO `sts:AssumeRole`. Proving the probe reaches the pause (status RUNNING, waiting on the token, no error, no DeployDev event) IS the Phase 2 gate; the probe is aborted, never approved. Offline checker → **60 invariants** (new: probe exists; probe references no codebuild/startBuild; probe terminates in Fail not Succeed; probe role is publish+logs only; PRODUCTION pipeline has NO gateMode/Choice bypass) + matching `--self-test` sabotages (probe given a startBuild path; probe Fail→Succeed; gateMode injected into production — all caught). LIVE-RUNBOOK STEP 5 updated to start `pdlv-gate-probe` (output `GateProbeStateMachineArn`), not the production pipeline. VD-7 stays OPEN; 2.3 stays 🟡 pending the Attempt-9 clean re-deploy + probe gate pass. | | |
 | | | **Attempt 9 sealed FAIL — a non-ASCII character in the NEW gate-probe role Description (my defect, introduced with the probe; 2026-10-02, Independent Validator).** Verdict verbatim: _"Verdict: FAIL. The root cause of the rollback is a syntax constraint violation in the CloudFormation template. The raw event log shows that the newly introduced GateProbeExecutionRole failed creation because its description field contains an invalid character: Resource handler returned message: \"1 validation error detected: Value at 'description' failed to satisfy constraint: Member must satisfy regular expression pattern: [\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]* (Service: Iam, Status Code: 400...\". AWS IAM enforces strict regex limitations on role descriptions. This failure almost always happens when a non-standard Unicode character—such as an em-dash (—), smart quote, or formatted text pasted from a rich-text editor—slips into the YAML string. Because the GateProbeExecutionRole was rejected, the StateMachineExecutionRole creation was cancelled, and the entire stack was forced into ROLLBACK_COMPLETE. To move forward, the builder must sanitize the description string for GateProbeExecutionRole in infra/state-machine.yaml, restricting it to standard ASCII characters. The operator must execute the cleanup sweep once more to clear the dead stack before the next attempt. FAIL — pdlv-promotion-pipeline-stack rolled back due to an invalid character constraint violation in the GateProbeExecutionRole description. 2026-10-02, confirmed by Independent Validator."_ **A REAL deliverable defect I introduced with the probe:** the `GateProbeExecutionRole` `Description:` contained an em-dash (U+2014), which is outside AWS IAM's allowed description regex (`\u0020-\u007E\u00A1-\u00FF` — U+2014 is above U+00FF), so `CreateRole` failed and the stack rolled back. (The pre-existing production role description was plain ASCII — which is why attempt 8 deployed; only the newly-added probe role carried the em-dash.) **FIX (fix-then-validate-once):** replaced the em-dash with an ASCII hyphen in the probe role Description. **Folded into the offline bar (§7):** a new helper extracts every `AWS::IAM::Role`/`ManagedPolicy` Description and a 61st invariant asserts each matches AWS's allowed character set (no em-dash/smart-quote), + a `--self-test` sabotage (inject U+2014 into a role Description → re-fails). All 8 IAM descriptions verified clean. This is a class the offline bar CAN catch (static text), so it will never reach a live attempt again. VD-7 stays OPEN; 2.3 stays 🟡 pending the Attempt-10 clean re-deploy. | | |
 | | | **Attempt 10 sealed PASS (2026-10-02, Independent Validator) — VD-7 CLEARED; Phase 2 gate PROVEN.** Verdict verbatim: _"Verdict: PASS. The Phase 2 control plane bootstrap is finally complete and fully verified. The `pdlv-gate-probe` state machine successfully initiated execution and successfully transitioned into the `AwaitSandboxApproval` task state. The execution status correctly remains `RUNNING` as it pauses and waits for the `.waitForTaskToken` callback, confirming that the native Step Functions pause gate is perfectly functional and reachable. Combined with the clean `CREATE_COMPLETE` deployment of the `pdlv-promotion-pipeline-stack` on commit `d19f92c` and the fully audited least-privilege IAM roles from Attempt 10, the Definition of Done has been thoroughly met. PASS — pdlv-promotion-pipeline-stack successfully deployed on commit d19f92c. The pdlv-gate-probe execution successfully reached the AwaitSandboxApproval pause state without error. 2026-10-02, sealed by Independent Validator."_ This is the recorded live pass of the FINAL code the covenant requires. The journey (1 real managed-rule-scope defect → the Resource "*" correction; 1 log-destination PutResourcePolicy-scope defect; 1 DeployDev dummy-run limitation → the separate non-promoting `pdlv-gate-probe`; 1 IAM-description non-ASCII defect; the rest execution/environment blockers — dead stacks, name mismatch) is fully recorded above with each fix folded into the offline bar (now 61 invariants + `--self-test`). **Story 2.3 flips 🟡 → ✅. VD-7 CLEARED. This CLOSES Phase 2.** | 2026-10-02 | **CLEARED** (sealed PASS attempt 10, Independent Validator, commit `d19f92c`; 2.3 ✅; Phase 2 closed) |
-| VD-8 | 3.1 (Golden-Path artifact) | `infra/golden-path-artifact.yaml` (a single empty on-demand `AWS::DynamoDB::Table`, `PAY_PER_REQUEST`, no provisioned capacity, no stream, no GSI, no CMK, no PITR — the trivial zero-cost Golden-Path payload) + `infra/validate_golden_path_artifact.py` (stdlib offline checker, **27 invariants** + an in-memory `--self-test`), wired into the CI static bar (`.github/workflows/static-bar.yml`). Authored + offline-proven on `feature/story-3.1` (all 27 invariants PASS; `--self-test` catches 7 sabotages incl. `pde-` regression, provisioned capacity, a second resource, a stream, a dropped `Project=PDE` tag, a dropped checkov skip, and a non-ASCII em-dash; Description 660 B < the 1024-byte CFN E1003 limit; pure ASCII). Validator handover authored (`DOCS/session-briefs/story-3.1-VALIDATOR-HANDOVER.md`; head SHA resolved LIVE, never pinned). **AWAITING the live static bar** (cfn-lint + Checkov on the PR head, checkout-proof CI) sealed by an INDEPENDENT validator — 3.1 stays 🟡 until a recorded PASS. _(3.1 is author + static proof only; nothing is deployed — the first live deploy is Story 3.2, THROUGH the pipeline.)_ | 2026-10-03 | OPEN (built + offline-proven; awaiting the independent static-bar PASS) |
+| VD-8 | 3.1 (Golden-Path artifact) | `infra/golden-path-artifact.yaml` (a single empty on-demand `AWS::DynamoDB::Table`, `PAY_PER_REQUEST`, no provisioned capacity, no stream, no GSI, no CMK, no PITR — the trivial zero-cost Golden-Path payload) + `infra/validate_golden_path_artifact.py` (stdlib offline checker, **27 invariants** + an in-memory `--self-test`), wired into the CI static bar (`.github/workflows/static-bar.yml`). Authored + offline-proven on `feature/story-3.1` (all 27 invariants PASS; `--self-test` catches 7 sabotages incl. `pde-` regression, provisioned capacity, a second resource, a stream, a dropped `Project=PDE` tag, a dropped checkov skip, and a non-ASCII em-dash; Description 660 B < the 1024-byte CFN E1003 limit; pure ASCII). Validator handover authored (`DOCS/session-briefs/story-3.1-VALIDATOR-HANDOVER.md`; head SHA resolved LIVE, never pinned). **SEALED PASS (2026-10-04, Independent Validator)** on the PR #41 head (`d88c604`): verdict verbatim _"pass — Story 3.1 Golden-Path artifact authoring & static proof, 2026-10-04, confirmed by Independent Validator"_ — exactly one trivial zero-cost DynamoDB resource, strict `pdlv-` namespace, `Project=PDE`, no IAM/wildcards; **cfn-lint clean (Passed 79 / Failed 0)**, **Checkov Failed 0** (CKV_AWS_119 + CKV_AWS_28 skips match the documented zero-cost design), offline checker PASS (27 invariants) + `--self-test`. 3.1 flips 🟡 → ✅. _(3.1 is author + static proof only; nothing deployed — the first live deploy is Story 3.2, THROUGH the pipeline.)_ | 2026-10-03 | **CLEARED** (sealed PASS 2026-10-04, Independent Validator, PR #41 head `d88c604`; 3.1 ✅) |
 
-**Gate status:** **ARMED** — the Validation Debt Register is non-empty (VD-8 OPEN:
-Story 3.1 built + offline-proven, awaiting the independent static-bar PASS). No NEW
-feature story (a new tier / new dependency layer) may begin until VD-8 is cleared by a
-recorded live/CI pass; reworking 3.1 itself is always allowed._ **Prior history (Phase 2
+**Gate status:** **DISARMED** — the Validation Debt Register is empty (VD-8 CLEARED on
+the sealed PASS of Story 3.1, 2026-10-04, Independent Validator, PR #41 head `d88c604`:
+exactly one trivial zero-cost DynamoDB artifact, strict `pdlv-` namespace, `Project=PDE`,
+cfn-lint clean + Checkov 0-failed + the 27-invariant offline checker). Story 3.1 ✅ — the
+Phase 3 Golden Path has its payload; Story 3.2 (deploy it to Pipeline-Dev THROUGH the
+pipeline) is unblocked. _(Does NOT close Phase 3 — 3.2-3.4 remain; the Phase 3 gate is the
+live Prod artifact-metadata query. Carried item **VD-3b** — the live Hub→member
+`sts:AssumeRole` once `pde-hub-orchestrator` exists — is most likely addressed as part of
+3.2's first real Dev deploy.)_ **Prior history (Phase 2
 close):** VD-7 was CLEARED on
 the sealed PASS of Story 2.3, 2026-10-02, Independent Validator, commit `d19f92c`:
 `pdlv-promotion-pipeline-stack` deployed `CREATE_COMPLETE`, IAM audited least-privilege,
@@ -191,12 +196,10 @@ offline invariants + self-test, root `RESTORE.md` pointer accepted); OD-011/012/
 Progress-Summary Phase-2 row ✅, `restore/phase-2-green` re-cut to the gate-passing commit
 `8f85740`.** _(Completeness item **OD-010** — the paired restore-point STATE MANIFEST,
 RESTORE.md rule 4 — remains OPEN, tracked, not a behavioural blocker.)_
-Story 3.1's advancement gate (the Phase-2 gate ✅ + the 2.x story set all ✅; the register
-was empty at 3.1 start) IS satisfied, so 3.1 began — the register now carries VD-8 (3.1's
-own open debt) with the gate
-ARMED. Carried Phase-2 confirmation **VD-3b** (the committed gate script's
-live cross-account `AssumeRole`, run once `pde-hub-orchestrator` exists) carries forward
-into Phase 3, not open debt.
+Story 3.1 is now ✅ (sealed PASS 2026-10-04; VD-8 CLEARED), so the register is empty and the
+gate is DISARMED — Story 3.2 may begin. Carried Phase-2 confirmation **VD-3b** (the committed
+gate script's live cross-account `AssumeRole`, run once `pde-hub-orchestrator` exists) carries
+forward into Phase 3 and is most likely addressed as part of 3.2's first real Dev deploy.
 
 ## Operational Debt Register
 
@@ -229,38 +232,35 @@ into Phase 3, not open debt.
 
 | Story | Tier | Why ready |
 |-------|------|-----------|
-| 3.1 | 5 | ✅ unblocked — Phase 2 gate PASSED (Story 2.3 sealed PASS 2026-10-02, `restore/phase-2-green`); register empty, gate DISARMED. **First Phase-3 (Golden Path) story + tier advance 4→5.** Handoff authored: [`story-3.1-brief.md`](../DOCS/session-briefs/story-3.1-brief.md) + [`story-3.1-PROMPT.md`](../DOCS/session-briefs/story-3.1-PROMPT.md). |
+| 3.2 | 6 | ✅ unblocked — Story 3.1 sealed PASS 2026-10-04 (VD-8 CLEARED); register empty, gate DISARMED. **FIRST real end-to-end pipeline run (first live cross-account deploy); tier advance 5→6, within Phase 3.** Handoff authored: [`story-3.2-brief.md`](../DOCS/session-briefs/story-3.2-brief.md) + [`story-3.2-PROMPT.md`](../DOCS/session-briefs/story-3.2-PROMPT.md). |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| 3.2 | 6 | Story 3.1 not yet validated |
 | 3.3 | 7 | Story 3.2 not yet validated |
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Begin Story 3.1** — author a trivial, zero-cost CloudFormation
-artifact (an empty on-demand DynamoDB table or an SQS queue) to serve as the Golden-Path
-payload that will traverse the pipeline in 3.2–3.4. **Phase 2 is ✅ CLOSED**
-(`restore/phase-2-green`): Story 2.3 sealed PASS 2026-10-02 (Independent Validator, commit
-`d19f92c`) — `pdlv-promotion-pipeline-stack` deployed `CREATE_COMPLETE`, IAM audited
-least-privilege, and the SEPARATE non-promoting `pdlv-gate-probe` reached the
-`AwaitSandboxApproval` `.waitForTaskToken` pause with no error. **VD-7 CLEARED, gate
-DISARMED, 3.1's advancement gate satisfied (Phase 2 gate passed).** Durable lessons from
-2.3's 10 attempts (all folded into `infra/validate_state_machine.py`, 61 invariants +
-`--self-test`): (1) certain AWS service-delivery actions reject a resource-scoped grant and
-require `Resource "*"` — the EventBridge `.sync` managed-rule (`events:PutRule/PutTargets/
-DescribeRule`) and CloudWatch Logs `logs:PutResourcePolicy`; scope the *write* actions, not
-these; (2) a dummy gate run can't do a real cross-account assume (member trust is Phase-3/
-VD-3b) — so the gate is proven by a SEPARATE, structurally non-promoting `pdlv-gate-probe`
-(no deploy state, Fail terminal, publish+logs-only role), keeping the production pipeline
-bypass-free; (3) IAM Role/Policy `Description` must be plain ASCII (an em-dash fails
-`CreateRole`) — now guarded offline; (4) a `ROLLBACK_COMPLETE`/`REVIEW_IN_PROGRESS` stack
-can't be updated in place — the LIVE-RUNBOOK's STEP 1a name-agnostic sweep deletes any dead
-`pdlv-` stack before deploy; (5) always capture the CFN `CREATE_FAILED` `ResourceStatusReason`
-(STEP 3a) — never diagnose from "it rolled back". _(Carried Phase-2 confirmation: **VD-3b** —
-run the committed `scripts/phase1_gate.py` live once `pde-hub-orchestrator` is created.)_
+**Default next action:** **Begin Story 3.2** — commit the Story 3.1 Golden-Path artifact
+(`infra/golden-path-artifact.yaml`) and trigger the live `pdlv-promotion-pipeline` so the
+Hub orchestrates a cross-account CloudFormation deploy of it into `Pipeline-Dev`
+(`946509368326`). This is the **FIRST real end-to-end pipeline run** — the first time the
+production control plane does a real cross-account deploy (the Phase-2 gate used the
+non-promoting `pdlv-gate-probe`). **Story 3.1 is ✅** (sealed PASS 2026-10-04, Independent
+Validator, PR #41 head `d88c604`: exactly one trivial zero-cost DynamoDB artifact, strict
+`pdlv-` namespace, `Project=PDE`, cfn-lint clean + Checkov 0-failed + the 27-invariant
+offline checker); **VD-8 CLEARED, gate DISARMED, 3.2's advancement gate satisfied.** Handoff
+authored: [`story-3.2-brief.md`](../DOCS/session-briefs/story-3.2-brief.md) +
+[`story-3.2-PROMPT.md`](../DOCS/session-briefs/story-3.2-PROMPT.md). **Likely first task =
+stand up + prove VD-3b** (the live Hub→member `sts:AssumeRole`): the production pipeline has
+never done a real cross-account assume, so DeployDev will fail until `pde-hub-orchestrator`
+(Hub) + the `pde-member-execution-dev` trust (member, trusting that specific role +
+ExternalId) exist and align. Carry-forward Phase-2 lessons still apply (service-delivery
+IAM actions needing `Resource "*"`; ASCII-only IAM `Description`; name-agnostic dead-stack
+sweep before re-deploy; capture the CFN `CREATE_FAILED` reason; verify the LIVE result not
+the green line). _(Phase-2 completeness item **OD-010** — the paired restore-point state
+manifest — remains OPEN, tracked, not a blocker.)_
 
 ## Progress Summary
 
@@ -361,18 +361,18 @@ _Gate: The human operator queries the live AWS environment in `Pipeline-Prod` an
 
 | Story | Title | Depends on | Status | Completed | Restore tag |
 |-------|-------|-----------|--------|-----------|-------------|
-| 3.1 | Author a trivial, zero-cost artifact (empty DynamoDB table or SQS queue) in CloudFormation | Phase 2 gate | 🟡 | | |
+| 3.1 | Author a trivial, zero-cost artifact (empty DynamoDB table or SQS queue) in CloudFormation | Phase 2 gate | ✅ | 2026-10-04 | |
 | 3.2 | Commit the artifact and trigger the PDE pipeline to deploy to `Pipeline-Dev` | 3.1 | ⬜ | | |
 | 3.3 | Validate the Dev deployment, approve the gate, promote to `Pipeline-Sandbox` | 3.2 | ⬜ | | |
 | 3.4 | Split-brain validate the Sandbox artifact, approve the final gate, release to `Pipeline-Prod` | 3.3 | ⬜ | | |
 
-**3.1 — Author a trivial, zero-cost artifact (empty DynamoDB table or SQS queue) in CloudFormation**  🟡 _In Progress_
+**3.1 — Author a trivial, zero-cost artifact (empty DynamoDB table or SQS queue) in CloudFormation**  ✅ _Done (validated)_
 - Steps: author a minimal, zero-cost CloudFormation artifact (an empty on-demand DynamoDB table or an SQS queue) to serve as the payload traversing the pipeline. Prove offline. Nothing is deployed in 3.1 (the first live deploy is Story 3.2, THROUGH the pipeline).
 - **As built (`feature/story-3.1`):** `infra/golden-path-artifact.yaml` — a SINGLE empty on-demand `AWS::DynamoDB::Table` (`BillingMode: PAY_PER_REQUEST`; one `id` string HASH key; **no** provisioned capacity, **no** stream, **no** GSI, **no** customer-managed CMK, **no** PITR — genuinely zero-cost at rest on the AWS-owned default key). Named `${NamePrefix}${ArtifactName}` with `NamePrefix` constrained to exactly `pdlv-` (RD-009), tagged `Project=PDE` (+ `Story=3.1`, `Component=golden-path-artifact`, `Phase=3`, `ManagedBy=cloudformation`), exports `pdlv-golden-path-artifact-table-{name,arn}`. The two unavoidable DynamoDB security findings are handled with repo-standard **justified `checkov:skip`** (CKV_AWS_119 CMK + CKV_AWS_28 PITR — both add cost for a disposable, zero-data test payload). **Design choice:** DynamoDB over SQS because checkov's CloudFormation CKV_AWS_27 does not recognize SSE-SQS (`SqsManagedSseEnabled`) and would force a CMK or skip on an SQS queue anyway; the on-demand table is the cleaner genuinely-zero-cost single resource.
 - **Offline proof:** `infra/validate_golden_path_artifact.py` — stdlib, **27 invariants** (exactly one resource; on-demand/no-provisioned/no-stream/no-GSI/no-CMK/no-PITR; `pdlv-` naming + no `pde-` in any name/default/export; `Project=PDE`; no IAM/no wildcards; Description < 1024 B / cfn-lint E1003; pure ASCII) + an in-memory `--self-test` catching 7 sabotages. Wired into `.github/workflows/static-bar.yml` (checkout-proof CI on the PR head). cfn-lint + Checkov run in CI (PyPI is blocked in the build sandbox).
-- **Validation Result:** _pending — awaiting the independent static-bar PASS (cfn-lint clean + Checkov 0-failed on the PR head). Handover: `DOCS/session-briefs/story-3.1-VALIDATOR-HANDOVER.md` (target SHA resolved LIVE, never pinned)._
-- **On pass (and only then):** record the Validation Result, set this row ✅ (+ Completed date), clear VD-8 (gate DISARMED), author Story 3.2's warm handoff. _(Does NOT close Phase 3 — 3.2-3.4 remain; the Phase 3 gate is the live Prod artifact-metadata query.)_
-- **Advancement gate:** 3.2 cannot begin until 3.1 is ✅.
+- **Validation Result:** PASS — Story 3.1 Golden-Path artifact authoring & static proof, 2026-10-04, confirmed by Independent Validator. The independent static bar on the PR #41 head (`d88c604`) sealed PASS: `infra/golden-path-artifact.yaml` declares EXACTLY ONE trivial zero-cost resource (an empty on-demand `AWS::DynamoDB::Table`, `PAY_PER_REQUEST`, no provisioned capacity / stream / GSI / CMK / PITR); strict `pdlv-` namespace with no `pde-` in any name/default/export; `Project=PDE`-tagged; no IAM / no wildcards; **cfn-lint clean** (`Passed 79 / Failed 0`), **Checkov `Failed checks: 0`** (the two skips — CKV_AWS_119 CMK + CKV_AWS_28 PITR — match the documented zero-cost design), and the offline checker `validate_golden_path_artifact.py` PASS (27 invariants) + `--self-test` catching every sabotage. Author-only; nothing deployed (first live deploy is Story 3.2, through the pipeline).
+- **On pass (done):** recorded above; row ✅ (Completed 2026-10-04); VD-8 CLEARED (gate DISARMED). _(Does NOT close Phase 3 — 3.2-3.4 remain; the Phase 3 gate is the live Prod artifact-metadata query.)_
+- **Advancement gate:** 3.2 (deploy the artifact to Pipeline-Dev through the pipeline) is now unblocked.
 
 **3.2 — Commit the artifact and trigger the PDE pipeline to deploy to `Pipeline-Dev`**  ⬜ _Not Started_
 - Steps: commit the artifact and trigger the PDE pipeline; the control plane deploys it cross-account into `Pipeline-Dev`.
