@@ -275,12 +275,19 @@ inventory; if it's in the inventory, it maps to a restore point.*
   and only then (3) exercise it. Treat a verdict whose findings all describe a
   *prior* version of the resource (old tag, old scope, a leftover placeholder) as
   the signature of this stale-deploy miss — an **execution failure to be re-run on
-  the real deliverable**, not a defect of the branch code. _(PDE Story 3.2 attempt 1:
-  the pipeline was triggered against the un-redeployed Phase-1 member role —
-  `Story=1.1` tag, `pde-*` scope, no DynamoDB grant, placeholder ExternalId — so the
-  sealed FAIL's three findings were all against code the branch had already fixed;
-  the fix was to make "redeploy-from-branch + verify the live role changed" a
-  blocking STEP ahead of triggering, with a pre-flight gate on the trigger step.)_
+  the real deliverable**, not a defect of the branch code. **If a prose "deploy
+  first" gate keeps getting skipped, make it MECHANICAL** — a preflight check that
+  reads the live resource, compares a branch-specific marker to the expected
+  baseline, and hard-fails (non-zero) so a validation run against un-redeployed infra
+  cannot start; ship it with an offline `--self-test` that flags the exact stale
+  state that slipped through. _(PDE Story 3.2: attempt 1 triggered the pipeline
+  against the un-redeployed `Story=1.1` member role; attempt 2 against a June-10
+  legacy `pde-hub-orchestrator` + the pre-3.2 state machine (the operator was outside
+  the clone — `git rev-parse HEAD` → "fatal: not a git repository" — so the deploy
+  never ran). Both sealed non-PASS against code the branch had already fixed. The
+  prose gate was skipped twice; the durable fix was `scripts/preflight_story_3_2.py`,
+  which hard-fails unless the live orchestrator trust/boundary + member tag/scope +
+  state-machine ASL match the Story-3.2 baseline.)_
 - **Validate on a checkout-proof target — prefer CI on the PR head over a
   hand-pasted clone.** A human-driven clone/checkout is the single most common
   cause of a wasted validation cycle: it can clone the wrong repo, paste a literal
