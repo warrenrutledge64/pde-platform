@@ -205,8 +205,10 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          "467866449172" not in raw),
         ("Hub-only: no Pipeline-Forensics (ZTIE) account 360999005254",
          "360999005254" not in raw),
-        ("member account ids are the PDE members (dev/sandbox/prod)",
-         "946509368326" in raw and "586917955591" in raw and "466494951534" in raw),
+        ("references the Dev member account id (the default hop-2 target)",
+         "946509368326" in raw),
+        ("no Sandbox/Prod member ids needed here (two-hop: orchestrator targets members)",
+         "586917955591" not in raw and "466494951534" not in raw),
     ]
 
 

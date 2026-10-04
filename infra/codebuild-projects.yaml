@@ -119,22 +119,14 @@ Parameters:
 
   DevAccountId:
     Type: String
-    Description: Pipeline-Dev member account ID.
+    Description: >-
+      Pipeline-Dev member account ID — used only for the default hop-2 TARGET_ROLE_ARN
+      so a standalone first run targets Dev (the Story 3.2 target). Sandbox/Prod member
+      account IDs are NOT needed here anymore: with the Story 3.2 two-hop chain the
+      service role assumes only the orchestrator, and the state machine overrides
+      TARGET_ROLE_ARN per promotion — so this template references no per-member ARN
+      beyond the Dev default.
     Default: "946509368326"
-    AllowedPattern: "^[0-9]{12}$"
-    ConstraintDescription: Must be a 12-digit AWS account ID.
-
-  SandboxAccountId:
-    Type: String
-    Description: Pipeline-Sandbox member account ID.
-    Default: "586917955591"
-    AllowedPattern: "^[0-9]{12}$"
-    ConstraintDescription: Must be a 12-digit AWS account ID.
-
-  ProdAccountId:
-    Type: String
-    Description: Pipeline-Prod member account ID.
-    Default: "466494951534"
     AllowedPattern: "^[0-9]{12}$"
     ConstraintDescription: Must be a 12-digit AWS account ID.
 
