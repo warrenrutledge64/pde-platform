@@ -14,16 +14,20 @@
 | **Build tier** | 5 (depends on the Phase 2 gate ✅ — a tier advance over tier 4) |
 | **Date** | 2026-10-03 (authored; awaiting independent validation) |
 | **Status** | 🟡 In Progress (built + offline-proven; VD-8 open) |
-| **Builds from restore point** | `restore/phase-2-green` (Phase 2 close) |
+| **Builds from restore point** | `restore/phase-2-green` — **re-cut 2026-10-03 to the gate-passing commit `8f85740`** (the PR #37 close-out merge; supersedes the stale `3c42d03`). |
 | **Session goal** | Author a minimal, zero-cost CloudFormation artifact (e.g. an empty on-demand DynamoDB table OR an SQS queue) that will serve as the Golden-Path payload traversing the PDE pipeline Dev→Sandbox→Prod. Offline-prove it (lint clean, single trivial resource, `pdlv-`/`Project=PDE`). Nothing is deployed in 3.1. |
 
 ---
 
 ### Background & Context
 
-Phase 2 is closed (`restore/phase-2-green`, Story 2.3 sealed PASS 2026-10-02): the Hub
-control plane is live — the `pdlv-promotion-pipeline` Step Functions state machine +
-`pdlv-lint`/`pdlv-deploy` CodeBuild projects, all least-privilege and ZTIE-safe. Phase 3
+Phase 2 is **CLOSED through its end-of-phase gate** — the independent gate sealed **PASS
+2026-10-03** (all four arms: live `Project=PDE` tag, probe reaching/holding
+`AwaitSandboxApproval` under least privilege, 62 offline invariants + self-test, root
+RESTORE.md pointer accepted); `restore/phase-2-green` was re-cut to the gate-passing commit
+`8f85740`. The Hub control plane is live — the `pdlv-promotion-pipeline` Step Functions
+state machine + `pdlv-lint`/`pdlv-deploy` CodeBuild projects, all least-privilege and
+ZTIE-safe. Phase 3
 proves the **end-to-end delivery path** by sending a real (but trivial) infrastructure
 artifact through that pipeline. Story 3.1 authors that artifact; 3.2 commits + deploys it
 to Dev; 3.3 promotes to Sandbox; 3.4 releases to Prod.
@@ -124,11 +128,36 @@ to Dev; 3.3 promotes to Sandbox; 3.4 releases to Prod.
   the LIVE-RUNBOOK STEP 1a name-agnostic sweep clears any dead `pdlv-` stack first; and
   always capture the CFN `CREATE_FAILED` `ResourceStatusReason` (STEP 3a) rather than
   diagnosing from "it rolled back".
-- **Current true state at handoff:** Phase 1 ✅ (`restore/phase-1-green`); Phase 2 ✅
-  CLOSED (`restore/phase-2-green`); 2.1/2.2/2.3 all ✅; the Validation Debt Register is
-  **empty**, the gate is **DISARMED**, and 3.1's advancement gate (Phase 2 gate passed) is
-  **satisfied**. 3.1 is tier 5 — a tier advance over Phase 2 (tier 4) and the P2→P3 phase
-  transition.
+- **Live deploy must carry its tags — and you VERIFY the live resource, not the green
+  deploy line (OD-012, the gate's dispositive FAIL arm across attempts 1–3).** The live
+  `pdlv-promotion-pipeline-stack` sat **untagged** for three gate attempts because a deploy
+  ran without `--tags Project=PDE` — the stack-level tag comes from the DEPLOY COMMAND, not
+  the template (bare-resource YAML). Durable guards now on `main`: `scripts/check_deploy_tags.py`
+  (fails if any `pdlv-` deploy in a LIVE-RUNBOOK omits `Project=PDE`; `--self-test`; wired
+  into CI + pre-commit) and a MANDATORY `describe-stacks … Tags` **`TAG VERIFY: PASS`** gate
+  in the runbook. For every 3.x deploy: deploy WITH `--tags Project=PDE`, then
+  `aws cloudformation describe-stacks --query 'Stacks[0].Tags'` and confirm `Project=PDE` is
+  actually present — never trust `✅ UPDATE_COMPLETE` alone (the standing deploy-gap lesson).
+- **Launch pad must be bootstrapped FRESH and Phase-correct (OD-013).** The gate's
+  "RESTORE.md missing" / "repo not cloned" findings were an un-bootstrapped / wrong-branch
+  launch pad, NOT missing files. Two durable fixes landed: (a) a root-level `RESTORE.md`
+  pointer (the repo keeps living docs under `governance/`, but checks look root-level), and
+  (b) the gate handover's STEP 0 is now SELF-CONTAINED — clone, `git reset --hard origin/<target>`,
+  inline-verify the Phase file set, print a fail-loud `… VERIFY: PASS` BEFORE any step. Do
+  NOT reuse `scripts/bootstrap_launchpad.sh` for a non-1.2 gate (it hard-codes
+  `feature/story-1.2`). Any 3.x runbook that runs in Hub CloudShell carries the same STEP 0.
+- **Sealed verdicts lead with the one-line record (new, 2026-10-03).** Both the per-story
+  validator-brief and the phase-gate template now REQUIRE the verdict to lead with a fenced
+  `<PASS|FAIL|INCONCLUSIVE> — <subject>: <...>, <date>, confirmed by <who>` block; a verdict
+  delivered as free-form prose is INCOMPLETE and gets re-requested in-format. The executor
+  transcribes that sealed line verbatim — never a paraphrase.
+- **Current true state at handoff:** Phase 1 ✅ (`restore/phase-1-green`); **Phase 2 ✅
+  CLOSED via its end-of-phase gate — SEALED PASS 2026-10-03** (`restore/phase-2-green`
+  re-cut to `8f85740`); 2.1/2.2/2.3 all ✅; OD-011/012/013 PAID; the Validation Debt Register
+  is **empty**, the gate is **DISARMED**, and 3.1's advancement gate (Phase 2 gate passed) is
+  **satisfied**. _One tracked completeness item: **OD-010** (the paired restore-point STATE
+  MANIFEST) is still OPEN — owed by the operator (read-only Boto3 capture → `governance/restore-manifests/` → BOM §4); it does not block starting 3.1._ 3.1 is tier 5 — a tier advance
+  over Phase 2 (tier 4) and the P2→P3 phase transition.
 - **Account topology (authoritative):** Hub `641628980935`; members Dev `946509368326`,
   Sandbox `586917955591`, Prod `466494951534`; management/root `467866449172` zero-touch;
   Pipeline-Forensics `360999005254` is **ZTIE's**, not PDE.

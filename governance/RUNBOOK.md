@@ -184,14 +184,16 @@ and the `pdlv-gate-probe` execution reached the `AwaitSandboxApproval` `.waitFor
 pause and stays `RUNNING` with no error. Story 2.1 ✅ (sealed PASS `aa47f85`, VD-5
 CLEARED), Story 2.2 ✅ (sealed PASS CI #36943324686 `4aa3e5a`, VD-6 CLEARED), Story 2.3 ✅
 (sealed PASS `d19f92c`, VD-7 CLEARED). **Phase 1 ✅ CLOSED (`restore/phase-1-green`);
-Phase 2 is STORY-COMPLETE (all 2.x ✅, `restore/phase-2-green` cut) but NOT YET CLOSED —
-its independent end-of-phase gate is OWED** (handover
-`DOCS/session-briefs/phase-2-GATE-VALIDATOR-HANDOVER.md`; tracked as OD-011). Per
-METHODOLOGY the Progress-Summary Phase-2 row flips ✅ only on the sealed phase-gate PASS
-(it was prematurely flipped on the Story-2.3 gate and reconciled back to 🟡 2026-10-02).
-Story 3.1's advancement gate (the Phase-2 *story* set + the 2.3 gate, all ✅; the register
-was empty at 3.1 start) WAS satisfied, so 3.1 began — Phase 2 is still not recorded CLOSED
-until its gate seals, and the register now carries VD-8 (3.1's own open debt) with the gate
+Phase 2 ✅ CLOSED (2026-10-03) — its independent end-of-phase gate SEALED PASS (attempt 4,
+Independent Validator: live `pdlv-promotion-pipeline-stack` tagged `Project=PDE`/live==IaC,
+the `pdlv-gate-probe` reached/held `AwaitSandboxApproval` under least-privilege IAM, 62
+offline invariants + self-test, root `RESTORE.md` pointer accepted); OD-011/012/013 PAID,
+Progress-Summary Phase-2 row ✅, `restore/phase-2-green` re-cut to the gate-passing commit
+`8f85740`.** _(Completeness item **OD-010** — the paired restore-point STATE MANIFEST,
+RESTORE.md rule 4 — remains OPEN, tracked, not a behavioural blocker.)_
+Story 3.1's advancement gate (the Phase-2 gate ✅ + the 2.x story set all ✅; the register
+was empty at 3.1 start) IS satisfied, so 3.1 began — the register now carries VD-8 (3.1's
+own open debt) with the gate
 ARMED. Carried Phase-2 confirmation **VD-3b** (the committed gate script's
 live cross-account `AssumeRole`, run once `pde-hub-orchestrator` exists) carries forward
 into Phase 3, not open debt.
