@@ -174,6 +174,24 @@ redeploy per account). Each carries the mandatory `Project=PDE` stack tag (OD-01
 **2a — the NEW unified Hub orchestrator** (`pde-hub-orchestrator`, pass-through + boundary,
 trust pinned to the deploy service role):
 
+> ⚠️ **LEGACY-ROLE COLLISION (found in attempt 2):** a `pde-hub-orchestrator` role already
+> exists in the Hub, created `2026-06-10`, NOT managed by this stack (it trusts Step Functions,
+> holds S3/events power, targets `pde-cross-account-deployer`). This CFN stack creates a role
+> of the SAME name — `CreateStack` will fail with "already exists" if the legacy role is still
+> there. Confirm whether it is CFN-managed and, if it is an un-managed legacy role, delete it
+> first (it is a `pde-` *role*, not a ZTIE `pde-*` *stack* — deleting this specific role is in
+> scope for closing VD-3b; do NOT touch any `pde-*` stack):
+> ```bash
+> # Target: Pipeline-Hub 641628980935 (us-east-1)
+> aws iam get-role --role-name pde-hub-orchestrator \
+>   --query "Role.{Created:CreateDate,Trust:AssumeRolePolicyDocument.Statement[0].Principal}" --output json
+> # If it is the June-10 legacy role (trusts states.amazonaws.com) and NOT managed by a
+> # pdlv- stack, detach its inline policies + delete it so the stack can create the correct one:
+> #   for p in $(aws iam list-role-policies --role-name pde-hub-orchestrator --query PolicyNames --output text); do \
+> #     aws iam delete-role-policy --role-name pde-hub-orchestrator --policy-name "$p"; done
+> #   aws iam delete-role --role-name pde-hub-orchestrator
+> ```
+
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws cloudformation deploy \
@@ -184,6 +202,10 @@ aws cloudformation deploy \
   --no-fail-on-empty-changeset
 aws cloudformation describe-stacks --stack-name pdlv-hub-orchestrator \
   --query "Stacks[0].StackStatus" --output text        # expect CREATE_COMPLETE / UPDATE_COMPLETE
+# Confirm the role is now the Story-3.2 role (trust pinned to the CodeBuild service role):
+aws iam get-role --role-name pde-hub-orchestrator \
+  --query "Role.AssumeRolePolicyDocument.Statement[0].Principal" --output json
+#   expect AWS=.../role/pdlv-codebuild-service-role  (NOT Service=states.amazonaws.com)
 ```
 
 **2b — refresh the CodeBuild projects** (the `pdlv-deploy` project now does the two-hop
