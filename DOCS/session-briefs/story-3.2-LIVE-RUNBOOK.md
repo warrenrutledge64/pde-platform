@@ -196,15 +196,20 @@ aws cloudformation describe-stacks --stack-name pdlv-promotion-pipeline-stack \
   --query "Stacks[0].StackStatus" --output text
 ```
 
-**2d — redeploy the Dev member role** so it (i) still trusts `pde-hub-orchestrator` and
-(ii) can now create the `pdlv-` artifact stack + table. Run this **from a Pipeline-Dev
-`946509368326` CloudShell/credential** (the member stack lives in Dev). The ExternalId
-is the same shared secret from STEP 0:
+**2d — redeploy the Dev member role FROM THIS BRANCH (BLOCKING — attempt-1 FAIL root cause).**
+Attempt 1 (2026-10-04) sealed FAIL because this step was skipped: the pipeline ran against
+the **pre-3.2 Phase-1 role** (scoped to `pde-*`, no DynamoDB grant, placeholder ExternalId,
+still tagged `Story=1.1`). The deliverable was never deployed, so it was never judged. You
+MUST redeploy the member role from `feature/story-3.2` AND VERIFY THE LIVE ROLE ACTUALLY
+CHANGED before any pipeline run — never trust the deploy line. Run this **from a Pipeline-Dev
+`946509368326` CloudShell/credential**, on the `feature/story-3.2` checkout (confirm with
+`git log --oneline -1`). The ExternalId is the SAME shared secret you put in SSM in STEP 0:
 
 ```bash
 # Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT
 aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
-read -rs -p "ExternalId: " PDE_EXTERNAL_ID; echo
+git log --oneline -1                                        # confirm feature/story-3.2 tip
+read -rs -p "ExternalId (the REAL shared secret): " PDE_EXTERNAL_ID; echo
 aws cloudformation deploy \
   --template-file infra/member-execution-role.yaml \
   --stack-name pde-trust-fabric \
@@ -215,11 +220,33 @@ aws cloudformation deploy \
 unset PDE_EXTERNAL_ID
 aws cloudformation describe-stacks --stack-name pde-trust-fabric \
   --query "Stacks[0].StackStatus" --output text
-# Confirm the member role now carries the pdlv- DynamoDB grant:
-aws iam get-role-policy --role-name pde-member-execution-dev --policy-name x 2>/dev/null || true
-aws iam list-attached-role-policies --role-name pde-member-execution-dev \
-  --query "AttachedPolicies[].PolicyName" --output text
 ```
+
+**VERIFY THE LIVE ROLE CHANGED (do NOT proceed until all three pass):**
+
+```bash
+# Target: Pipeline-Dev 946509368326 (us-east-1)
+# (1) The role now carries the Story=3.2 tag (proves the branch deployed, not the old role):
+aws iam list-role-tags --role-name pde-member-execution-dev \
+  --query "Tags[?Key=='Story'].Value" --output text          # MUST print 3.2 (NOT 1.1)
+# (2) The attached managed policy now grants pdlv--scoped CFN + DynamoDB (not pde-, not empty):
+POL=$(aws iam list-attached-role-policies --role-name pde-member-execution-dev \
+  --query "AttachedPolicies[?contains(PolicyName,'member-execution-permissions')].PolicyArn" --output text)
+VER=$(aws iam get-policy --policy-arn "$POL" --query "Policy.DefaultVersionId" --output text)
+aws iam get-policy-version --policy-arn "$POL" --version-id "$VER" \
+  --query "PolicyVersion.Document" --output json
+#   EXPECT: cloudformation Resource ...stack/pdlv-* (NOT pde-*); a dynamodb statement with
+#   CreateTable/DeleteTable/UpdateTable/Describe*/Tag* scoped to table/pdlv-* . If you still
+#   see stack/pde-* or NO dynamodb block, the OLD role is live -> STOP, the branch did not deploy.
+# (3) The trust ExternalId is a real value, not a placeholder:
+aws iam get-role --role-name pde-member-execution-dev \
+  --query "Role.AssumeRolePolicyDocument.Statement[0].Condition" --output json
+#   EXPECT a StringEquals sts:ExternalId with a real secret (NOT "<paste-the-new-value>" / any placeholder).
+```
+
+> If any of the three VERIFY checks shows the OLD role (`pde-*` scope, no DynamoDB, placeholder
+> ExternalId, or `Story=1.1`), the branch was NOT deployed — STOP and fix the deploy before
+> STEP 4. Triggering the pipeline against the old role is exactly the attempt-1 FAIL.
 
 ---
 
@@ -248,6 +275,19 @@ ORCH=$(aws sts assume-role \
 ---
 
 ## STEP 4 — Trigger the pipeline (the first real end-to-end run)
+
+> ### 🚦 PRE-FLIGHT GATE (do NOT start the pipeline until BOTH are confirmed)
+> This gate exists because attempt 1 (2026-10-04) FAILED by triggering the pipeline against
+> the un-redeployed Phase-1 role. Both must be true at this moment:
+> 1. **STEP 2d VERIFY passed** — the live `pde-member-execution-dev` role shows `Story=3.2`,
+>    a `pdlv-`-scoped CFN+DynamoDB grant, and a real (non-placeholder) ExternalId.
+> 2. **STEP 0 secrets populated** — both `/pdlv/` SecureStrings exist with REAL values:
+>    ```bash
+>    # Target: Pipeline-Hub 641628980935 (us-east-1)
+>    aws ssm get-parameter --name /pdlv/promotion/external-id --query "Parameter.Type" --output text  # SecureString
+>    aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type" --output text  # SecureString
+>    ```
+> If either is not confirmed, STOP — a run now re-creates the attempt-1 FAIL.
 
 Start the production `pdlv-promotion-pipeline`. DeployDev is the first state; it starts
 the `pdlv-deploy` CodeBuild project, which does the two-hop deploy into Dev and then the
