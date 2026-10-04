@@ -27,9 +27,11 @@ proof ONLY — nothing is deployed in 3.1.
    the DoD + seals the verdict (you record it). No recorded pass → stays 🟡.
 
 # FIRST — VALIDATION & ADVANCEMENT GATE (HALT if unmet)
-- Confirm in RUNBOOK.md: the **Phase 2 gate is ✅** (Story 2.3 ✅, `restore/phase-2-green`),
-  the Validation Debt Register is empty, and the gate is DISARMED. 3.1 depends on the
-  Phase 2 gate. If unmet, HALT and surface it.
+- Confirm in RUNBOOK.md: the **Phase 2 END-OF-PHASE GATE sealed PASS** (2026-10-03;
+  Progress-Summary Phase 2 row ✅; `restore/phase-2-green` re-cut to the gate-passing commit
+  `8f85740`), the Validation Debt Register is empty, and the gate is DISARMED. 3.1 depends on
+  the Phase 2 gate. If unmet, HALT and surface it. _(Note: OD-010 — the paired restore-point
+  state manifest — is still OPEN but is an operator capture item, not a 3.1 blocker.)_
 - **TIER ADVANCE + PHASE TRANSITION:** 3.1 is build tier 5 — a NEW tier over Phase 2
   (tier 4) AND the P2→P3 transition. Re-confirm the dependency set is ✅ and the register
   is empty.
@@ -60,11 +62,31 @@ proof ONLY — nothing is deployed in 3.1.
 - Operational: a dead `ROLLBACK_COMPLETE`/`REVIEW_IN_PROGRESS` `pdlv-` stack blocks
   re-deploy — sweep it first; always capture the CFN `CREATE_FAILED` `ResourceStatusReason`
   rather than diagnosing from "it rolled back".
+- DEPLOY-TAG + LIVE-VERIFY (OD-012, the Phase-2 gate's dispositive FAIL across 3 attempts):
+  the live stack sat UNTAGGED because a deploy ran without `--tags Project=PDE` (stack-level
+  tag comes from the deploy command, not the template). For every 3.x deploy: deploy WITH
+  `--tags Project=PDE`, then `describe-stacks --query 'Stacks[0].Tags'` and confirm it's
+  there — never trust the green deploy line. Guards on `main`: `scripts/check_deploy_tags.py`
+  (+ `--self-test`, in CI/pre-commit) and a mandatory `TAG VERIFY: PASS` runbook gate.
+- LAUNCH PAD (OD-013): bootstrap FRESH + Phase-correct. The gate's "RESTORE.md missing" was
+  a wrong-branch/un-bootstrapped launch pad, not a missing file. A root-level `RESTORE.md`
+  pointer now exists (living docs are under `governance/`), and any Hub-CloudShell runbook's
+  STEP 0 is SELF-CONTAINED (clone, `reset --hard origin/<target>`, inline file-set verify,
+  fail-loud `VERIFY: PASS`). Do NOT reuse `scripts/bootstrap_launchpad.sh` for a non-1.2
+  gate (it hard-codes `feature/story-1.2`).
+- SEALED VERDICTS LEAD WITH THE ONE-LINER (2026-10-03): the validator-brief + phase-gate
+  template now REQUIRE the verdict to lead with a fenced `<PASS|FAIL|INCONCLUSIVE> — <subject>:
+  <...>, <date>, confirmed by <who>` block; prose-only verdicts are INCOMPLETE. Transcribe
+  the sealed line verbatim.
 
 # CURRENT TRUE STATE
-- Phase 1 ✅ (`restore/phase-1-green`); Phase 2 ✅ CLOSED (`restore/phase-2-green`);
-  2.1/2.2/2.3 ✅; register empty; gate DISARMED; 3.1 advancement gate satisfied.
+- Phase 1 ✅ (`restore/phase-1-green`); **Phase 2 ✅ CLOSED via its end-of-phase gate —
+  SEALED PASS 2026-10-03** (`restore/phase-2-green` re-cut to `8f85740`); 2.1/2.2/2.3 ✅;
+  OD-011/012/013 PAID; register empty; gate DISARMED; 3.1 advancement gate satisfied.
+  _OD-010 (paired restore-point state manifest) still OPEN — operator capture item, not a
+  3.1 blocker._
 - Accounts: Hub 641628980935; Dev 946509368326, Sandbox 586917955591, Prod 466494951534;
   mgmt 467866449172 (zero-touch); Forensics 360999005254 is ZTIE's.
-- VD-3b (live Hub→member AssumeRole) carries into Phase 3 — expect it in 3.2.
+- VD-3b (live Hub→member AssumeRole, via a new `pde-hub-orchestrator`) carries into Phase 3 —
+  expect it in 3.2's real Dev deploy, NOT 3.1 (3.1 is author-only, offline).
 ```
