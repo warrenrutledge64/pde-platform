@@ -1,10 +1,16 @@
-# Session Brief — Story 3.2: Commit the artifact + trigger the pipeline to deploy to Pipeline-Dev
+# Session Brief — Story 3.2 · Attempt 5: Trigger the pipeline to deploy to Pipeline-Dev
 
 > One brief per story, populated from [`RUNBOOK.md`](../../governance/RUNBOOK.md).
 > **Story 3.2 is the SECOND Phase-3 (Golden Path) story and the FIRST real end-to-end
 > pipeline run.** It takes the Story 3.1 zero-cost artifact and drives it through the
 > live Phase-2 control plane into `Pipeline-Dev`. Build tier 6 (depends on 3.1 ✅) —
 > stays within Phase 3 (no phase transition); it is a tier advance 5→6.
+>
+> **Attempt 5 restart (lean, schema-shaped handoff).** Attempts 1-4 all failed as
+> execution/collision misses — none judged the deliverable. The single root cause
+> (operator outside the clone → branch stacks never deployed → pipeline hit stale infra)
+> is now the loud `##1` of the PROMPT, not buried in carry-forward. Status unchanged:
+> 3.2 stays 🟡, VD-9 OPEN, gate ARMED; the sealed attempt verdicts are frozen history.
 
 ## Story 3.2 — Commit the artifact and trigger the PDE pipeline to deploy to `Pipeline-Dev`
 
@@ -129,43 +135,44 @@ deploy.**
 - **ZTIE-safe (RD-009).** `pdlv-` for Hub resources; the member roles correctly keep
   `pde-member-execution-<env>`. Never create a `pde-*` Hub resource.
 
-### Lessons Learned / Carry-Forward *(authored at the end of Story 3.1 — actual lessons)*
+### Lessons Learned / Carry-Forward *(schema-shaped — pass state, not history)*
 
-- **Story 3.1 sealed PASS 2026-10-04 (Independent Validator), PR #41 head `d88c604`.** The
-  Golden-Path payload is `infra/golden-path-artifact.yaml` — a SINGLE empty on-demand
-  `AWS::DynamoDB::Table` (`PAY_PER_REQUEST`; one `id` string HASH key; no provisioned
-  capacity, stream, GSI, CMK or PITR), `pdlv-`-named via `${NamePrefix}${ArtifactName}`,
-  `Project=PDE`-tagged, exports `pdlv-golden-path-artifact-table-{name,arn}`. The two
-  unavoidable DynamoDB findings (CKV_AWS_119 CMK + CKV_AWS_28 PITR) carry **justified
-  `checkov:skip`** (both add cost for a disposable, zero-data payload). This is the artifact
-  3.2 deploys — do NOT change it unless a live defect forces fix-then-validate-once.
-- **Design note (DynamoDB over SQS):** checkov's CloudFormation CKV_AWS_27 does not
-  recognize SSE-SQS (`SqsManagedSseEnabled`), so an SQS queue would force a CMK or a skip
-  anyway — the on-demand table was the cleaner genuinely-zero-cost single resource.
-- **Offline proof:** `infra/validate_golden_path_artifact.py` (27 invariants + `--self-test`),
-  wired into `.github/workflows/static-bar.yml`. In the build sandbox PyPI is BLOCKED, so
-  cfn-lint/Checkov run in CI on the PR head — NOT locally.
-- **CI workflow lesson (from 3.1):** the static bar now runs the **merge-order guard LAST**
-  (`if: always()`). The guard legitimately turns a deliverable PR RED the whole time the
-  story is in validation (gate ARMED); running it last means cfn-lint / Checkov / the
-  offline checkers still produce their (green) evidence on the PR head for the validator to
-  read, while the guard still fails the job until the close-out disarms the gate at head.
-  Expect the same red-until-close-out pattern on 3.2's PR; it is correct, not a defect.
-- **VD-3b carries into 3.2 (the first real cross-account assume).** Phase 2 deliberately
-  proved its gate with the non-promoting `pdlv-gate-probe`, so the live Hub→member assume
-  has NEVER run in production. 3.2's real Dev deploy will fail at DeployDev until
-  `pdlv-hub-orchestrator` (Hub; renamed from the colliding legacy `pde-hub-orchestrator`) +
-  the `pde-member-execution-dev` trust (member, trusting that specific role + ExternalId)
-  exist and align. Treat standing up + proving VD-3b as the
-  first task.
-- **Current true state at handoff:** Phase 1 ✅ (`restore/phase-1-green`); Phase 2 ✅ CLOSED
+> Lean, delta-only. Attempts 1-4 all failed as EXECUTION/collision misses (none judged
+> the deliverable), which is exactly the fat/buried-root-cause problem this restart
+> fixes: the one lesson that matters is now `##1` of the PROMPT, not buried here.
+
+- **current_state:** Phase 1 ✅ (`restore/phase-1-green`); Phase 2 ✅ CLOSED
   (`restore/phase-2-green` @ `8f85740`); 2.1/2.2/2.3 ✅; **Story 3.1 ✅** (sealed PASS
-  2026-10-04, VD-8 CLEARED); the Validation Debt Register is **empty**, the gate is
-  **DISARMED**, and 3.2's advancement gate (3.1 ✅) is **satisfied**. 3.2 is tier 6 — a tier
-  advance over 3.1 (tier 5), within Phase 3.
-- **Account topology (authoritative):** Hub `641628980935`; members Dev `946509368326`,
-  Sandbox `586917955591`, Prod `466494951534`; management/root `467866449172` zero-touch;
-  Pipeline-Forensics `360999005254` is **ZTIE's**, not PDE.
-- **Completeness item (not a 3.2 blocker):** **OD-010** — the paired Phase-2 restore-point
-  STATE MANIFEST (RESTORE.md rule 4) is still owed; tracked, not a behavioural blocker.
+  2026-10-04, VD-8 CLEARED). **Story 3.2 is 🟡, VD-9 OPEN, gate ARMED** — the branch
+  `feature/story-3.2` is offline+CI green and grep-proven correct, awaiting a clean
+  Attempt-5 live run. The two-hop chain is `pdlv-codebuild-service-role` →
+  `pdlv-hub-orchestrator` → `pde-member-execution-dev`. The frozen artifact is Story
+  3.1's `infra/golden-path-artifact.yaml` (one empty on-demand DynamoDB table,
+  `Project=PDE`) — do NOT change it unless a live defect forces fix-then-validate-once.
+- **delta (what Attempt 5 must do):** the ROOT CAUSE of attempts 1-4 — the operator was
+  OUTSIDE the clone (3 of 4) or hit the resolved name collision (attempt 4), so the
+  branch stacks were never deployed and the pipeline hit stale infra. Attempt 5 MUST,
+  from inside the `~/pde-platform` clone on the branch, (a) pass the STEP 0 launch-pad
+  lock + populate the two `/pdlv/` SecureStrings, (b) deploy all four branch stacks
+  (orchestrator/codebuild/state-machine/Dev member role) and VERIFY each live resource
+  changed, (c) run `scripts/preflight_story_3_2.py` to a printed PASS, and only THEN
+  trigger the pipeline. Verify the live Dev table, never the green line.
+- **pending_blockers:** 3.2's own live validation (owed — the whole point of Attempt 5);
+  **OD-010** (the paired Phase-2 restore-point STATE MANIFEST, RESTORE.md rule 4) remains
+  OPEN — tracked, not a 3.2 blocker.
+- **story_local_context (3.2-specific must-knows):**
+  - **VD-3b** is proven live by 3.2's first real Dev deploy; it fails at DeployDev unless
+    `pdlv-hub-orchestrator` + the `pde-member-execution-dev` trust exist and align.
+  - **Least-privilege service-delivery actions:** if you touch Step Functions /
+    service-integration IAM, certain AWS actions reject a resource-scoped grant and need
+    `Resource "*"` (EventBridge `.sync` managed-rule; CloudWatch Logs `PutResourcePolicy`)
+    — consult AWS's published IAM template, don't tighten by instinct.
+  - **IAM `Description` must be plain ASCII** (an em-dash broke `CreateRole`; now guarded).
+  - **Dead-stack sweep before re-deploy** (name-agnostic, `pdlv-*` ONLY, never
+    `pde-*`/ZTIE/mgmt); capture the CFN `CREATE_FAILED` `ResourceStatusReason`.
+  - **CI pattern:** the static bar runs the merge-order guard LAST (`if: always()`); a
+    deliverable PR stays RED (gate ARMED) during validation while the other evidence is
+    still produced — correct, not a defect.
+  - **RD-009:** `pdlv-` for Hub resources; the member roles correctly keep
+    `pde-member-execution-<env>`. Never create a `pde-*` Hub resource.
 - **User notes:** _(open for the user)_
