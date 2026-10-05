@@ -149,22 +149,77 @@ aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type
 
 ---
 
-## STEP 1 — Dead-stack sweep (name-agnostic, `pdlv-*` only)
+## STEP 1 — Reconcile the `pdlv-` namespace to the canonical set (name-driven, `pdlv-*` only)
 
-A dead `ROLLBACK_COMPLETE`/`*_FAILED` `pdlv-` stack blocks a re-deploy. Sweep the
-`pdlv-` namespace ONLY — never touch a `pde-*` (ZTIE) stack, management, or Forensics.
+> **Two failure classes to clear before STEP 2 deploys (both learned live):**
+> 1. a **dead** `ROLLBACK_COMPLETE`/`*_FAILED` `pdlv-` stack blocks a re-deploy; and
+> 2. a **healthy but MISNAMED** `pdlv-` stack from a prior manual run holds the
+>    resource-name lease and makes STEP 2 fail with
+>    `[AWS::EarlyValidation::ResourceExistenceCheck]` (Attempt-5 blocker: rogue
+>    `pdlv-codebuild-projects` + `pdlv-state-machine` held the CodeBuild / Step
+>    Functions names that the canonical `pdlv-codebuild` / `pdlv-promotion-pipeline-stack`
+>    needed). A status-only sweep MISSES case 2 — a misnamed stack can be
+>    `CREATE_COMPLETE`.
+>
+> This step therefore reconciles by NAME: the ONLY `pdlv-` stacks that may exist for
+> Story 3.2 are the canonical three — **`pdlv-hub-orchestrator`**, **`pdlv-codebuild`**,
+> **`pdlv-promotion-pipeline-stack`**. ANY OTHER `pdlv-`-named stack (misnamed rogue or
+> dead) is swept. Sweep the `pdlv-` namespace ONLY — never touch a `pde-*` (ZTIE) stack,
+> management `467866449172`, or Forensics `360999005254`.
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+
+# The canonical Story-3.2 pdlv- stack set — everything else in pdlv- is a stray to clear.
+CANON="pdlv-hub-orchestrator pdlv-codebuild pdlv-promotion-pipeline-stack"
+
+# List EVERY pdlv- stack currently present (any non-deleted status), then compute the
+# strays = present pdlv- stacks NOT in the canonical set (this catches BOTH a healthy
+# misnamed stack like pdlv-codebuild-projects / pdlv-state-machine AND any dead stack).
+PRESENT=$(aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE \
+      ROLLBACK_COMPLETE CREATE_FAILED ROLLBACK_FAILED UPDATE_ROLLBACK_FAILED \
+      DELETE_FAILED REVIEW_IN_PROGRESS IMPORT_COMPLETE IMPORT_ROLLBACK_COMPLETE \
+  --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text)
+echo "pdlv- stacks present: ${PRESENT:-<none>}"
+
+STRAYS=""
+for S in $PRESENT; do
+  case " $CANON " in
+    *" $S "*) : ;;                 # canonical — keep
+    *) STRAYS="$STRAYS $S" ;;      # not in the canonical set — stray to sweep
+  esac
+done
+echo "STRAY pdlv- stacks to delete (misnamed/dead, not in the canonical set):${STRAYS:-<none>}"
+
+# Delete each stray — pdlv--only guard (never a pde-*/ZTIE/management/Forensics stack):
+for S in $STRAYS; do
+  case "$S" in
+    pdlv-*)
+      echo "deleting stray pdlv- stack: $S"
+      aws cloudformation delete-stack --stack-name "$S"
+      aws cloudformation wait stack-delete-complete --stack-name "$S"
+      echo "  deleted: $S" ;;
+    *) echo "REFUSING to touch non-pdlv stack: $S" ;;
+  esac
+done
+
+# VERIFY the namespace is now ONLY the canonical set (or empty on a first deploy):
 aws cloudformation list-stacks \
-  --stack-status-filter ROLLBACK_COMPLETE CREATE_FAILED ROLLBACK_FAILED \
-      UPDATE_ROLLBACK_FAILED DELETE_FAILED REVIEW_IN_PROGRESS \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE ROLLBACK_COMPLETE \
+      CREATE_FAILED REVIEW_IN_PROGRESS \
   --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text
-# For EACH pdlv- name printed above (there should normally be none):
-#   aws cloudformation delete-stack --stack-name <that-pdlv-name>
-#   aws cloudformation wait stack-delete-complete --stack-name <that-pdlv-name>
+# EXPECT: only names from {pdlv-hub-orchestrator, pdlv-codebuild, pdlv-promotion-pipeline-stack},
+# or empty. If any OTHER pdlv- name remains, STOP — STEP 2 will collide on it.
 ```
+
+> **Only ever delete `pdlv-`-named stacks**, and only those outside the canonical set.
+> Deleting a stray `pdlv-` stack is non-destructive to ZTIE/PDE's real control plane
+> (the canonical stacks are re-created in STEP 2; the artifact is a disposable empty
+> table). If a stray stack has EXPORTS imported by another stack, delete the importer
+> first (CloudFormation will name it in the delete error) — but in a clean Story-3.2
+> Hub there should be none.
 
 ---
 
@@ -410,6 +465,19 @@ aws dynamodb list-tags-of-resource \
 > Hand ALL raw output back to the validator. On the sealed PASS the executor records
 > the verdict, flips 3.2 ✅, and authors Story 3.3's warm handoff. 3.2 does NOT close
 > Phase 3 (3.3/3.4 remain). On FAIL/INCONCLUSIVE, 3.2 stays 🟡.
+>
+> **PR STRUCTURE FOR THE CLOSE-OUT (two PRs, by design — see METHODOLOGY §7).** Story
+> 3.2's non-deliverable work (this runbook + the handoff docs + the governance ledger
+> records of attempts 1-4 and the Q1 rename) was split onto **docs-only PR #43**, which
+> merged to `main` immediately because it touches no `infra/*.yaml` (the merge-order
+> guard does not apply). The **deployable deliverable** — the four `infra/*.yaml`
+> templates + their pinned checkers/scripts + the static-bar workflow — stays on the
+> **gated PR #42**, which is intentionally un-mergeable (`mergeable_state: unstable`,
+> merge-order guard RED) while the gate is **ARMED**. So the close-out rides **#42**:
+> on the sealed PASS, land the close-out commit on `feature/story-3.2` (record the
+> verdict in `governance/RUNBOOK.md`, flip 3.2 ✅, clear VD-9 → set **Gate status:
+> DISARMED**, add the new deployed resources to BOM §2). The merge-order guard then
+> goes GREEN, #42 becomes mergeable, and the deliverable + close-out land together.
 
 ---
 
