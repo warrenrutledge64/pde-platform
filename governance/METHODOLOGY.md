@@ -348,6 +348,21 @@ inventory; if it's in the inventory, it maps to a restore point.*
   more justified paragraph" is how fat enters. A reusable prompt/handoff template is
   **independently audited for fat before it is relied on** (see §4a — the author
   does not self-certify leanness). This is a standing baseline discipline.
+- **A handoff trim/fix only counts once it is on the DEFAULT branch — a lean copy
+  stranded on a feature branch is invisible to whoever pastes it.** An artifact meant
+  to be *handed to another tool or human* (a validator handover, a session prompt) is
+  consumed from whatever the default branch (`main`) shows when the repo is browsed or
+  cloned — not from the feature branch it was authored on. Trimming/correcting a handoff
+  on a feature branch while `main` still carries the old bloated copy makes "we fixed it"
+  true in git and **false in practice**: the stale fat version is what actually gets
+  pasted, and for an LLM that degrades behavior (diluted attention, lost-in-the-middle,
+  self-contradiction → drift). RULE: land handoff trims/corrections on the **default
+  branch** promptly (docs-only, so no deliverable/gate coupling), and verify which branch
+  a copy in hand came from before relying on "it's trimmed." _(PDE instance, Story 3.2,
+  2026-10-05: the 44%-trimmed validator handover sat on `feature/story-3.2` while `main`
+  kept the 241-line / 18.3 KB original with smuggled DoD — the `main` copy is what was
+  pasted into the planner brain and visibly degraded it. Fixed by promoting the trimmed
+  docs to `main` [PR #47].)_
 - **Decoupled services integrate via a defined, versioned contract — not a shared
   build.** When two systems must eventually interoperate, build them as independent
   services that each ship, validate, and release on their own cadence, coupled only
