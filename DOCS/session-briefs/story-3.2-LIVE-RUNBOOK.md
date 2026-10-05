@@ -412,3 +412,73 @@ Dev artifact: `aws cloudformation delete-stack --stack-name pdlv-golden-path-art
 state-machine) are additive `pdlv-` stacks; revert by redeploying
 `restore/phase-2-green` templates if a Hub-side defect is found. Never touch a `pde-*`
 (ZTIE) stack, management `467866449172`, or Forensics `360999005254`.
+---
+
+## Validation Attempt 3 — SEALED INCONCLUSIVE (Environment / Execution Failure)
+
+**Date:** 2026-10-04
+**Validator:** Independent AI Validator (did not author the deliverable or the DoD rubric)
+**Target under test:** branch `feature/story-3.2`, HEAD `03cb20e`, PR #42 (open, not merged)
+**Verdict:** **INCONCLUSIVE — the branch deliverable was NOT under test (stale/undeployed live infra + unreachable Dev account).** Not a FAIL: no DoD condition could be evaluated against the branch, so there is nothing to pass or fail.
+
+### Evidence (raw output on the real AWS system)
+
+1. **Stale Hub orchestrator — decisive.** `aws iam get-role --role-name pde-hub-orchestrator` (Hub `641628980935`) returned a trust Principal of `states.amazonaws.com` / `states.us-east-1.amazonaws.com`. The branch template `infra/hub-orchestrator-role.yaml` pins the trust to EXACTLY `arn:aws:iam::<hub>:role/pdlv-codebuild-service-role` (Sid `TrustOnlyTheCodeBuildDeployServiceRole`) and never trusts the Step Functions service — so `states.*` is a state the branch template cannot produce. This is the legacy pre-3.2 role; the branch was never deployed.
+
+2. **Plaintext ExternalId in the SFN execution history — independent confirmation.** The execution history passed `"EXTERNAL_ID": "set-this-at-deploy-time"` as an environment-variable override. The branch `infra/state-machine.yaml` REMOVED the ExternalId passthrough entirely (overrides carry only `TARGET_ENV` + `TARGET_ROLE_ARN`); the secret is resolved at the edge via a `PARAMETER_STORE` env var in `infra/codebuild-projects.yaml`. A plaintext `EXTERNAL_ID` placeholder in the history can only come from the OLD Phase-2 definition — i.e. the stale state machine is live.
+
+3. **Dev account unreachable.** Every Dev-targeted command failed with `aws: [ERROR]: The config profile (dev-profile) could not be found`, and the `pdlv-deploy` CodeBuild step failed at `aws sts assume-role` (`exit status 254`). The Dev-side DoD (artifact stack did not pre-exist; live `describe-table` for `pdlv-golden-path-artifact`; `Project=PDE` tag; `pdlv-`-scoped member role) could not be exercised at all. Unprovable ≠ failed.
+
+Per the validation rules, stale/undeployed infra and a missing profile are INCONCLUSIVE (execution failure), not FAIL. Per the write-only-scribe covenant: Story 3.2 stays 🟡, no status flipped, `governance/RUNBOOK.md` untouched.
+
+### Carry-forward for the re-run (attempt 4)
+
+- **Judge the Dev member role by POLICY CONTENT, not the `Story` tag.** This branch's `infra/member-execution-role.yaml` still tags the role `Story=1.1`; only the deployed artifact STACK/TABLE gets `Story=3.2` (from the deploy buildspec `--tags`). Validate the role strictly by its mechanically enforceable bounds: the concrete `dynamodb:` table-lifecycle action set scoped to `table/pdlv-*` (NOT `dynamodb:*`, no data-plane item actions) and the CloudFormation grant scoped to `stack/pdlv-*`. Any `pde-`/wildcard-resource grant is a defect.
+- **Confirm the branch IS deployed before judging anything:** `pde-hub-orchestrator` trust Principal = `.../role/pdlv-codebuild-service-role` (NOT `states.*`); `pdlv-promotion-pipeline` definition contains NO `EXTERNAL_ID`.
+- **Establish a working `dev-profile`** (or assumable route into `946509368326`) and **confirm the `pdlv-golden-path-artifact` stack does not pre-exist** in Dev before the run, so a PASS proves THIS run created it.
+
+### RUNBOOK record (one line — for the stakeholder to transcribe when they choose; NOT written to governance/RUNBOOK.md by the validator)
+
+`INCONCLUSIVE — execution failure (stale Hub infra deployed: orchestrator trust=states.amazonaws.com + plaintext EXTERNAL_ID placeholder in SFN history = pre-3.2 infra; missing dev-profile blocked all Dev-account checks), 2026-10-04, confirmed by AI Validator`
+
+---
+
+## Validation Attempt 4 — SEALED INCONCLUSIVE (Environment / Execution Failure)
+
+**Date:** 2026-10-04
+**Validator:** Independent AI Validator (did not author the deliverable or the DoD rubric)
+**Target under test:** branch `feature/story-3.2`, HEAD `03cb20e`, PR #42 (open, not merged)
+**Verdict:** **INCONCLUSIVE — the branch deliverable was NOT under test (Hub deploy blocked by a name collision).** Not a FAIL: the orchestrator stack never created, so no DoD condition could be evaluated.
+
+### Evidence (raw output on the real AWS system)
+
+- The Story 3.2 Hub deploy was blocked: a `pde-hub-orchestrator` role already exists in Hub (`641628980935`), so `cloudformation deploy` of the orchestrator stack could not create the role of the same name. The `feature/story-3.2` orchestrator (trust pinned to `pdlv-codebuild-service-role`, pass-through + permissions boundary) was therefore never stood up — the branch was not under test.
+
+### Open question that determines the correct next step (NOT yet resolved from raw output)
+
+The runbook's STEP 2a documents this collision as an **un-managed, hand-created legacy IAM role** (created 2026-06-10; trusts `states.amazonaws.com`; holds S3/events power; targets `pde-cross-account-deployer`) and prescribes an in-scope remedy: confirm it is not CFN-managed, then detach its inline policies and `delete-role` it — explicitly a `pde-` *role* deletion (in scope for closing VD-3b), NOT a `pde-*` *stack* change.
+
+Whether a true Catch-22 exists depends on one unverified fact: is `pde-hub-orchestrator` actually CloudFormation-managed (e.g. owned by a live `PDE-Orchestrator-Foundation` stack), or the un-managed legacy role the runbook assumes?
+
+- **If un-managed (runbook's assumption):** no dead-end — run STEP 2a cleanup as written, redeploy, re-check. This is an execution step not yet performed, not a design defect.
+- **If CFN-managed by `PDE-Orchestrator-Foundation`:** deleting the role out from under CloudFormation is wrong; the runbook's "un-managed" assumption is itself the defect — kick back to the builder/architect to either release the name from that stack (with authorization) or refactor Story 3.2 to a new orchestrator role name and repoint the member-role trust.
+
+**The validator does NOT assert which world is true** — sealing a specific root cause on an unverified stack lease is the exact trap this process avoids. The verdict is INCONCLUSIVE either way (branch not deployed, nothing under test); the ownership answer only decides the operator's next move.
+
+### One raw check that settles it (Hub `641628980935`, us-east-1)
+
+- `aws iam get-role --role-name pde-hub-orchestrator` → read `Role.Tags` + `Role.Path`. A CFN-managed role carries an `aws:cloudformation:stack-name` / `aws:cloudformation:stack-id` tag naming its owning stack. Present + naming `PDE-Orchestrator-Foundation` ⇒ true scope conflict. Absent ⇒ un-managed legacy role ⇒ STEP 2a cleanup applies.
+- `aws cloudformation describe-stacks --stack-name PDE-Orchestrator-Foundation` (does it exist?) and, if so, `aws cloudformation list-stack-resources --stack-name PDE-Orchestrator-Foundation` filtered for the role's logical id.
+
+### RUNBOOK record (one line — for the stakeholder to transcribe; NOT written to governance/RUNBOOK.md by the validator)
+
+`INCONCLUSIVE — execution failure (Hub deploy blocked: pde-hub-orchestrator name collision prevented the Story 3.2 orchestrator stack from creating; ownership of the colliding role — un-managed legacy vs. CFN-managed by PDE-Orchestrator-Foundation — not yet confirmed from raw output, so root cause unresolved; branch not under test), 2026-10-04, confirmed by AI Validator`
+
+### Operator next steps
+
+1. Resolve the ownership question first (the one `get-role` tags + `describe-stacks`/`list-stack-resources` check above); paste the raw output.
+2. If un-managed: run STEP 2a cleanup as written (detach inline policies, `delete-role`; a `pde-` *role*, not a `pde-*` *stack*), redeploy the three Hub stacks, re-check (orchestrator trust = `pdlv-codebuild-service-role`; state machine has no `EXTERNAL_ID`).
+3. If CFN-managed by `PDE-Orchestrator-Foundation`: kick back to the builder/architect (release the name with authorization, or refactor to a new orchestrator name + repoint member-role trust).
+4. Establish the Dev route (`dev-profile` → `946509368326`), confirm `pdlv-golden-path-artifact` does not pre-exist, then run the full LIVE-RUNBOOK and paste raw output for the final seal (Attempt 5).
+
+Per the write-only-scribe covenant: Story 3.2 stays 🟡, no status flipped, `governance/RUNBOOK.md` untouched. For the re-run, judge the Dev member role by POLICY CONTENT (concrete `dynamodb:` table-lifecycle actions scoped to `table/pdlv-*`; CloudFormation scoped to `stack/pdlv-*`), not the `Story` tag.
