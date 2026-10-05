@@ -20,39 +20,23 @@ end-to-end pipeline run: trigger the live pdlv-promotion-pipeline so the Hub doe
 cross-account CloudFormation deploy of the frozen Story 3.1 artifact into Pipeline-Dev
 (946509368326), closing VD-3b (the live Hub→member assume).
 
-# ##1 ROOT CAUSE OF ATTEMPTS 1-5 — THE ONE THING THAT MUST NOT REPEAT ##
-EVERY attempt was an ENVIRONMENT miss that validated something OTHER than the branch
-deliverable — never a deliverable defect:
-  - attempts 1-3: operator OUTSIDE the clone (`git rev-parse HEAD` → "fatal: not a git
-    repository"), so STEP 2a-2d never ran and the pipeline hit stale/legacy infra;
-  - attempt 4: legacy `pde-hub-orchestrator` NAME COLLISION (resolved — orchestrator
-    renamed to `pdlv-hub-orchestrator`, member trust repointed, legacy role untouched);
-  - attempt 5: MISNAMED `pdlv-` stacks from prior runs (`pdlv-codebuild-projects`,
-    `pdlv-state-machine`) held the CodeBuild/Step-Functions resource-NAME LEASES, so the
-    canonical `pdlv-codebuild` / `pdlv-promotion-pipeline-stack` deploys hit
-    `ResourceExistenceCheck`.
-THEREFORE, before anything is validated, in ONE Hub CloudShell shell, from INSIDE the
-`~/pde-platform` clone on `feature/story-3.2`, do (a)→(d) IN ORDER:
-  (a) RECONCILE THE `pdlv-` NAMESPACE BY NAME (LIVE-RUNBOOK STEP 1): delete any `pdlv-`
-      stack NOT in the canonical set {`pdlv-hub-orchestrator`, `pdlv-codebuild`,
-      `pdlv-promotion-pipeline-stack`} — a HEALTHY-but-MISNAMED stray holds the real
-      name lease and collides, so sweep by NAME+membership, not just by dead/FAILED
-      status. `pdlv-*` ONLY — never touch a `pde-*` (ZTIE) stack, mgmt, or Forensics.
-      Verify only the canonical set (or nothing) remains before deploying.
-  (b) STEP 0 launch-pad lock (hard-exits unless you are inside the clone, on the branch,
-      with every deliverable on disk) + populate the two /pdlv/ SecureStrings
-      (external-id, repo-token) with REAL values;
-  (c) deploy ALL FOUR branch stacks FROM the branch: STEP 2a orchestrator
-      (`pdlv-hub-orchestrator`), 2b codebuild (`pdlv-codebuild`), 2c state-machine
-      (`pdlv-promotion-pipeline-stack`), 2d Dev member role — and VERIFY each live
-      resource CHANGED (the live member role carries `Story=3.2` + the pdlv--scoped
-      CFN+DynamoDB grant), never trust the deploy line;
-  (d) run `python3 scripts/preflight_story_3_2.py` to a printed PASS — it hard-fails
-      against stale infra. A non-PASS here = STOP and fix the environment, do NOT trigger
-      the pipeline.
-Only after (a)(b)(c)(d) does triggering the pipeline (STEP 4) test the DELIVERABLE. A
-green execution/deploy against stale or name-collided infra is the exact false signal
-that burned 5 cycles.
+# ##1 THE ONE THING THAT MUST NOT REPEAT ##
+All 5 prior attempts were ENVIRONMENT misses — the deliverable was NEVER under test
+(stale infra, a name collision, then misnamed `pdlv-` stacks holding name leases; full
+record in RUNBOOK §VD-9). The branch is offline/CI-green. So the deliverable is only
+tested if, in ONE Hub CloudShell shell from INSIDE the `~/pde-platform` clone on
+`feature/story-3.2`, you do (a)→(d) IN ORDER before triggering:
+  (a) RECONCILE the `pdlv-` namespace BY NAME (LIVE-RUNBOOK STEP 1): delete any `pdlv-`
+      stack outside the canonical set {`pdlv-hub-orchestrator`, `pdlv-codebuild`,
+      `pdlv-promotion-pipeline-stack`} — a healthy-but-MISNAMED stray holds the real name
+      lease, so sweep by NAME+membership, not just dead status. `pdlv-*` ONLY.
+  (b) STEP 0 launch-pad lock + populate the two `/pdlv/` SecureStrings (external-id,
+      repo-token) with REAL values.
+  (c) deploy all four branch stacks (orchestrator / codebuild / state-machine / Dev
+      member role) and VERIFY each live resource CHANGED — never trust the deploy line.
+  (d) `python3 scripts/preflight_story_3_2.py` → printed PASS. A non-PASS = STOP, fix the
+      environment, do NOT trigger.
+Only after (a)-(d) does triggering the pipeline (STEP 4) test the DELIVERABLE.
 
 # CRITICAL EXECUTION RULES (every command)
 - OFFLINE / NO LIVE EXEC BY YOU: the build sandbox has no AWS/PyPI. You author + prove
