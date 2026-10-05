@@ -5,7 +5,7 @@ Description: >-
   Story 2.2 state machine orchestrates: pdlv-lint (static analysis) and pdlv-deploy
   (cross-account CFN deploy). ZTIE-safe pdlv- prefix + Project=PDE tags (RD-009; pde-
   is ZTIE's). Orchestrate-and-pull (RD-006): per the Story 3.2 two-hop chain the
-  deploy project assumes the unified pde-hub-orchestrator role (hop 1), which assumes
+  deploy project assumes the unified pdlv-hub-orchestrator role (hop 1), which assumes
   the Story 1.1 member role with the ExternalId (hop 2) and deploys locally in the
   member - the service role's only cross-account power is sts:AssumeRole into the
   orchestrator (no broad Hub deploy policy, no wildcard/admin). The ExternalId is
@@ -45,11 +45,13 @@ Parameters:
       The EXACT name of the Story 3.2 unified Hub orchestrator role the deploy project
       assumes FIRST (hop 1). This decouples the member trust from the CodeBuild engine:
       the service role assumes the orchestrator, the orchestrator (which the member
-      roles trust) assumes the member. Must be pde-hub-orchestrator (the Phase-1
-      member-trust principal).
-    Default: pde-hub-orchestrator
-    AllowedPattern: "^pde-hub-orchestrator$"
-    ConstraintDescription: Must be exactly "pde-hub-orchestrator" (the Phase-1 member-trust principal).
+      roles trust) assumes the member. MUST be pdlv--prefixed (RD-009): the orchestrator
+      is a Hub resource, so it lives in PDE's pdlv- namespace. Default pdlv-hub-orchestrator
+      - deliberately NOT the legacy pde-hub-orchestrator name (collides with a pre-existing
+      Hub role and violates RD-009). The member-role trust is repointed to this same name.
+    Default: pdlv-hub-orchestrator
+    AllowedPattern: "^pdlv-[A-Za-z0-9+=,.@_-]{1,56}$"
+    ConstraintDescription: Must be a pdlv--prefixed role name (RD-009; the repointed member-trust principal).
 
   ExternalIdParameterName:
     Type: String

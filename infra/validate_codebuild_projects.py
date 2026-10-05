@@ -133,8 +133,9 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         # service role. So: no policy-list "- ...role/${MemberRoleName}-<env>" line.
         ("service role has NO direct member-role assume GRANT (orchestrator does hop 2)",
          not re.search(r"-\s+!Sub\s+\"arn:[^\"]*role/\$\{MemberRoleName\}-(dev|sandbox|prod)\"", raw)),
-        ("orchestrator role name param is pinned to pde-hub-orchestrator",
-         bool(re.search(r'AllowedPattern:\s*"\^pde-hub-orchestrator\$"', raw))),
+        ("orchestrator role name param defaults to pdlv-hub-orchestrator (RD-009; pdlv--only pattern)",
+         bool(re.search(r"Default:\s*pdlv-hub-orchestrator\b", raw))
+         and bool(re.search(r"OrchestratorRoleName:.*?AllowedPattern:\s*\"\^pdlv-", raw, re.DOTALL))),
         ("deploy project has NO direct cloudformation:* GRANT (deploy runs in-member)",
          "cloudformation:CreateStack" not in raw
          and "cloudformation:ExecuteChangeSet" not in raw),

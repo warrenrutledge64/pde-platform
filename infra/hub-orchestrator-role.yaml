@@ -2,14 +2,16 @@ AWSTemplateFormatVersion: "2010-09-09"
 
 Description: >-
   PDE Story 3.2 (Phase 3; RD-003/004/006/009). The unified Pipeline-Hub orchestrator
-  (pde-hub-orchestrator) that closes VD-3b and completes the two-hop deploy chain: the
-  pdlv-deploy CodeBuild service role assumes THIS role, and THIS role is the single
-  Hub principal the Story 1.1 member roles trust (pde-member-execution-<env> +
-  ExternalId, unchanged). A PURE PASS-THROUGH: its only permission is sts:AssumeRole
-  on the three member ARNs, its trust is pinned to the specific CodeBuild service role
-  (never the Hub root), and a permissions boundary caps it there so identity-policy
-  drift cannot escalate it. ZTIE-safe (RD-009): the pdlv- namespace for the Hub STACK
-  resources; the role keeps the name pde-hub-orchestrator (the Phase-1 trust principal).
+  (pdlv-hub-orchestrator) that closes VD-3b and completes the two-hop deploy chain: the
+  pdlv-deploy CodeBuild service role assumes THIS role, and THIS role is the single Hub
+  principal the Story 1.1 member roles trust (pde-member-execution-<env> + ExternalId;
+  the member trust is repointed to this pdlv- name in the same run). A PURE PASS-THROUGH:
+  its only permission is sts:AssumeRole on the three member ARNs, its trust is pinned to
+  the specific CodeBuild service role (never the Hub root), and a permissions boundary
+  caps it there. ZTIE-safe (RD-009): the orchestrator is a Hub resource, so it takes the
+  pdlv- namespace - deliberately NOT the legacy pde-hub-orchestrator name (which violates
+  RD-009 and collides with a pre-existing June-2026 Hub role), making this stack
+  collision-proof by construction.
 
 # ---------------------------------------------------------------------------
 # PARAMETERS
@@ -29,15 +31,17 @@ Parameters:
   OrchestratorRoleName:
     Type: String
     Description: >-
-      The EXACT name of the Hub orchestrator role. MUST stay pde-hub-orchestrator:
-      this is the specific principal the Story 1.1 member-role trust policies already
-      name (infra/member-execution-role.yaml HubOrchestratorRoleName default) and the
-      Phase-1 gate script (scripts/phase1_gate.py) runs as. Renaming it would break
-      the already-deployed member trust. It keeps the pde- prefix deliberately (it is
-      the identity the Phase-1 fabric is built around), NOT the Hub pdlv- prefix.
-    Default: pde-hub-orchestrator
-    AllowedPattern: "^pde-hub-orchestrator$"
-    ConstraintDescription: Must be exactly "pde-hub-orchestrator" (the Phase-1 member-trust principal).
+      The name of the Hub orchestrator role. MUST be pdlv--prefixed (RD-009): the
+      orchestrator is a Hub resource, so it lives in PDE's pdlv- namespace - NOT the
+      legacy pde-hub-orchestrator name. That legacy name both violates RD-009 (pde-* is
+      ZTIE's) AND collides with a pre-existing June-2026 role in the Hub, which blocked
+      the first live deploy. Picking a fresh pdlv- name makes this stack collision-proof
+      by construction. The Story 1.1 member-role trust (HubOrchestratorRoleName) and the
+      Phase-1 gate script (scripts/phase1_gate.py) are repointed to this same name, so
+      the two-hop chain names one consistent principal end to end.
+    Default: pdlv-hub-orchestrator
+    AllowedPattern: "^pdlv-[A-Za-z0-9+=,.@_-]{1,56}$"
+    ConstraintDescription: Must be a pdlv--prefixed role name (RD-009; collision-proof vs. the legacy pde-hub-orchestrator).
 
   CodeBuildServiceRoleName:
     Type: String
@@ -137,7 +141,7 @@ Resources:
   # --- The Hub orchestrator role (the unified cross-account chokepoint) -------
   # Trust is pinned to EXACTLY the pdlv-deploy CodeBuild service role (hop 1) - never
   # the Hub account root. Combined with the member trust (which names THIS role +
-  # ExternalId), the chain is: pdlv-codebuild-service-role -> pde-hub-orchestrator ->
+  # ExternalId), the chain is: pdlv-codebuild-service-role -> pdlv-hub-orchestrator ->
   # pde-member-execution-<env>, and each link trusts exactly one specific principal.
   # The boundary makes the role non-escalatable regardless of future identity edits.
   HubOrchestratorRole:
@@ -184,7 +188,7 @@ Outputs:
       Name: pdlv-hub-orchestrator-role-arn
 
   HubOrchestratorRoleName:
-    Description: Name of the PDE Hub orchestrator role (matches the Phase-1 member-trust principal).
+    Description: Name of the PDE Hub orchestrator role (the repointed Phase-1 member-trust principal; pdlv- namespace).
     Value: !Ref HubOrchestratorRole
 
   OrchestratorPermissionsBoundaryArn:

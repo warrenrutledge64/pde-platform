@@ -1,8 +1,9 @@
 # Story 3.2 — LIVE Deploy Runbook (FIRST real end-to-end pipeline run; closes VD-3b)
 
 > **Story 3.2 = the FIRST time the real pipeline does a real cross-account deploy.**
-> It stands up the unified Hub orchestrator (`pde-hub-orchestrator`), lights up the
-> **two-hop deploy chain** (`pdlv-codebuild-service-role` → `pde-hub-orchestrator` →
+> It stands up the unified Hub orchestrator (`pdlv-hub-orchestrator` — a fresh,
+> collision-proof RD-009 name, NOT the legacy `pde-hub-orchestrator`), lights up the
+> **two-hop deploy chain** (`pdlv-codebuild-service-role` → `pdlv-hub-orchestrator` →
 > `pde-member-execution-dev`), triggers the live `pdlv-promotion-pipeline`, and lets
 > the Hub orchestrate a cross-account CloudFormation deploy of the frozen Story 3.1
 > Golden-Path artifact into **Pipeline-Dev `946509368326`**. Done when the Dev artifact
@@ -29,13 +30,14 @@
 > genuine two-hop chain:
 >
 > 1. **Hop 1** — the `pdlv-deploy` CodeBuild service role assumes the NEW
->    `pde-hub-orchestrator` role (same account).
-> 2. **Hop 2** — the orchestrator (which the Phase-1 member roles already trust, with
->    the ExternalId) assumes `pde-member-execution-dev` and the deploy runs LOCALLY in
->    Dev (RD-006).
+>    `pdlv-hub-orchestrator` role (same account).
+> 2. **Hop 2** — the orchestrator (which the Phase-1 member roles trust once repointed,
+>    with the ExternalId) assumes `pde-member-execution-dev` and the deploy runs LOCALLY
+>    in Dev (RD-006). _(The member trust default is now `pdlv-hub-orchestrator`; STEP 2d
+>    redeploys the Dev member role from the branch, which repoints the live trust.)_
 >
 > Three things must be in place for hop 2 to succeed, and each is a STEP below:
-> - the `pde-hub-orchestrator` role exists and is trusted ONLY by the deploy service
+> - the `pdlv-hub-orchestrator` role exists and is trusted ONLY by the deploy service
 >   role (STEP 2);
 > - the Dev member role can actually create the artifact (its execution policy now
 >   grants `pdlv-`-scoped CloudFormation + DynamoDB — a redeploy of the member role,
@@ -171,26 +173,30 @@ aws cloudformation list-stacks \
 Three deploys, all **additive** / in-place updates of `pdlv-` Hub stacks (plus a member
 redeploy per account). Each carries the mandatory `Project=PDE` stack tag (OD-012).
 
-**2a — the NEW unified Hub orchestrator** (`pde-hub-orchestrator`, pass-through + boundary,
+**2a — the NEW unified Hub orchestrator** (`pdlv-hub-orchestrator`, pass-through + boundary,
 trust pinned to the deploy service role):
 
-> ⚠️ **LEGACY-ROLE COLLISION (found in attempt 2):** a `pde-hub-orchestrator` role already
-> exists in the Hub, created `2026-06-10`, NOT managed by this stack (it trusts Step Functions,
-> holds S3/events power, targets `pde-cross-account-deployer`). This CFN stack creates a role
-> of the SAME name — `CreateStack` will fail with "already exists" if the legacy role is still
-> there. Confirm whether it is CFN-managed and, if it is an un-managed legacy role, delete it
-> first (it is a `pde-` *role*, not a ZTIE `pde-*` *stack* — deleting this specific role is in
-> scope for closing VD-3b; do NOT touch any `pde-*` stack):
+> ✅ **COLLISION-PROOF BY DESIGN (resolves the attempt-4 blocker).** Attempt 4 was blocked
+> because the earlier template tried to create a role literally named `pde-hub-orchestrator`,
+> and a legacy role of that exact name already exists in the Hub (created `2026-06-10`, trusts
+> Step Functions, targets `pde-cross-account-deployer`). Per the stakeholder decision (Q1,
+> 2026-10-05), the Story-3.2 orchestrator is renamed to **`pdlv-hub-orchestrator`** — a fresh
+> `pdlv-` name (RD-009-clean; `pde-*` is ZTIE's). Because the name is new, this deploy CANNOT
+> collide with the legacy role, so there is **no legacy-cleanup step and nothing to delete** —
+> you never touch, delete, or even need to diagnose the ownership of the legacy
+> `pde-hub-orchestrator` role (whether it is CFN-managed by `PDE-Orchestrator-Foundation` or
+> un-managed no longer matters). This honours the ZTIE/legacy zero-touch boundary.
+>
+> _(Optional, informational only — NOT required to proceed. If you want the record of what the
+> legacy role is, you may read it; it is never modified:_
 > ```bash
-> # Target: Pipeline-Hub 641628980935 (us-east-1)
+> # Target: Pipeline-Hub 641628980935 (us-east-1) — READ-ONLY, informational
 > aws iam get-role --role-name pde-hub-orchestrator \
->   --query "Role.{Created:CreateDate,Trust:AssumeRolePolicyDocument.Statement[0].Principal}" --output json
-> # If it is the June-10 legacy role (trusts states.amazonaws.com) and NOT managed by a
-> # pdlv- stack, detach its inline policies + delete it so the stack can create the correct one:
-> #   for p in $(aws iam list-role-policies --role-name pde-hub-orchestrator --query PolicyNames --output text); do \
-> #     aws iam delete-role-policy --role-name pde-hub-orchestrator --policy-name "$p"; done
-> #   aws iam delete-role --role-name pde-hub-orchestrator
+>   --query "Role.{Created:CreateDate,Tags:Tags,Path:Path}" --output json 2>/dev/null \
+>   || echo "legacy pde-hub-orchestrator not present (nothing to note)"
 > ```
+> _A `aws:cloudformation:stack-name` tag ⇒ it is CFN-managed by that stack; absent ⇒ un-managed
+> legacy. Either way we do nothing to it — our role is `pdlv-hub-orchestrator`.)_
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
@@ -202,10 +208,13 @@ aws cloudformation deploy \
   --no-fail-on-empty-changeset
 aws cloudformation describe-stacks --stack-name pdlv-hub-orchestrator \
   --query "Stacks[0].StackStatus" --output text        # expect CREATE_COMPLETE / UPDATE_COMPLETE
-# Confirm the role is now the Story-3.2 role (trust pinned to the CodeBuild service role):
-aws iam get-role --role-name pde-hub-orchestrator \
+# Confirm the NEW role exists and its trust is pinned to the CodeBuild service role:
+aws iam get-role --role-name pdlv-hub-orchestrator \
   --query "Role.AssumeRolePolicyDocument.Statement[0].Principal" --output json
 #   expect AWS=.../role/pdlv-codebuild-service-role  (NOT Service=states.amazonaws.com)
+# Confirm the permissions boundary is attached:
+aws iam get-role --role-name pdlv-hub-orchestrator \
+  --query "Role.PermissionsBoundary" --output json      # expect a pdlv-hub-orchestrator-boundary ARN
 ```
 
 **2b — refresh the CodeBuild projects** (the `pdlv-deploy` project now does the two-hop
@@ -305,7 +314,7 @@ cleanly attributed. Run in Hub CloudShell.
 aws sts get-caller-identity --query Account --output text   # 641628980935
 # HOP 1: assume the orchestrator (as yourself / the CodeBuild role if you can):
 ORCH=$(aws sts assume-role \
-  --role-arn arn:aws:iam::641628980935:role/pde-hub-orchestrator \
+  --role-arn arn:aws:iam::641628980935:role/pdlv-hub-orchestrator \
   --role-session-name vd3b-hop1 --query Credentials --output json 2>&1) && echo "HOP1 OK" || echo "HOP1: $ORCH"
 # (If you are not the deploy service role, hop 1 may be denied by the pinned trust —
 #  that is CORRECT. The authoritative hop-1+hop-2 proof is the pipeline run in STEP 4,
@@ -482,3 +491,71 @@ Whether a true Catch-22 exists depends on one unverified fact: is `pde-hub-orche
 4. Establish the Dev route (`dev-profile` → `946509368326`), confirm `pdlv-golden-path-artifact` does not pre-exist, then run the full LIVE-RUNBOOK and paste raw output for the final seal (Attempt 5).
 
 Per the write-only-scribe covenant: Story 3.2 stays 🟡, no status flipped, `governance/RUNBOOK.md` untouched. For the re-run, judge the Dev member role by POLICY CONTENT (concrete `dynamodb:` table-lifecycle actions scoped to `table/pdlv-*`; CloudFormation scoped to `stack/pdlv-*`), not the `Story` tag.
+
+---
+
+## Attempt 5 — RESOLUTION OF THE ATTEMPT-4 BLOCKER (orchestrator name collision)
+
+**Date:** 2026-10-05
+**Decision owner:** warrenrutledge64 (stakeholder) — chose **Q1** (rename), builder implemented.
+
+Attempt 4 sealed INCONCLUSIVE because the Hub deploy was blocked by a name collision: the
+earlier Story-3.2 orchestrator template tried to create a role named literally
+`pde-hub-orchestrator`, and a legacy role of that exact name already exists in the Hub
+(`CreateDate 2026-06-10`; trusts `states.amazonaws.com`; targets `pde-cross-account-deployer`).
+Whether that legacy role is CFN-managed (e.g. by `PDE-Orchestrator-Foundation`) or un-managed
+dictated two mutually-exclusive remedies — and could only be read live.
+
+**Resolution (collision-proof regardless of that ownership answer):** the Story-3.2
+orchestrator is **renamed `pde-hub-orchestrator` → `pdlv-hub-orchestrator`**, and the Phase-1
+member-role trust + the Phase-1 gate script are repointed to the new name. This:
+
+- is **RD-009-clean** — the orchestrator is a Hub resource, so it belongs in the `pdlv-`
+  namespace (the legacy `pde-hub-orchestrator` name was itself an RD-009 violation);
+- is **collision-proof by construction** — a brand-new `pdlv-` name cannot collide with the
+  legacy `pde-hub-orchestrator`, so there is **no legacy cleanup / delete step** and the
+  legacy role's ownership (CFN-managed vs. un-managed) **no longer matters** — we never touch,
+  delete, or diagnose it (ZTIE/legacy zero-touch boundary honoured);
+- repoints the member trust **in the same run** — STEP 2d redeploys the Dev member role from
+  the branch (its `HubOrchestratorRoleName` default is now `pdlv-hub-orchestrator`), so the
+  live Dev trust names the new orchestrator.
+
+**What changed in the deliverable (branch `feature/story-3.2`):**
+`infra/hub-orchestrator-role.yaml` (role name → `pdlv-hub-orchestrator`, `pdlv-`-only
+`AllowedPattern`, pdlv- export names unchanged); `infra/member-execution-role.yaml`
+(`HubOrchestratorRoleName` default → `pdlv-hub-orchestrator`); `infra/codebuild-projects.yaml`
+(`OrchestratorRoleName` default → `pdlv-hub-orchestrator`, hop-1 target by param, unchanged);
+`scripts/phase1_gate.py` (`HUB_ORCHESTRATOR_ROLE = "pdlv-hub-orchestrator"`);
+`scripts/preflight_story_3_2.py` (`ORCHESTRATOR_ROLE = "pdlv-hub-orchestrator"`); the offline
+checkers + their `--self-test`s updated accordingly (all green). The two-hop chain is now
+`pdlv-codebuild-service-role → pdlv-hub-orchestrator → pde-member-execution-<env>`.
+
+**This SUPERSEDES the Attempt-3/4 "operator next steps" above** (the delete-if-unmanaged /
+kick-back-if-CFN-managed branch): there is no longer a branch to take — just run the clean
+LIVE-RUNBOOK top to bottom. The Attempt-3/4 records themselves are retained verbatim as the
+audit trail (do not edit sealed verdicts); only the forward operator action changes.
+
+### The clean Attempt-5 run (no legacy cleanup)
+
+1. **STEP 0** — launch pad + LAUNCH-PAD LOCK (inside the `feature/story-3.2` clone) + populate
+   the two `/pdlv/` SecureStrings (`external-id` = the real Phase-1 member-trust secret;
+   `repo-token` = a read-only PAT).
+2. **STEP 1** — dead-stack sweep (`pdlv-*` only).
+3. **STEP 2a-2c** — deploy `pdlv-hub-orchestrator` (new name, no collision), refresh
+   `pdlv-codebuild`, refresh `pdlv-promotion-pipeline-stack` (Hub).
+4. **STEP 2d** — redeploy the Dev member role from the branch (Pipeline-Dev `946509368326`),
+   then VERIFY the live role changed: `Story=3.2` tag, `stack/pdlv-*` CFN scope + `table/pdlv-*`
+   DynamoDB grant, and the trust Principal now names `.../role/pdlv-hub-orchestrator` with a
+   real ExternalId.
+5. **STEP 4 PRE-FLIGHT** — `python3 scripts/preflight_story_3_2.py --hub-profile <hub>
+   --dev-profile <dev>` MUST print `preflight_story_3_2: PASS` (it now reads the live
+   `pdlv-hub-orchestrator`). A FAIL = branch not deployed; go back to STEP 2.
+6. **STEP 4/5** — trigger `pdlv-promotion-pipeline`, let DeployDev run the two-hop deploy, and
+   verify from the live Dev account: the `pdlv-golden-path-artifact` stack is `CREATE_COMPLETE`
+   and `describe-table` returns the on-demand `pdlv-golden-path-artifact` table tagged
+   `Project=PDE`. Paste ALL raw output back for the independent validator to seal Attempt 5.
+
+> For the re-run, judge the Dev member role by POLICY CONTENT (concrete `dynamodb:`
+> table-lifecycle actions scoped to `table/pdlv-*`; CloudFormation scoped to `stack/pdlv-*`),
+> not the `Story` tag. Per the write-only-scribe covenant Story 3.2 stays 🟡 until the sealed
+> PASS; `governance/RUNBOOK.md` is updated only on the recorded verdict.

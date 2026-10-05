@@ -22,8 +22,9 @@ validator / operator runs this BEFORE triggering the pipeline; a non-zero exit m
 WHAT IT PROVES (reads live AWS; needs Hub + Dev read creds)
 -----------------------------------------------------------
 Hub (641628980935):
-  * `pde-hub-orchestrator` trust names ONLY `pdlv-codebuild-service-role` (NOT any
-    `*.amazonaws.com` service, NOT `:root`);
+  * `pdlv-hub-orchestrator` (the RD-009 rename of the legacy pde-hub-orchestrator)
+    trust names ONLY `pdlv-codebuild-service-role` (NOT any `*.amazonaws.com`
+    service, NOT `:root`);
   * it carries a PermissionsBoundary;
   * it has NO local Hub power (no s3:/events:/logs: inline or attached statements) and
     its only action is `sts:AssumeRole` to the three `pde-member-execution-<env>` ARNs
@@ -54,7 +55,9 @@ import sys
 
 HUB_ACCOUNT = "641628980935"
 DEV_ACCOUNT = "946509368326"
-ORCHESTRATOR_ROLE = "pde-hub-orchestrator"
+# The Story-3.2 Hub orchestrator is pdlv--named (RD-009; renamed from the legacy
+# pde-hub-orchestrator to be collision-proof vs. the pre-existing June-2026 Hub role).
+ORCHESTRATOR_ROLE = "pdlv-hub-orchestrator"
 MEMBER_ROLE_DEV = "pde-member-execution-dev"
 CODEBUILD_SERVICE_ROLE = "pdlv-codebuild-service-role"
 STATE_MACHINE_NAME = "pdlv-promotion-pipeline"

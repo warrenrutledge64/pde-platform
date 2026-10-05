@@ -5,7 +5,7 @@ The build sandbox is network-restricted (no PyPI), so cfn-lint / Checkov run
 operator-side / in CI. This stdlib-only checker is the OFFLINE proof bar for the
 Story 3.2 unified Hub orchestrator (RD-003/RD-004/RD-006/RD-009) — the middle
 identity of the two-hop deploy chain (pdlv-codebuild-service-role ->
-pde-hub-orchestrator -> pde-member-execution-<env>). It confirms the role is a
+pdlv-hub-orchestrator -> pde-member-execution-<env>). It confirms the role is a
 PURE PASS-THROUGH chokepoint: its only permission is sts:AssumeRole scoped to the
 three named member role ARNs, its trust is pinned to EXACTLY the CodeBuild deploy
 service role (never the Hub root), and a permissions boundary caps it at exactly
@@ -74,9 +74,10 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         # --- The orchestrator role itself ---
         ("declares exactly one IAM role (the orchestrator)",
          raw.count("Type: AWS::IAM::Role") == 1),
-        ("role name is pinned to pde-hub-orchestrator (the Phase-1 member-trust principal)",
-         bool(re.search(r'AllowedPattern:\s*"\^pde-hub-orchestrator\$"', raw))
-         and bool(re.search(r"Default:\s*pde-hub-orchestrator\b", raw))),
+        ("orchestrator role name defaults to pdlv-hub-orchestrator with a pdlv--only pattern (RD-009; collision-proof vs. the legacy pde-hub-orchestrator)",
+         bool(re.search(r"Default:\s*pdlv-hub-orchestrator\b", raw))
+         and bool(re.search(r"OrchestratorRoleName:.*?AllowedPattern:\s*\"\^pdlv-", raw, re.DOTALL))
+         and not re.search(r"Default:\s*pde-hub-orchestrator\b", raw)),
         ("role attaches a PermissionsBoundary",
          "PermissionsBoundary: !Ref OrchestratorPermissionsBoundary" in raw),
         ("role has a bounded session duration",

@@ -31,10 +31,14 @@ Parameters:
     Description: >-
       The EXACT name of the Hub-side orchestrator role allowed to assume/direct
       this member execution role. Per RD-006 the member trusts a specific Hub
-      ROLE, not the Hub account root. This orchestrator role is created in the Hub
-      during Phase 2; the trust may name it before it exists (it resolves at
-      assume-time).
-    Default: pde-hub-orchestrator
+      ROLE, not the Hub account root. The orchestrator role lives in PDE's pdlv-
+      Hub namespace (RD-009): the default is pdlv-hub-orchestrator, matching the
+      Story 3.2 Hub orchestrator stack (infra/hub-orchestrator-role.yaml) and the
+      Phase-1 gate script (scripts/phase1_gate.py). It is deliberately NOT the
+      legacy pde-hub-orchestrator name, which collides with a pre-existing Hub role
+      and violates RD-009. The trust may name it before it exists (resolved at
+      assume-time); re-deploying this stack repoints the live member trust to it.
+    Default: pdlv-hub-orchestrator
     AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
 
   ExternalId:

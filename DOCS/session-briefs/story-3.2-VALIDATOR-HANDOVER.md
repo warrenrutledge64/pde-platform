@@ -50,14 +50,18 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
 - **THE TWO-HOP DEPLOY CHAIN (the architecture that closes VD-3b).** The real pipeline
   reaches a member account through exactly this chain, and each link trusts exactly one
   principal:
-    pdlv-codebuild-service-role  --(hop 1, same account)-->  pde-hub-orchestrator
-    pde-hub-orchestrator         --(hop 2, cross-account, + ExternalId)-->  pde-member-execution-dev
-  The NEW `pde-hub-orchestrator` role is a PURE PASS-THROUGH: its ONLY permission is
+    pdlv-codebuild-service-role  --(hop 1, same account)-->  pdlv-hub-orchestrator
+    pdlv-hub-orchestrator        --(hop 2, cross-account, + ExternalId)-->  pde-member-execution-dev
+  The NEW `pdlv-hub-orchestrator` role is a PURE PASS-THROUGH: its ONLY permission is
   `sts:AssumeRole` on the three member role ARNs, its trust is pinned to EXACTLY the
   `pdlv-codebuild-service-role` (never the Hub root), and a PERMISSIONS BOUNDARY caps it
   at exactly that so a future over-permissive edit cannot escalate it. The Phase-1
-  member roles are UNCHANGED in their trust direction — they still trust
-  `pde-hub-orchestrator` + the ExternalId; this story just makes that principal exist.
+  member roles keep the SAME trust SHAPE (a single specific Hub role ARN + the
+  ExternalId); this story stands that principal up and REPOINTS the member trust to it
+  by its RD-009-clean name `pdlv-hub-orchestrator` (renamed from the legacy
+  `pde-hub-orchestrator`, which collides with a pre-existing Hub role — see the LIVE-RUNBOOK
+  Attempt-5 resolution). STEP 2d redeploys the Dev member role from the branch, so the live
+  trust names `pdlv-hub-orchestrator`.
 - **The ExternalId is resolved at the EDGE, never carried through the orchestration.**
   The deploy CodeBuild project reads it from a Hub SSM SecureString
   (`/pdlv/promotion/external-id`) via a `PARAMETER_STORE` env var (natively decrypted +
@@ -83,10 +87,14 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
   member role as a DEFECT. Verify from the LIVE deployed policy JSON, not the template.
 - **RD-009 (ratified):** PDE's Hub resource prefix is **`pdlv-`**, NOT `pde-` (ZTIE's
   namespace — 18 pre-existing `pde-*` stacks). The deployed ARTIFACT stack + table are
-  `pdlv-`. Exception: the member roles AND the orchestrator role correctly keep their
-  `pde-member-execution-<env>` / `pde-hub-orchestrator` names (they are the Phase-1
-  trust principals; renaming them would rewrite the validated Phase-1 baseline). Treat a
-  PDE Hub STACK or artifact deployed under `pde-` as a DEFECT.
+  `pdlv-`. The NEW Hub orchestrator role is `pdlv-hub-orchestrator` (a Hub resource, so
+  it is correctly in the `pdlv-` namespace — NOT the legacy `pde-hub-orchestrator`, which
+  both violates RD-009 and collides with a pre-existing Hub role; Q1 stakeholder decision
+  2026-10-05). The ONLY `pde-`-named PDE resources are the three MEMBER execution roles
+  `pde-member-execution-<env>`, which correctly keep that name because they live in the
+  MEMBER accounts (no Hub-namespace collision). Treat ANY PDE **Hub** stack, artifact, or
+  role deployed under `pde-` (including a `pde-hub-orchestrator`) as a DEFECT — the live
+  orchestrator the pipeline uses MUST be `pdlv-hub-orchestrator`.
 - **RD-003/RD-004:** AWS-native (Step Functions + CodeBuild) + CloudFormation (YAML) +
   AWS CLI / Python 3 only — no Terraform. **Universal Criterion 1:** zero-touch
   management/root 467866449172. **Universal Criterion 5:** strictly additive / ZTIE-safe
@@ -154,8 +162,9 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
      - BEFORE the run, the Dev `pdlv-golden-path-artifact` stack does NOT already exist
        (so a PASS proves THIS run created it); the Hub deploys are additive (no `pde-*`
        stack, management, or Forensics touched); the `pdlv-` namespace is respected.
-     - The NEW `pde-hub-orchestrator` role, from its LIVE policy/trust JSON (not the
-       template): its ONLY action is `sts:AssumeRole`, scoped to exactly the three
+     - The NEW `pdlv-hub-orchestrator` role, from its LIVE policy/trust JSON (not the
+       template; and confirm the live role is `pdlv-hub-orchestrator`, NOT a `pde-`
+       one): its ONLY action is `sts:AssumeRole`, scoped to exactly the three
        `pde-member-execution-<env>` ARNs; its trust names ONLY the
        `pdlv-codebuild-service-role` (NOT `:root`, NOT any other principal); it carries a
        PermissionsBoundary; it has NO local Hub power (no cloudformation/s3/logs/kms/ssm)
@@ -223,7 +232,7 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
 > `governance/RUNBOOK.md` Story 3.2 and — **only on PASS** — flips it 🟡 → ✅ (fills the
 > Completed date + the `Validation Result` line), clears **VD-3b** (and VD-9 if opened),
 > confirms the merge-order guard reads **DISARMED** at head, adds the new deployed
-> resources (the `pde-hub-orchestrator` role + boundary, the two `/pdlv/` SSM
+> resources (the `pdlv-hub-orchestrator` role + boundary, the two `/pdlv/` SSM
 > SecureStrings, the Dev `pdlv-golden-path-artifact` stack/table) to BOM §2, and authors
 > Story 3.3's warm handoff. **This does NOT close Phase 3** (3.3 promote-to-Sandbox +
 > 3.4 release-to-Prod remain; the Phase 3 gate is the live Prod artifact query). On
