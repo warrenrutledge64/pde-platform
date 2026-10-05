@@ -48,7 +48,8 @@ deploy.**
 
 - **In scope:** committing the artifact so the pipeline consumes it; starting the pipeline
   execution; **standing up VD-3b** — the live Hub→member trust so the Hub orchestrator role
-  (`pde-hub-orchestrator`) can `sts:AssumeRole` into the `pde-member-execution-dev` role with
+  (`pdlv-hub-orchestrator`, the RD-009-clean rename of the colliding legacy
+  `pde-hub-orchestrator`) can `sts:AssumeRole` into the `pde-member-execution-dev` role with
   the ExternalId, and the member role deploys the artifact LOCALLY in Dev (RD-006
   orchestrate-and-pull); verifying the live Dev deploy (`describe-stacks` + `describe-table`).
 - **Out of scope:** the Dev→Sandbox approval + promotion (Story 3.3); Sandbox→Prod (3.4);
@@ -106,9 +107,11 @@ deploy.**
 
 - **VD-3b is the likely first blocker.** The production pipeline has never done a real
   cross-account assume (the Phase-2 gate used the non-promoting `pdlv-gate-probe`). The Hub
-  orchestrator role (`pde-hub-orchestrator`) + the member trust (`pde-member-execution-dev`
+  orchestrator role (`pdlv-hub-orchestrator`) + the member trust (`pde-member-execution-dev`
   trusting that specific role with the ExternalId) must exist and align, or DeployDev fails
-  with an AssumeRole/AccessDenied. Stand this up FIRST and prove the assume live.
+  with an AssumeRole/AccessDenied. Stand this up FIRST and prove the assume live. _(The
+  orchestrator was renamed from the colliding legacy `pde-hub-orchestrator` to the clean
+  `pdlv-hub-orchestrator` — Q1 decision 2026-10-05 — so the deploy is collision-proof.)_
 - **Least-privilege service-delivery actions (the Phase-2 lesson).** If any Step Functions /
   service-integration IAM is touched, certain AWS service-delivery actions reject a
   resource-scoped grant and need `Resource "*"` (the EventBridge `.sync` managed-rule;
@@ -151,8 +154,9 @@ deploy.**
 - **VD-3b carries into 3.2 (the first real cross-account assume).** Phase 2 deliberately
   proved its gate with the non-promoting `pdlv-gate-probe`, so the live Hub→member assume
   has NEVER run in production. 3.2's real Dev deploy will fail at DeployDev until
-  `pde-hub-orchestrator` (Hub) + the `pde-member-execution-dev` trust (member, trusting that
-  specific role + ExternalId) exist and align. Treat standing up + proving VD-3b as the
+  `pdlv-hub-orchestrator` (Hub; renamed from the colliding legacy `pde-hub-orchestrator`) +
+  the `pde-member-execution-dev` trust (member, trusting that specific role + ExternalId)
+  exist and align. Treat standing up + proving VD-3b as the
   first task.
 - **Current true state at handoff:** Phase 1 ✅ (`restore/phase-1-green`); Phase 2 ✅ CLOSED
   (`restore/phase-2-green` @ `8f85740`); 2.1/2.2/2.3 ✅; **Story 3.1 ✅** (sealed PASS

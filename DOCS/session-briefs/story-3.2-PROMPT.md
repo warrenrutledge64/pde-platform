@@ -57,7 +57,8 @@ of that artifact into Pipeline-Dev (946509368326).
 # CARRY-FORWARD (actual lessons — read these)
 - **VD-3b is the likely first blocker.** The production pipeline has NEVER done a real
   cross-account assume — Phase 2's gate used the SEPARATE non-promoting `pdlv-gate-probe`.
-  3.2's real Dev deploy fails at DeployDev until `pde-hub-orchestrator` (Hub) + the
+  3.2's real Dev deploy fails at DeployDev until `pdlv-hub-orchestrator` (Hub; the RD-009
+  rename of the colliding legacy `pde-hub-orchestrator`) + the
   `pde-member-execution-dev` trust (member, trusting that specific role + ExternalId)
   exist and align. Stand it up and prove the assume live before expecting DeployDev to
   pass.
