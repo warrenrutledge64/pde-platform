@@ -555,7 +555,9 @@ audit trail (do not edit sealed verdicts); only the forward operator action chan
    and `describe-table` returns the on-demand `pdlv-golden-path-artifact` table tagged
    `Project=PDE`. Paste ALL raw output back for the independent validator to seal Attempt 5.
 
-> For the re-run, judge the Dev member role by POLICY CONTENT (concrete `dynamodb:`
-> table-lifecycle actions scoped to `table/pdlv-*`; CloudFormation scoped to `stack/pdlv-*`),
-> not the `Story` tag. Per the write-only-scribe covenant Story 3.2 stays 🟡 until the sealed
-> PASS; `governance/RUNBOOK.md` is updated only on the recorded verdict.
+> This runbook is the operator execution surface (how to produce the raw output); it is
+> NOT the acceptance criteria. The INDEPENDENT validator authors the Definition of Done
+> itself (split-brain, METHODOLOGY §4a) from the stakeholder's requirement + the raw repo
+> change, and may adopt, reorder, or ignore these steps. Per the write-only-scribe covenant
+> Story 3.2 stays 🟡 until the sealed PASS; `governance/RUNBOOK.md` is updated only on the
+> recorded verdict.
