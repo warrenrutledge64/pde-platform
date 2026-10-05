@@ -272,7 +272,14 @@ infra, so a run can no longer start on the wrong baseline); (5) ONLY THEN start 
 assume lands in Dev `946509368326` (VD-3b proven live), the artifact stack reaches
 `CREATE_COMPLETE`, and `describe-table` returns the live `pdlv-golden-path-artifact`
 (on-demand, `Project=PDE`). **VD-9 is OPEN / gate ARMED** until that recorded PASS; on PASS,
-clear VD-9, flip 3.2 ✅, add the new resources to BOM §2, author Story 3.3's handoff. Carry-forward
+clear VD-9, flip 3.2 ✅, add the new resources to BOM §2, author Story 3.3's handoff. **PR
+structure (two PRs, METHODOLOGY §7):** Story 3.2's non-deliverable work (handoff docs +
+these ledger records) merged via **docs-only PR #43** (ungated — no `infra/*.yaml`); the
+deployable `infra/*.yaml` templates + their pinned checkers/scripts + the static-bar
+workflow stay on the **gated PR #42**, which is intentionally un-mergeable while the gate is
+ARMED. The close-out rides **#42**: landing the ✅ flip + VD-9 clear + **Gate: DISARMED** on
+`feature/story-3.2` turns the merge-order guard GREEN so #42 merges deliverable + close-out
+together. Carry-forward
 Phase-2 lessons still apply (service-delivery IAM actions needing `Resource "*"`; ASCII-only
 IAM `Description`; name-agnostic dead-stack sweep before re-deploy; capture the CFN
 `CREATE_FAILED` reason; verify the LIVE result not the green line). _(Phase-2 completeness

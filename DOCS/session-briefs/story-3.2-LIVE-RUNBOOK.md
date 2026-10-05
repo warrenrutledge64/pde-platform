@@ -410,6 +410,19 @@ aws dynamodb list-tags-of-resource \
 > Hand ALL raw output back to the validator. On the sealed PASS the executor records
 > the verdict, flips 3.2 ✅, and authors Story 3.3's warm handoff. 3.2 does NOT close
 > Phase 3 (3.3/3.4 remain). On FAIL/INCONCLUSIVE, 3.2 stays 🟡.
+>
+> **PR STRUCTURE FOR THE CLOSE-OUT (two PRs, by design — see METHODOLOGY §7).** Story
+> 3.2's non-deliverable work (this runbook + the handoff docs + the governance ledger
+> records of attempts 1-4 and the Q1 rename) was split onto **docs-only PR #43**, which
+> merged to `main` immediately because it touches no `infra/*.yaml` (the merge-order
+> guard does not apply). The **deployable deliverable** — the four `infra/*.yaml`
+> templates + their pinned checkers/scripts + the static-bar workflow — stays on the
+> **gated PR #42**, which is intentionally un-mergeable (`mergeable_state: unstable`,
+> merge-order guard RED) while the gate is **ARMED**. So the close-out rides **#42**:
+> on the sealed PASS, land the close-out commit on `feature/story-3.2` (record the
+> verdict in `governance/RUNBOOK.md`, flip 3.2 ✅, clear VD-9 → set **Gate status:
+> DISARMED**, add the new deployed resources to BOM §2). The merge-order guard then
+> goes GREEN, #42 becomes mergeable, and the deliverable + close-out land together.
 
 ---
 
