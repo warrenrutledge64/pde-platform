@@ -27,7 +27,7 @@
 | Component | Type | Version | Notes |
 |-----------|------|---------|-------|
 | `infra/member-execution-role.yaml` | CloudFormation template | Story 1.1 | Orchestrate-and-pull trust fabric — member exec role the Hub *orchestrator* invokes (RD-006 amended). Offline-proven (21 invariants). Not yet deployed. |
-| `scripts/phase1_gate.py` | Python 3 / Boto3 script | Story 1.2 | Phase-1 gate — Hub (as `pde-hub-orchestrator`) assumes each `pde-member-execution-<env>` role (Dev→Sandbox→Prod) with the ExternalId and prints the returned account ids. Offline-proven (24 invariants). Its live cross-account run is the deferred VD-3b (Phase 2). |
+| `scripts/phase1_gate.py` | Python 3 / Boto3 script | Story 1.2 | Phase-1 gate — Hub (as `pdlv-hub-orchestrator`, repointed from the legacy `pde-hub-orchestrator` in Story 3.2 per RD-009) assumes each `pde-member-execution-<env>` role (Dev→Sandbox→Prod) with the ExternalId and prints the returned account ids. Offline-proven (24 invariants). Its live cross-account run is the deferred VD-3b, proven in Story 3.2. |
 | `scripts/test_phase1_gate.py` | Python 3 (stdlib) checker | Story 1.2 | Offline proof bar for the Phase-1 gate script — 24 source + behaviour invariants against a fake STS stub (no AWS / no network). |
 | `DOCS/CLOUDSHELL_BOOTSTRAP.md` | Operator runbook | Story 1.2 | Reproducible Pipeline-Hub CloudShell bootstrap — credential-helper repo clone (no token in URL), explicit feature-branch checkout, AWS CLI / Python 3 / Boto3 / cfn-lint tooling, ExternalId-as-env-var, gate-script usage. |
 | `scripts/bootstrap_launchpad.sh` | Bash bootstrap script | Story 1.2 | One named command that stands up + VERIFIES the Hub launch pad (Hub-account check, credential-helper PAT, clean clone + `feature/story-1.2` checkout, fail-loud launch-pad VERIFY). Removes the copy-paste-a-stale-block failure mode (attempts 1–2). |
@@ -65,10 +65,12 @@
 | PDE gate-probe role | IAM role (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-gate-probe-role` in `641628980935` (+ managed policies `pdlv-gate-probe-publish`, `pdlv-gate-probe-logs`) — publish + own-logs only | 2 | `restore/phase-2-green` |
 | PDE gate-probe log group | CloudWatch Logs group (CFN stack `pdlv-promotion-pipeline-stack`) | `/aws/vendedlogs/states/pdlv-gate-probe` in `641628980935` | 2 | `restore/phase-2-green` |
 
-> The three member roles trust the specific Hub role `pde-hub-orchestrator` + an
-> `sts:ExternalId` (Story 1.1, RD-006). They retain the `pde-member-execution-<env>`
-> names (member accounts, not the Hub — no `pdlv-` rename needed; RD-009). The Hub
-> orchestrator role itself is Phase-2 work (then VD-3b runs the gate script live).
+> The three member roles trust the specific Hub role `pdlv-hub-orchestrator` + an
+> `sts:ExternalId` (Story 1.1 trust shape, repointed to the RD-009 name in Story 3.2 —
+> renamed from the legacy `pde-hub-orchestrator`). They retain the
+> `pde-member-execution-<env>` names (member accounts, not the Hub — no `pdlv-` rename
+> needed; RD-009). The Hub orchestrator role (`pdlv-hub-orchestrator`) is stood up in
+> Story 3.2, which runs the VD-3b live two-hop assume.
 
 > Track here the resource classes relevant to PDE: CloudFormation stacks, the
 > Org-wide CloudTrail + its S3 log bucket + KMS CMK, cross-account IAM execution
