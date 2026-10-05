@@ -1,4 +1,4 @@
-# Session Brief — Story 3.2 · Attempt 5: Trigger the pipeline to deploy to Pipeline-Dev
+# Session Brief — Story 3.2 · Attempt 6: Trigger the pipeline to deploy to Pipeline-Dev
 
 > One brief per story, populated from [`RUNBOOK.md`](../../governance/RUNBOOK.md).
 > **Story 3.2 is the SECOND Phase-3 (Golden Path) story and the FIRST real end-to-end
@@ -6,11 +6,13 @@
 > live Phase-2 control plane into `Pipeline-Dev`. Build tier 6 (depends on 3.1 ✅) —
 > stays within Phase 3 (no phase transition); it is a tier advance 5→6.
 >
-> **Attempt 5 restart (lean, schema-shaped handoff).** Attempts 1-4 all failed as
-> execution/collision misses — none judged the deliverable. The single root cause
-> (operator outside the clone → branch stacks never deployed → pipeline hit stale infra)
-> is now the loud `##1` of the PROMPT, not buried in carry-forward. Status unchanged:
-> 3.2 stays 🟡, VD-9 OPEN, gate ARMED; the sealed attempt verdicts are frozen history.
+> **Attempt 6 restart (lean, schema-shaped handoff).** Attempts 1-5 all failed as
+> environment/execution/collision misses — none judged the deliverable (stale infra,
+> then a name collision, then misnamed `pdlv-` stacks holding resource-name leases). The
+> environment preconditions are now the loud `##1` of the PROMPT (reconcile the `pdlv-`
+> namespace by NAME → deploy all four branch stacks from inside the clone → pass the
+> preflight → only then trigger), not buried in carry-forward. Status unchanged: 3.2
+> stays 🟡, VD-9 OPEN, gate ARMED; the sealed attempt verdicts are frozen history.
 
 ## Story 3.2 — Commit the artifact and trigger the PDE pipeline to deploy to `Pipeline-Dev`
 
@@ -137,27 +139,33 @@ deploy.**
 
 ### Lessons Learned / Carry-Forward *(schema-shaped — pass state, not history)*
 
-> Lean, delta-only. Attempts 1-4 all failed as EXECUTION/collision misses (none judged
-> the deliverable), which is exactly the fat/buried-root-cause problem this restart
-> fixes: the one lesson that matters is now `##1` of the PROMPT, not buried here.
+> Lean, delta-only. Attempts 1-5 all failed as ENVIRONMENT/execution/collision misses
+> (none judged the deliverable), which is exactly the fat/buried-root-cause problem this
+> restart fixes: the preconditions that matter are now `##1` of the PROMPT, not here.
 
 - **current_state:** Phase 1 ✅ (`restore/phase-1-green`); Phase 2 ✅ CLOSED
   (`restore/phase-2-green` @ `8f85740`); 2.1/2.2/2.3 ✅; **Story 3.1 ✅** (sealed PASS
   2026-10-04, VD-8 CLEARED). **Story 3.2 is 🟡, VD-9 OPEN, gate ARMED** — the branch
   `feature/story-3.2` is offline+CI green and grep-proven correct, awaiting a clean
-  Attempt-5 live run. The two-hop chain is `pdlv-codebuild-service-role` →
+  Attempt-6 live run. The two-hop chain is `pdlv-codebuild-service-role` →
   `pdlv-hub-orchestrator` → `pde-member-execution-dev`. The frozen artifact is Story
   3.1's `infra/golden-path-artifact.yaml` (one empty on-demand DynamoDB table,
   `Project=PDE`) — do NOT change it unless a live defect forces fix-then-validate-once.
-- **delta (what Attempt 5 must do):** the ROOT CAUSE of attempts 1-4 — the operator was
-  OUTSIDE the clone (3 of 4) or hit the resolved name collision (attempt 4), so the
-  branch stacks were never deployed and the pipeline hit stale infra. Attempt 5 MUST,
-  from inside the `~/pde-platform` clone on the branch, (a) pass the STEP 0 launch-pad
-  lock + populate the two `/pdlv/` SecureStrings, (b) deploy all four branch stacks
-  (orchestrator/codebuild/state-machine/Dev member role) and VERIFY each live resource
-  changed, (c) run `scripts/preflight_story_3_2.py` to a printed PASS, and only THEN
-  trigger the pipeline. Verify the live Dev table, never the green line.
-- **pending_blockers:** 3.2's own live validation (owed — the whole point of Attempt 5);
+- **delta (what Attempt 6 must do):** every attempt 1-5 was an ENVIRONMENT miss, never a
+  deliverable defect — attempts 1-3 ran OUTSIDE the clone (branch stacks never deployed →
+  stale infra); attempt 4 hit the legacy `pde-hub-orchestrator` NAME COLLISION (resolved
+  by the Q1 rename → `pdlv-hub-orchestrator`); attempt 5 was blocked by MISNAMED `pdlv-`
+  stacks (`pdlv-codebuild-projects`, `pdlv-state-machine`) holding the resource-NAME
+  LEASES → `ResourceExistenceCheck`. Attempt 6 MUST, from inside the `~/pde-platform`
+  clone on the branch, in order: (a) RECONCILE the `pdlv-` namespace BY NAME (LIVE-RUNBOOK
+  STEP 1 — delete any `pdlv-` stack outside the canonical set {`pdlv-hub-orchestrator`,
+  `pdlv-codebuild`, `pdlv-promotion-pipeline-stack`}, including healthy-but-misnamed
+  strays; `pdlv-*` only, never `pde-*`/mgmt/Forensics); (b) pass the STEP 0 launch-pad
+  lock + populate the two `/pdlv/` SecureStrings; (c) deploy all four branch stacks and
+  VERIFY each live resource changed; (d) run `scripts/preflight_story_3_2.py` to a
+  printed PASS; and only THEN trigger the pipeline. Verify the live Dev table, never the
+  green line.
+- **pending_blockers:** 3.2's own live validation (owed — the whole point of Attempt 6);
   **OD-010** (the paired Phase-2 restore-point STATE MANIFEST, RESTORE.md rule 4) remains
   OPEN — tracked, not a 3.2 blocker.
 - **story_local_context (3.2-specific must-knows):**
@@ -168,8 +176,12 @@ deploy.**
     `Resource "*"` (EventBridge `.sync` managed-rule; CloudWatch Logs `PutResourcePolicy`)
     — consult AWS's published IAM template, don't tighten by instinct.
   - **IAM `Description` must be plain ASCII** (an em-dash broke `CreateRole`; now guarded).
-  - **Dead-stack sweep before re-deploy** (name-agnostic, `pdlv-*` ONLY, never
-    `pde-*`/ZTIE/mgmt); capture the CFN `CREATE_FAILED` `ResourceStatusReason`.
+  - **Namespace reconcile by NAME, not just status (the Attempt-5 lesson).** A
+    HEALTHY but MISNAMED `pdlv-` stack from a prior run (e.g. `pdlv-codebuild-projects`,
+    `pdlv-state-machine`) holds the real resource-NAME LEASE and collides at deploy with
+    `ResourceExistenceCheck` — a status-only sweep (ROLLBACK/*_FAILED) misses it. Sweep
+    by NAME+membership: delete any `pdlv-` stack outside the canonical set, `pdlv-*` ONLY,
+    never `pde-*`/ZTIE/mgmt; capture the CFN `CREATE_FAILED` `ResourceStatusReason`.
   - **CI pattern:** the static bar runs the merge-order guard LAST (`if: always()`); a
     deliverable PR stays RED (gate ARMED) during validation while the other evidence is
     still produced — correct, not a defect.
