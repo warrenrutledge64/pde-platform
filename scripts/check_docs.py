@@ -588,6 +588,39 @@ def run_checks(repo_root: Path) -> list[Violation]:
     return out
 
 
+def check_locks(repo_root: Path, base: str, head: str) -> list[Violation]:
+    """Delegate to check_locks (input-poisoning systemic locks) if present.
+
+    Git-sourced HARD locks (Lock 2/3/4) over base..head; fail-open when git / the
+    refs are absent, so this is a no-op outside a diffable range. HARD lock findings
+    become blocking violations; the Lock-1 advisory is surfaced via run_advisories.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import check_locks as _locks
+    except ImportError:
+        return []
+    return [
+        Violation(f.lock, f.where, f.detail)
+        for f in _locks.run_locks(repo_root, base, head)
+        if f.severity == "HARD"
+    ]
+
+
+def lock_advisories(repo_root: Path, base: str, head: str) -> list[Violation]:
+    """The non-blocking ADVISORY lock findings (currently Lock 1 — un-cited givens)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import check_locks as _locks
+    except ImportError:
+        return []
+    return [
+        Violation(f.lock, f.where, f.detail)
+        for f in _locks.run_locks(repo_root, base, head)
+        if f.severity == "ADVISORY"
+    ]
+
+
 def run_advisories(repo_root: Path) -> list[Violation]:
     """Non-blocking advisories (printed, never affect the exit code)."""
     return phase_gate_advisories(_governance_dir(repo_root))
@@ -596,18 +629,44 @@ def run_advisories(repo_root: Path) -> list[Violation]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo-root", default=".", help="repo root to check (default: cwd)")
+    parser.add_argument(
+        "--base",
+        default=None,
+        help="base ref for the input-poisoning LOCKS (e.g. origin/main); omit to skip "
+        "the git-sourced locks (Lock 2/3/4 hard + the Lock-1 advisory)",
+    )
+    parser.add_argument("--head", default="HEAD", help="head ref for the locks (default: HEAD)")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run the input-poisoning LOCKS sabotage self-test and exit",
+    )
     args = parser.parse_args(argv)
     repo_root = Path(args.repo_root)
 
-    # Non-blocking advisories (phase-gate "close owed"). Printed on every run so a
-    # skipped end-of-phase gate can never silently slip; never affects the exit code.
+    if args.self_test:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import check_locks as _locks
+            return _locks._self_test()
+        except ImportError:
+            print("check_docs: check_locks not present; nothing to self-test")
+            return 0
+
+    # Non-blocking advisories (phase-gate "close owed" + Lock-1 un-cited givens).
+    # Printed on every run so a skipped gate or a smuggled given can never silently
+    # slip; never affects the exit code.
     advisories = run_advisories(repo_root)
+    if args.base:
+        advisories += lock_advisories(repo_root, args.base, args.head)
     if advisories:
         print(f"check_docs: ADVISORY -- {len(advisories)} note(s) (does not block):")
         for a in advisories:
             print(f"  {a.render()}")
 
     violations = run_checks(repo_root)
+    if args.base:
+        violations += check_locks(repo_root, args.base, args.head)
     if violations:
         print(f"check_docs: FAIL -- {len(violations)} violation(s):")
         for v in violations:
