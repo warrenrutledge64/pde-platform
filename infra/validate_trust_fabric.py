@@ -66,14 +66,34 @@ def main() -> int:
         ("no full wildcard action",
          not re.search(r"Action:\s*['\"]\*['\"]", raw)
          and "- \"*\"" not in raw and "- '*'" not in raw),
-        ("local CFN ops scoped to the pde- stack name prefix",
-         "stack/${RolePrefix}*" in raw),
+        # --- Story 3.2: local CFN ops scoped to the pdlv- ARTIFACT prefix (RD-009),
+        #     NOT the pde- role prefix — the Golden-Path artifact deploys as a pdlv-
+        #     stack, and scoping to pdlv-* walls the member grants off from ZTIE pde-*.
+        ("local CFN ops scoped to the pdlv- ARTIFACT stack name prefix",
+         "stack/${ArtifactPrefix}*" in raw),
         ("grants concrete CloudFormation actions",
          "cloudformation:CreateStack" in raw
          and "cloudformation:ExecuteChangeSet" in raw),
         # --- Local execution scoped to THIS member account ---
         ("CFN ops scoped to this member account (AWS::AccountId)",
-         "${AWS::AccountId}:stack/${RolePrefix}*" in raw),
+         "${AWS::AccountId}:stack/${ArtifactPrefix}*" in raw),
+        # --- Story 3.2: the DynamoDB artifact grant, scoped STRICTLY to pdlv- tables
+        ("DynamoDB grant scoped to pdlv- artifact tables only (never pde-/ZTIE)",
+         "dynamodb:CreateTable" in raw
+         and "table/${ArtifactPrefix}*" in raw
+         and not re.search(r"table/pde-", raw)),
+        ("DynamoDB grant is concrete table-lifecycle actions, not a dynamodb:* ACTION wildcard",
+         not re.search(r"-\s*dynamodb:\*", raw)
+         and not re.search(r"Action:\s*dynamodb:\*", raw)
+         and "dynamodb:DeleteTable" in raw
+         and "dynamodb:DescribeTable" in raw),
+        ("no data-plane item actions on the member role (artifact is empty)",
+         "dynamodb:PutItem" not in raw
+         and "dynamodb:GetItem" not in raw
+         and "dynamodb:DeleteItem" not in raw),
+        ("ArtifactPrefix param is pinned to pdlv- (RD-009)",
+         "ArtifactPrefix:" in raw
+         and bool(re.search(r'AllowedPattern:\s*"\^pdlv-\$"', raw))),
         # --- ZTIE co-existence / naming + model discipline ---
         ("PDE naming prefix parameter present",
          "RolePrefix:" in raw and "pde-" in raw),

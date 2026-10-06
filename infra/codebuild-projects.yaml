@@ -1,14 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Description: >-
-  PDE Story 2.1 (opens Phase 2; RD-003/004/006/009). The two Hub-side CodeBuild
-  projects the Story 2.2 state machine orchestrates: pdlv-lint (static analysis) and
-  pdlv-deploy (cross-account CFN deploy). ZTIE-safe pdlv- prefix + Project=PDE tags
-  (RD-009; pde- is ZTIE's). Orchestrate-and-pull (RD-006): the deploy project's only
-  cross-account power is sts:AssumeRole into the specific Story 1.1 member roles — no
-  broad Hub deploy policy, no wildcard/admin (least privilege). Author + static proof
-  only; the live Hub deploy is Story 2.3. Fuller rationale is in the resource comments
-  and DOCS/session-briefs/story-2.1-brief.md.
+  PDE Story 2.1 + 3.2 (RD-003/004/006/009). The two Hub-side CodeBuild projects the
+  Story 2.2 state machine orchestrates: pdlv-lint (static analysis) and pdlv-deploy
+  (cross-account CFN deploy). ZTIE-safe pdlv- prefix + Project=PDE tags (RD-009; pde-
+  is ZTIE's). Orchestrate-and-pull (RD-006): per the Story 3.2 two-hop chain the
+  deploy project assumes the unified pdlv-hub-orchestrator role (hop 1), which assumes
+  the Story 1.1 member role with the ExternalId (hop 2) and deploys locally in the
+  member - the service role's only cross-account power is sts:AssumeRole into the
+  orchestrator (no broad Hub deploy policy, no wildcard/admin). The ExternalId is
+  resolved at runtime from an SSM SecureString (never in source / the SFN history).
+  Fuller rationale is in the resource comments and the Story 2.1 / 3.2 briefs.
 
 # ---------------------------------------------------------------------------
 # PARAMETERS
@@ -30,30 +32,103 @@ Parameters:
     Type: String
     Description: >-
       The EXACT name of the Story 1.1 member execution role the DEPLOY project
-      assumes in each member account. These roles live in the MEMBER accounts
-      (Dev/Sandbox/Prod), not the Hub, so they keep their pde-member-execution-<env>
-      names (RD-009). The <env> suffix is appended per member below.
+      reaches (via the orchestrator, hop 2) in each member account. These roles live
+      in the MEMBER accounts (Dev/Sandbox/Prod), not the Hub, so they keep their
+      pde-member-execution-<env> names (RD-009). The <env> suffix is appended per
+      member below.
     Default: pde-member-execution
     AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,56}$"
 
+  OrchestratorRoleName:
+    Type: String
+    Description: >-
+      The EXACT name of the Story 3.2 unified Hub orchestrator role the deploy project
+      assumes FIRST (hop 1). This decouples the member trust from the CodeBuild engine:
+      the service role assumes the orchestrator, the orchestrator (which the member
+      roles trust) assumes the member. MUST be pdlv--prefixed (RD-009): the orchestrator
+      is a Hub resource, so it lives in PDE's pdlv- namespace. Default pdlv-hub-orchestrator
+      - deliberately NOT the legacy pde-hub-orchestrator name (collides with a pre-existing
+      Hub role and violates RD-009). The member-role trust is repointed to this same name.
+    Default: pdlv-hub-orchestrator
+    AllowedPattern: "^pdlv-[A-Za-z0-9+=,.@_-]{1,56}$"
+    ConstraintDescription: Must be a pdlv--prefixed role name (RD-009; the repointed member-trust principal).
+
+  ExternalIdParameterName:
+    Type: String
+    Description: >-
+      Name of the Hub SSM Parameter Store SecureString holding the shared ExternalId
+      the orchestrator presents on the hop-2 member assume (confused-deputy
+      protection, matches the Story 1.1 member trust). The deploy project resolves it
+      at RUNTIME via a PARAMETER_STORE-typed env var (CodeBuild natively decrypts +
+      masks it) so the plaintext NEVER appears in source, the state-machine execution
+      history, or the logs. The operator must populate this SecureString out-of-band
+      before the first pipeline run (LIVE-RUNBOOK STEP 0).
+    Default: /pdlv/promotion/external-id
+    AllowedPattern: "^/pdlv/[A-Za-z0-9_.\\-/]{1,200}$"
+    ConstraintDescription: Must be a /pdlv/ SSM parameter path (ZTIE-safe namespace).
+
+  RepoTokenParameterName:
+    Type: String
+    Description: >-
+      Name of the Hub SSM Parameter Store SecureString holding a least-privilege
+      GitHub token (read-only, repo scope) the deploy project uses to clone the
+      PRIVATE PDE repo at the edge. Same secret-at-the-edge pattern as the ExternalId:
+      resolved at RUNTIME via a PARAMETER_STORE-typed env var (CodeBuild decrypts +
+      masks it), never in source / the state-machine history / the logs, and scoped to
+      the /pdlv/ namespace so no account-global GitHub source credential is needed.
+      The operator populates this SecureString out-of-band before the first run
+      (LIVE-RUNBOOK STEP 0).
+    Default: /pdlv/promotion/repo-token
+    AllowedPattern: "^/pdlv/[A-Za-z0-9_.\\-/]{1,200}$"
+    ConstraintDescription: Must be a /pdlv/ SSM parameter path (ZTIE-safe namespace).
+
+  ArtifactTemplatePath:
+    Type: String
+    Description: >-
+      Repo-relative path to the Golden-Path artifact CloudFormation template the
+      deploy project ships into the member (frozen from Story 3.1). The deploy runs
+      from the repo source so it can read this file.
+    Default: infra/golden-path-artifact.yaml
+    AllowedPattern: "^infra/[A-Za-z0-9_.\\-/]{1,200}\\.yaml$"
+
+  ArtifactStackName:
+    Type: String
+    Description: >-
+      Name of the in-member CloudFormation stack the artifact deploys as. MUST be
+      pdlv- (RD-009) so it is attributable + walled off from ZTIE's pde-* namespace,
+      and so the member role's pdlv--scoped stack permissions authorize it.
+    Default: pdlv-golden-path-artifact
+    AllowedPattern: "^pdlv-[a-z0-9-]{1,60}$"
+    ConstraintDescription: Must be a pdlv--prefixed stack name (RD-009).
+
+  SourceLocation:
+    Type: String
+    Description: >-
+      HTTPS Git URL of the PDE repository the deploy project checks out to obtain the
+      artifact template. CodeBuild clones this at build start (public read; no secret
+      in the URL). Set to the repo that owns infra/golden-path-artifact.yaml.
+    Default: https://github.com/warrenrutledge64/pde-platform.git
+    AllowedPattern: "^https://[A-Za-z0-9_.\\-/]+\\.git$"
+
+  SourceVersion:
+    Type: String
+    Description: >-
+      Git ref (branch, tag, or commit) the deploy project checks out. The Golden-Path
+      artifact is promoted UNCHANGED Dev -> Sandbox -> Prod, so this pins the exact
+      artifact revision the whole promotion ships.
+    Default: main
+    AllowedPattern: "^[A-Za-z0-9_.\\-/]{1,120}$"
+
   DevAccountId:
     Type: String
-    Description: Pipeline-Dev member account ID.
+    Description: >-
+      Pipeline-Dev member account ID — used only for the default hop-2 TARGET_ROLE_ARN
+      so a standalone first run targets Dev (the Story 3.2 target). Sandbox/Prod member
+      account IDs are NOT needed here anymore: with the Story 3.2 two-hop chain the
+      service role assumes only the orchestrator, and the state machine overrides
+      TARGET_ROLE_ARN per promotion — so this template references no per-member ARN
+      beyond the Dev default.
     Default: "946509368326"
-    AllowedPattern: "^[0-9]{12}$"
-    ConstraintDescription: Must be a 12-digit AWS account ID.
-
-  SandboxAccountId:
-    Type: String
-    Description: Pipeline-Sandbox member account ID.
-    Default: "586917955591"
-    AllowedPattern: "^[0-9]{12}$"
-    ConstraintDescription: Must be a 12-digit AWS account ID.
-
-  ProdAccountId:
-    Type: String
-    Description: Pipeline-Prod member account ID.
-    Default: "466494951534"
     AllowedPattern: "^[0-9]{12}$"
     ConstraintDescription: Must be a 12-digit AWS account ID.
 
@@ -120,28 +195,61 @@ Resources:
               - !GetAtt DeployLogGroup.Arn
               - !Sub "${DeployLogGroup.Arn}:*"
 
-  # The ONLY cross-account power (RD-006 orchestrate-and-pull): assume the SPECIFIC
-  # Story 1.1 member execution roles. NOT a broad Hub deploy policy, NOT a wildcard
-  # resource — three named role ARNs, one per member.
+  # The ONLY cross-account power (RD-006 orchestrate-and-pull, Story 3.2 two-hop):
+  # assume the SPECIFIC unified Hub orchestrator role (hop 1). The service role NO
+  # LONGER assumes the member roles directly — the orchestrator does hop 2. This
+  # decouples the member trust from the CodeBuild engine: a single named role ARN,
+  # NOT a broad Hub deploy policy, NOT a wildcard resource.
   CodeBuildAssumeMemberPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      ManagedPolicyName: !Sub "${NamePrefix}codebuild-assume-member"
+      ManagedPolicyName: !Sub "${NamePrefix}codebuild-assume-orchestrator"
       Description: >-
-        Assume ONLY the Story 1.1 member execution roles (Dev/Sandbox/Prod). This is
-        the sole cross-account deploy power — the Hub holds no broad deploy policy.
+        Assume ONLY the unified Hub orchestrator role (hop 1 of the Story 3.2 two-hop
+        chain). The orchestrator performs the cross-account member assume (hop 2); the
+        service role holds no direct member-assume grant and no broad deploy policy.
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: AssumeSpecificMemberExecutionRolesOnly
+          - Sid: AssumeHubOrchestratorOnly
             Effect: Allow
             Action: sts:AssumeRole
             Resource:
-              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
-              - !Sub "arn:${AWS::Partition}:iam::${SandboxAccountId}:role/${MemberRoleName}-sandbox"
-              - !Sub "arn:${AWS::Partition}:iam::${ProdAccountId}:role/${MemberRoleName}-prod"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrchestratorRoleName}"
 
-  # The CodeBuild service role — assumes ONLY the two scoped policies above.
+  # Resolve the two /pdlv/ SecureStrings at runtime — the ExternalId (hop-2 secret)
+  # and the GitHub repo-clone token — scoped to EXACTLY those two named parameters
+  # (never a wildcard, never a broader path). kms:Decrypt is scoped by the via-SSM
+  # condition so this role can only use the key THROUGH Parameter Store (not to
+  # decrypt arbitrary ciphertext), and only in the Hub region. The orchestrator role
+  # is deliberately NOT given this grant — only the deploy engine reads these secrets,
+  # at the edge.
+  CodeBuildReadExternalIdPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${NamePrefix}codebuild-read-secrets"
+      Description: Read ONLY the two /pdlv/ SecureStrings (ExternalId + repo token) and decrypt them via SSM only.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadTheTwoPdlvSecureStringsOnly
+            Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource:
+              - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ExternalIdParameterName}"
+              - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${RepoTokenParameterName}"
+          - Sid: DecryptPdlvSecretsViaSsmOnly
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource:
+              - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+            Condition:
+              StringEquals:
+                "kms:ViaService": !Sub "ssm.${AWS::Region}.amazonaws.com"
+
+  # The CodeBuild service role — assumes ONLY the three scoped policies above.
   CodeBuildServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -149,7 +257,8 @@ Resources:
       Description: >-
         Least-privilege service role for the PDE Lint + Deploy CodeBuild projects.
         No wildcards, no account-wide admin grant; cross-account deploy power is only
-        sts:AssumeRole into the named member roles (RD-006).
+        sts:AssumeRole into the single Hub orchestrator role (hop 1; RD-006), plus a
+        one-parameter-scoped read of the ExternalId SecureString.
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -165,6 +274,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref CodeBuildLogsPolicy
         - !Ref CodeBuildAssumeMemberPolicy
+        - !Ref CodeBuildReadExternalIdPolicy
       Tags:
         - { Key: Project, Value: PDE }
         - { Key: Story, Value: "2.1" }
@@ -217,15 +327,18 @@ Resources:
         - { Key: ManagedBy, Value: cloudformation }
 
   # --- DEPLOY project ----------------------------------------------------------
-  # Performs cross-account CloudFormation deploys by assuming the Story 1.1 member
-  # execution role for the target environment (passed in at run-time as TARGET_ENV /
-  # TARGET_ROLE_ARN by the Step Functions state machine, Story 2.2). The deploy
-  # ACTION executes locally in the member via that assumed role (RD-006).
+  # Performs cross-account CloudFormation deploys via the Story 3.2 TWO-HOP chain:
+  # the service role assumes the unified Hub orchestrator (hop 1), the orchestrator
+  # assumes the Story 1.1 member role for the target environment with the ExternalId
+  # (hop 2), and the deploy ACTION executes LOCALLY in the member (RD-006). The state
+  # machine (Story 2.2) overrides TARGET_ENV + TARGET_ROLE_ARN per promotion; the
+  # ExternalId + the repo-clone token are resolved at the edge from Hub SSM
+  # SecureStrings (never in source / the execution history).
   DeployProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: !Sub "${NamePrefix}deploy"
-      Description: PDE cross-account CloudFormation deploy (assumes the Story 1.1 member execution role).
+      Description: PDE cross-account CFN deploy via the two-hop chain (service role to orchestrator to member).
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
       Artifacts:
         Type: NO_ARTIFACTS
@@ -235,26 +348,124 @@ Resources:
         Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
         PrivilegedMode: false
         EnvironmentVariables:
+          # Hop-1 target: the fixed unified Hub orchestrator role (same account).
+          - Name: ORCHESTRATOR_ROLE_ARN
+            Type: PLAINTEXT
+            Value: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrchestratorRoleName}"
+          # Hop-2 target: the per-environment member role ARN. The state machine
+          # overrides this per promotion (dev/sandbox/prod); the default is dev so a
+          # standalone first run targets Pipeline-Dev (the Story 3.2 target).
           - Name: TARGET_ROLE_ARN
             Type: PLAINTEXT
-            Value: "set-at-runtime-by-state-machine"
-          - Name: EXTERNAL_ID
+            Value: !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
+          # The in-member artifact + stack the deploy ships (frozen from Story 3.1).
+          - Name: ARTIFACT_TEMPLATE_PATH
             Type: PLAINTEXT
-            Value: "set-at-runtime-by-state-machine"
+            Value: !Ref ArtifactTemplatePath
+          - Name: ARTIFACT_STACK_NAME
+            Type: PLAINTEXT
+            Value: !Ref ArtifactStackName
+          # Repo + ref to clone at the edge for the frozen artifact template.
+          - Name: SOURCE_LOCATION
+            Type: PLAINTEXT
+            Value: !Ref SourceLocation
+          - Name: SOURCE_VERSION
+            Type: PLAINTEXT
+            Value: !Ref SourceVersion
+          # The ExternalId for hop 2 — resolved from the Hub SSM SecureString at
+          # build start by CodeBuild (natively decrypted + MASKED in the logs). The
+          # plaintext never traverses the state machine or appears in source.
+          - Name: EXTERNAL_ID
+            Type: PARAMETER_STORE
+            Value: !Ref ExternalIdParameterName
+          # The GitHub clone token — same secret-at-the-edge pattern: resolved from
+          # the Hub SSM SecureString at build start (decrypted + MASKED), never in
+          # source / the state-machine history. No account-global GitHub credential.
+          - Name: REPO_TOKEN
+            Type: PARAMETER_STORE
+            Value: !Ref RepoTokenParameterName
       Source:
+        # NO_SOURCE: the buildspec clones the repo itself at the edge with the
+        # /pdlv/ SecureString token (Option 2 — no account-global GitHub source
+        # credential; keeps everything inside the pdlv- stack + /pdlv/ SSM namespace).
         Type: NO_SOURCE
         BuildSpec: |
           version: 0.2
           phases:
             build:
               commands:
-                - echo "PDE deploy — assume the member execution role, then deploy locally in the member (RD-006)"
-                - CREDS=$(aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name pdlv-deploy --external-id "$EXTERNAL_ID")
-                - export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
-                - export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
-                - export AWS_SESSION_TOKEN=$(echo "$CREDS" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
+                # --- Fast-fail preconditions: both /pdlv/ secrets must be populated
+                # Catch the missing-secret precondition HERE with a clear message,
+                # before it surfaces as a generic AccessDenied (ExternalId) or an
+                # opaque clone 403 (token) — which would be misdiagnosed as a VD-3b
+                # trust failure or a code bug.
+                - |
+                  if [ -z "${EXTERNAL_ID:-}" ]; then
+                    echo "FATAL: EXTERNAL_ID is empty — the SSM SecureString (ExternalIdParameterName) is not populated in the Hub. Populate it with the exact value baked into the Phase-1 member trust, then re-run (LIVE-RUNBOOK STEP 0)." >&2
+                    exit 1
+                  fi
+                - |
+                  if [ -z "${REPO_TOKEN:-}" ]; then
+                    echo "FATAL: REPO_TOKEN is empty — the SSM SecureString (RepoTokenParameterName) is not populated in the Hub. Populate it with a read-only GitHub token for the PDE repo, then re-run (LIVE-RUNBOOK STEP 0)." >&2
+                    exit 1
+                  fi
+                # --- Keep secrets/credentials out of the log ----------------------
+                # xtrace stays OFF for the whole build; nothing secret is ever echoed.
+                - set +x
+                # --- Clone the frozen artifact at the edge (token never logged) ----
+                # The token is injected into the URL only for this one command; the
+                # remote is immediately rewritten to a token-free URL so it is not
+                # persisted in .git/config. CodeBuild also masks the PARAMETER_STORE
+                # value in the log stream.
+                - echo "CLONE: ${SOURCE_LOCATION} @ ${SOURCE_VERSION} (token masked)"
+                - |
+                  CLONE_URL=$(printf '%s' "$SOURCE_LOCATION" | sed -E "s#^https://#https://x-access-token:${REPO_TOKEN}@#")
+                  git clone --depth 1 --branch "$SOURCE_VERSION" "$CLONE_URL" repo
+                  unset CLONE_URL
+                  git -C repo remote set-url origin "$SOURCE_LOCATION"
+                - cd repo
+                - test -f "$ARTIFACT_TEMPLATE_PATH" || { echo "FATAL: ${ARTIFACT_TEMPLATE_PATH} not found in the cloned repo @ ${SOURCE_VERSION}" >&2; exit 1; }
+                # --- Confirm the engine identity (service role) -------------------
+                - echo "PDE two-hop deploy — engine identity (expect pdlv-codebuild-service-role):"
                 - aws sts get-caller-identity
-                - echo "deploy step runs here against the member (CFN deploy of the pdlv- artifact stack)"
+                # --- HOP 1: service role -> unified Hub orchestrator (same account)
+                - echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"
+                - |
+                  H1=$(aws sts assume-role --role-arn "$ORCHESTRATOR_ROLE_ARN" --role-session-name pdlv-deploy-hop1)
+                  export AWS_ACCESS_KEY_ID=$(printf '%s' "$H1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
+                  export AWS_SECRET_ACCESS_KEY=$(printf '%s' "$H1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
+                  export AWS_SESSION_TOKEN=$(printf '%s' "$H1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
+                  unset H1
+                - echo "now acting as the orchestrator:"
+                - aws sts get-caller-identity
+                # --- HOP 2: orchestrator -> member execution role (cross-account) -
+                # The ExternalId is presented ONLY here, where the Phase-1 member
+                # trust requires it. --external-id is not logged (set +x).
+                - echo "HOP 2: assume the member execution role ${TARGET_ROLE_ARN}"
+                - |
+                  H2=$(aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name pdlv-deploy-hop2 --external-id "$EXTERNAL_ID")
+                  export AWS_ACCESS_KEY_ID=$(printf '%s' "$H2" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
+                  export AWS_SECRET_ACCESS_KEY=$(printf '%s' "$H2" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
+                  export AWS_SESSION_TOKEN=$(printf '%s' "$H2" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
+                  unset H2
+                - echo "now acting LOCALLY in the member (expect the member account id):"
+                - aws sts get-caller-identity
+                # --- The deploy ACTION runs LOCALLY in the member (RD-006) ---------
+                # One empty, zero-cost DynamoDB table. The STACK-level Project=PDE tag
+                # is applied by the deploy COMMAND (bare-resource template), so the
+                # live stack is attributable (OD-012). The pdlv- stack name is
+                # authorized by the member role's pdlv--scoped stack + dynamodb perms.
+                - echo "DEPLOY: ${ARTIFACT_STACK_NAME} from ${ARTIFACT_TEMPLATE_PATH} into the member"
+                - |
+                  aws cloudformation deploy \
+                    --template-file "$ARTIFACT_TEMPLATE_PATH" \
+                    --stack-name "$ARTIFACT_STACK_NAME" \
+                    --tags Project=PDE Story=3.2 Component=golden-path-artifact ManagedBy=cloudformation \
+                    --no-fail-on-empty-changeset
+                # --- VERIFY the live result, not the deploy's exit code -----------
+                - echo "VERIFY: describe the live artifact stack + table in the member"
+                - aws cloudformation describe-stacks --stack-name "$ARTIFACT_STACK_NAME" --query "Stacks[0].StackStatus" --output text
+                - aws dynamodb describe-table --table-name "$ARTIFACT_STACK_NAME" --query "Table.{Name:TableName,Status:TableStatus,Billing:BillingModeSummary.BillingMode}" --output json
       TimeoutInMinutes: 30
       LogsConfig:
         CloudWatchLogs:
@@ -262,7 +473,7 @@ Resources:
           GroupName: !Ref DeployLogGroup
       Tags:
         - { Key: Project, Value: PDE }
-        - { Key: Story, Value: "2.1" }
+        - { Key: Story, Value: "3.2" }
         - { Key: Component, Value: codebuild }
         - { Key: Role, Value: deploy }
         - { Key: ManagedBy, Value: cloudformation }

@@ -192,8 +192,11 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         )
 
     def _deploy_env(name: str, env: str) -> bool:
-        """The deploy task overrides TARGET_ENV=<env> and passes a TARGET_ROLE_ARN
-        + EXTERNAL_ID (the member-role assume inputs), per RD-006."""
+        """The deploy task overrides TARGET_ENV=<env> and TARGET_ROLE_ARN (the hop-2
+        member-role target), per RD-006. Story 3.2: it must NOT carry a plaintext
+        EXTERNAL_ID override — the ExternalId is resolved at the CodeBuild edge from
+        the Hub SSM SecureString, so it never enters the state-machine execution
+        history."""
         params = _state(name).get("Parameters", {})
         if params.get("ProjectName") != "${DeployProjectName}":
             return False
@@ -202,7 +205,7 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         return (
             names.get("TARGET_ENV") == env
             and "TARGET_ROLE_ARN" in names
-            and "EXTERNAL_ID" in names
+            and "EXTERNAL_ID" not in names
         )
 
     return [
@@ -229,11 +232,11 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          _is_startbuild_sync("DeploySandbox")),
         ("DeployProd is a codebuild:startBuild.sync task",
          _is_startbuild_sync("DeployProd")),
-        ("DeployDev overrides TARGET_ENV=dev + role/external-id",
+        ("DeployDev overrides TARGET_ENV=dev + TARGET_ROLE_ARN, NO plaintext ExternalId",
          _deploy_env("DeployDev", "dev")),
-        ("DeploySandbox overrides TARGET_ENV=sandbox + role/external-id",
+        ("DeploySandbox overrides TARGET_ENV=sandbox + TARGET_ROLE_ARN, NO plaintext ExternalId",
          _deploy_env("DeploySandbox", "sandbox")),
-        ("DeployProd overrides TARGET_ENV=prod + role/external-id",
+        ("DeployProd overrides TARGET_ENV=prod + TARGET_ROLE_ARN, NO plaintext ExternalId",
          _deploy_env("DeployProd", "prod")),
         ("promotion order is Dev -> AwaitSandboxApproval -> Sandbox -> AwaitProdApproval -> Prod",
          _state("DeployDev").get("Next") == "AwaitSandboxApproval"
@@ -424,9 +427,14 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          and "!GetAtt StateMachineLogGroup.Arn" in raw),
         ("log group has a bounded retention",
          "RetentionInDays:" in raw),
-        # --- ExternalId is a NoEcho secret (not committed real) ---
-        ("ExternalId parameter is NoEcho (confused-deputy secret, not committed real)",
-         bool(re.search(r"ExternalId:\s*\n(?:.*\n)*?\s*NoEcho:\s*true", raw))),
+        # --- Story 3.2: the ExternalId is a control-plane secret that must NOT
+        #     traverse the orchestration layer. It is resolved at the CodeBuild edge
+        #     from a Hub SSM SecureString, so the state machine must carry NEITHER an
+        #     ExternalId parameter NOR an EXTERNAL_ID override anywhere in the ASL. ---
+        ("no ExternalId parameter on the state machine (secret resolved at the edge)",
+         "ExternalId:" not in raw),
+        ("no EXTERNAL_ID anywhere in the ASL (never in the execution history)",
+         "EXTERNAL_ID" not in raw and "ExternalId" not in raw),
         # --- ZTIE-safe / zero-touch-root ---
         ("no reference to the management/root account 467866449172",
          "467866449172" not in raw),

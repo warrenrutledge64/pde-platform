@@ -69,16 +69,12 @@ Parameters:
     AllowedPattern: "^[0-9]{12}$"
     ConstraintDescription: Must be a 12-digit AWS account ID.
 
-  ExternalId:
-    Type: String
-    Description: >-
-      Shared secret the deploy project presents on sts:AssumeRole into the member
-      role (confused-deputy protection, matches the Story 1.1 member trust). Passed
-      through to the CodeBuild run as an environment override; not committed real.
-    NoEcho: true
-    MinLength: 8
-    MaxLength: 128
-    Default: "set-this-at-deploy-time"
+  # NOTE (Story 3.2): the ExternalId is NO LONGER passed through the state machine.
+  # It is a control-plane secret that must never traverse the orchestration layer or
+  # land in the execution history. The pdlv-deploy CodeBuild project now resolves it
+  # at the edge from a Hub SSM SecureString (PARAMETER_STORE env var — natively
+  # decrypted + masked). Removing the plaintext passthrough here closes the
+  # execution-history leak the Phase-2 placeholder modeled.
 
   LogRetentionDays:
     Type: Number
@@ -321,8 +317,10 @@ Resources:
   #   DeployDev -> AwaitSandboxApproval (PAUSE) -> DeploySandbox
   #             -> AwaitProdApproval (PAUSE) -> DeployProd -> PromotionSucceeded
   # Each DeployX task is codebuild:startBuild.sync against the SPECIFIC pdlv-deploy
-  # project, overriding TARGET_ROLE_ARN + EXTERNAL_ID for that environment's member
-  # role; the deploy ACTION runs locally in the member via that assumed role (RD-006).
+  # project, overriding TARGET_ENV + TARGET_ROLE_ARN for that environment's member
+  # role; the deploy ACTION runs locally in the member via the two-hop assume (RD-006).
+  # The ExternalId is NOT passed here (Story 3.2) — the deploy project resolves it at
+  # the edge from the Hub SSM SecureString, so it never enters the execution history.
   # Each AwaitXApproval is sns:publish.waitForTaskToken — a NATIVE paused state, not a
   # wait/timer: the execution halts until a human SendTaskSuccess/SendTaskFailure.
   PromotionStateMachine:
@@ -359,7 +357,6 @@ Resources:
       DefinitionSubstitutions:
         DeployProjectName: !Ref DeployProjectName
         ApprovalTopicArn: !Ref ApprovalTopic
-        ExternalId: !Ref ExternalId
         DevRoleArn: !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"
         SandboxRoleArn: !Sub "arn:${AWS::Partition}:iam::${SandboxAccountId}:role/${MemberRoleName}-sandbox"
         ProdRoleArn: !Sub "arn:${AWS::Partition}:iam::${ProdAccountId}:role/${MemberRoleName}-prod"
@@ -375,8 +372,7 @@ Resources:
                 "ProjectName": "${DeployProjectName}",
                 "EnvironmentVariablesOverride": [
                   { "Name": "TARGET_ENV", "Type": "PLAINTEXT", "Value": "dev" },
-                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${DevRoleArn}" },
-                  { "Name": "EXTERNAL_ID", "Type": "PLAINTEXT", "Value": "${ExternalId}" }
+                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${DevRoleArn}" }
                 ]
               },
               "Next": "AwaitSandboxApproval"
@@ -402,8 +398,7 @@ Resources:
                 "ProjectName": "${DeployProjectName}",
                 "EnvironmentVariablesOverride": [
                   { "Name": "TARGET_ENV", "Type": "PLAINTEXT", "Value": "sandbox" },
-                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${SandboxRoleArn}" },
-                  { "Name": "EXTERNAL_ID", "Type": "PLAINTEXT", "Value": "${ExternalId}" }
+                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${SandboxRoleArn}" }
                 ]
               },
               "Next": "AwaitProdApproval"
@@ -429,8 +424,7 @@ Resources:
                 "ProjectName": "${DeployProjectName}",
                 "EnvironmentVariablesOverride": [
                   { "Name": "TARGET_ENV", "Type": "PLAINTEXT", "Value": "prod" },
-                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${ProdRoleArn}" },
-                  { "Name": "EXTERNAL_ID", "Type": "PLAINTEXT", "Value": "${ExternalId}" }
+                  { "Name": "TARGET_ROLE_ARN", "Type": "PLAINTEXT", "Value": "${ProdRoleArn}" }
                 ]
               },
               "Next": "PromotionSucceeded"

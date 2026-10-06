@@ -3,7 +3,7 @@
 
 Proves the RD-006 **orchestrate-and-pull** trust fabric end to end: run from an
 AWS CloudShell session in the Pipeline-Hub account, *as the Hub orchestrator role*
-(``pde-hub-orchestrator``), this script performs an STS ``AssumeRole`` into the
+(``pdlv-hub-orchestrator``), this script performs an STS ``AssumeRole`` into the
 **member execution role** (``pde-member-execution-<env>``) in each member account
 (Dev → Sandbox → Prod) **sequentially**, presenting the shared ``ExternalId``, and
 prints the account id STS returns for each assumed session. A clean run returns
@@ -13,9 +13,10 @@ trust direction (Hub assumes member, member executes locally) is correct.
 Why this is the Phase-1 gate artifact
 --------------------------------------
 This is the exact script the Phase-1 end-of-phase gate runs. Per **Option B**
-(stakeholder-chosen 2026-09-30), the Hub orchestrator role ``pde-hub-orchestrator``
-is created in **Phase 2**, so the *live cross-account run* of this script is the
-deferred **VD-3b** (executed in Phase 2 once that role exists). Story 1.2 authors +
+(stakeholder-chosen 2026-09-30), the Hub orchestrator role ``pdlv-hub-orchestrator``
+is created in **Phase 3 / Story 3.2** (renamed from the legacy pde-hub-orchestrator
+per RD-009; see VD-9), so the *live cross-account run* of this script is the
+deferred **VD-3b** (executed once that role exists). Story 1.2 authors +
 commits this script (targeting the real orchestrator) and proves Hub-CloudShell
 reachability + tooling + token-auth repo access live; it does **not** stand up a
 throwaway Hub principal just to run this early.
@@ -78,7 +79,7 @@ MEMBERS: tuple[tuple[str, str], ...] = (
 )
 
 ROLE_PREFIX = "pde-"                           # ZTIE-safe PDE naming prefix (RD).
-HUB_ORCHESTRATOR_ROLE = "pde-hub-orchestrator"  # the Hub principal this runs as.
+HUB_ORCHESTRATOR_ROLE = "pdlv-hub-orchestrator"  # the Hub principal this runs as (RD-009; repointed from the legacy pde-hub-orchestrator in Story 3.2).
 DEFAULT_REGION = "us-east-1"                    # PDE home region (pinned Story 1.1).
 SESSION_PREFIX = "pde-phase1-gate"              # STS session-name prefix (audit).
 
@@ -147,7 +148,7 @@ def run_gate(sts, external_id: str, *, require_hub: bool = True) -> int:
         print(
             f"  [FAIL] not running in Pipeline-Hub ({HUB_ACCOUNT_ID}); "
             f"caller account is {caller_account!r}. Refusing to proceed "
-            "(run this from the Hub, as pde-hub-orchestrator).",
+            "(run this from the Hub, as pdlv-hub-orchestrator).",
             file=sys.stderr,
         )
         return 1
