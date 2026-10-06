@@ -6,6 +6,12 @@
 > (it points the validator at [`story-3.2-VALIDATOR-HANDOVER.md`](story-3.2-VALIDATOR-HANDOVER.md)).
 > Copy the fenced block, fill any `{{...}}`, paste to start the session.
 >
+> **This is the GATE 2 (full end-to-end) lane.** Run **GATE 1 first** — an independently-sealed
+> "environment-real-first" checkpoint — via [`story-3.2-gate1-PROMPT.md`](story-3.2-gate1-PROMPT.md)
+> + [`story-3.2-gate1-VALIDATOR-HANDOVER.md`](story-3.2-gate1-VALIDATOR-HANDOVER.md). Only after
+> Gate 1 seals **GO** do you run this Gate-2 end-to-end. _(The two-gate split is a provisional
+> instance exception for Attempt 8 — it binds nothing in the process.)_
+>
 > **Why Attempt 8 / why a restart:** attempts 1-7 ALL failed as environment/execution/
 > collision misses — **none ever judged the deliverable.** The branch code is
 > offline/CI-green and grep-proven correct. Every failure was an operator-paste miss in
