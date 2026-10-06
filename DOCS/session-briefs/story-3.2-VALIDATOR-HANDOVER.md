@@ -3,19 +3,23 @@
 > ## ⚠️ OPERATOR — DO THIS FIRST (before you send anything to the validator)
 > The validator's step-0 gate will REJECT the request unless you supply a printed
 > `preflight_story_3_2: PASS`. That PASS does not exist until YOU deploy the branch.
-> So, in order, from inside the `~/pde-platform` clone on `feature/story-3.2`:
-> 1. Confirm you're in the clone on the branch: `git rev-parse --abbrev-ref HEAD`
->    prints `feature/story-3.2` (NOT "fatal: not a git repository").
-> 2. Run **[`story-3.2-LIVE-RUNBOOK.md`](story-3.2-LIVE-RUNBOOK.md) STEP 1 → STEP 2d**:
->    sweep the `pdlv-` namespace to the canonical set, then deploy all four branch
->    stacks (orchestrator, codebuild, state-machine, Dev member role) and VERIFY each
->    live resource changed — never trust the deploy line.
-> 3. Run `python3 scripts/preflight_story_3_2.py` and capture the printed
+> Run **the LIVE-RUNBOOK's STEP 0 → STEP 4 in order** — do NOT skip STEP 0 (it holds the
+> clone, the right checkout, AND the two `/pdlv/` secrets the deploy needs). In sequence,
+> from inside the `~/pde-platform` clone on `feature/story-3.2`:
+> 1. **STEP 0** — launch pad + clone + checkout `feature/story-3.2`, and populate the two
+>    `/pdlv/` SecureStrings (generate the ExternalId; set the repo-token). Confirm
+>    `git rev-parse --abbrev-ref HEAD` prints `feature/story-3.2`.
+> 2. **STEP 1** — reconcile the `pdlv-` namespace to the canonical set.
+> 3. **STEP 2 (through 2d)** — deploy all four branch stacks (orchestrator, codebuild,
+>    state-machine, **and the Dev member role at 2d** — using the SAME ExternalId you set
+>    in STEP 0) and VERIFY each live resource changed; never trust the deploy line.
+> 4. **STEP 3** — prove the two-hop assume live (VD-3b).
+> 5. **STEP 4** — run `python3 scripts/preflight_story_3_2.py` and capture the printed
 >    `preflight_story_3_2: PASS` line (for the exact HEAD SHA).
-> 4. ONLY THEN open a fresh validator session and send the fenced block below **plus**
->    that `PASS` line. If you skip 1–3, the gate halts you (by design) — this box is
->    the route around it, not a wall. The LIVE-RUNBOOK is YOURS to run; you do NOT hand
->    it to the validator and the validator does NOT run it or help debug it for you.
+> 6. ONLY THEN open a fresh validator session and send the fenced block below **plus**
+>    that `PASS` line. If you skip any of STEP 0–4, the gate halts you (by design) — this
+>    box is the route around it, not a wall. The LIVE-RUNBOOK is YOURS to run; you do NOT
+>    hand it to the validator and the validator does NOT run it or help debug it for you.
 >
 > **Feed the fenced block below to an INDEPENDENT validator** — a fresh chat, a
 > second AI, or a human who did **not** build this. The builder does NOT author the
