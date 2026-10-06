@@ -25,8 +25,14 @@
 > validator can only ever receive a run that passed the gate. Run it from INSIDE the
 > `feature/story-3.2` clone, **DEV phase first, then HUB phase**:
 >
- You run the two phases in TWO SEPARATE CloudShell sessions — one in the Dev account, one in
-> the Hub account (confirmed operating model). **Each CloudShell is its own box and needs its
+ **Two ways to run the deploy** (both remove the seven-attempt operator-paste failure class):
+> - **CI / OIDC (recommended standing path):** trigger `.github/workflows/deploy-story-3.2.yml`
+>   (manual; checkout-proof; protected `pipeline-dev`/`pipeline-hub` environments require your
+>   approval before each cross-account deploy). One-time stand-up: [`../CI_OIDC_DEPLOY_SETUP.md`](../CI_OIDC_DEPLOY_SETUP.md).
+> - **Two CloudShells (break-glass / local):** the one-shot script below.
+>
+> You run the two script phases in TWO SEPARATE CloudShell sessions — one in the Dev account,
+> one in the Hub account (confirmed operating model). **Each CloudShell is its own box and needs its
 > OWN clone of `feature/story-3.2` first** — the Dev box did not have the repo in attempt 7
 > ("fatal: not a git repository"), which is why the script refuses to run until it is inside the
 > clone. Clone on EACH box, then run its phase from inside the clone:
