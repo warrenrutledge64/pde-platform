@@ -164,12 +164,31 @@ BEFORE the first pipeline run or hop 2 / the clone fail-fasts.
 - `REPO_TOKEN` is a **read-only** GitHub token (repo scope) for cloning the private PDE
   repo at the edge.
 
+> ⚠️ **CLOUDSHELL INPUT-COLLISION — each `read -rs` secret prompt is its OWN block (paste
+> ONE block at a time).** If you paste a block that contains a `read -rs` AND the commands that
+> follow it, the terminal feeds the next pasted line into the prompt as stdin — corrupting the
+> secret (this is what corrupted the clone token earlier). So the two secret reads below are
+> SEPARATE fenced blocks: paste the first, type the value, Enter; paste the second, type, Enter;
+> THEN paste the put-parameter block. Never paste two of these blocks together.
+
+Block 1 — read the ExternalId (paste alone; type the value; Enter):
+
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
-# Set these two shell vars first (NOT echoed): the real ExternalId + a read-only PAT.
 read -rs -p "ExternalId: " PDE_EXTERNAL_ID; echo
-read -rs -p "Repo token (read-only PAT): " PDE_REPO_TOKEN; echo
+```
 
+Block 2 — read the repo token (paste alone; type the value; Enter):
+
+```bash
+# Target: Pipeline-Hub 641628980935 (us-east-1)
+read -rs -p "Repo token (read-only PAT): " PDE_REPO_TOKEN; echo
+```
+
+Block 3 — write both SecureStrings (safe to paste whole; no `read` here):
+
+```bash
+# Target: Pipeline-Hub 641628980935 (us-east-1)
 aws ssm put-parameter --name /pdlv/promotion/external-id --type SecureString \
   --value "$PDE_EXTERNAL_ID" --overwrite \
   --tags Key=Project,Value=PDE Key=Story,Value=3.2 2>/dev/null \
@@ -437,11 +456,28 @@ CHANGED before any pipeline run — never trust the deploy line. Run this **from
 > }
 > ```
 
+> ⚠️ **INPUT-COLLISION: the ExternalId `read -rs` is its OWN block.** Paste the account/dir
+> check first, then the secret-read ALONE (type the value, Enter), THEN the deploy block — never
+> as one paste, or the terminal feeds the deploy line into the prompt and corrupts the secret.
+
+Block A — confirm account + directory (paste whole):
+
 ```bash
 # Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT (run from ~/pde-platform)
 aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
 git rev-parse --abbrev-ref HEAD && git log --oneline -1     # MUST be feature/story-3.2 (NOT "fatal: not a git repository")
+```
+
+Block B — read the ExternalId (paste ALONE; type the value; Enter):
+
+```bash
 read -rs -p "ExternalId (the REAL shared secret): " PDE_EXTERNAL_ID; echo
+```
+
+Block C — deploy the member role + check status (paste whole; no `read` here):
+
+```bash
+# Target: Pipeline-Dev 946509368326 (us-east-1)
 aws cloudformation deploy \
   --template-file infra/member-execution-role.yaml \
   --stack-name pde-trust-fabric \
@@ -453,6 +489,10 @@ unset PDE_EXTERNAL_ID
 aws cloudformation describe-stacks --stack-name pde-trust-fabric \
   --query "Stacks[0].StackStatus" --output text
 ```
+
+> _(The one-shot `scripts/deploy_story_3_2.sh dev` is immune to this collision — its `read -rs`
+> runs inside the script, which controls its own stdin. This manual split is for operators who
+> paste the blocks by hand instead of using the script.)_
 
 **VERIFY THE LIVE ROLE CHANGED (do NOT proceed until all three pass):**
 
