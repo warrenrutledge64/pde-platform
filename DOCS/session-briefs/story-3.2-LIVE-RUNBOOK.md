@@ -112,20 +112,41 @@ df -h ~
 Confirm the Hub, then clone the CORRECT repo and get on `feature/story-3.2`:
 
 > **AUTHORITATIVE SOURCE (OD-008):** GitHub **`warrenrutledge64/pde-platform`**,
-> token-auth. NOT CodeCommit, NOT `pde-hub`. Clone with the whole URL **QUOTED** and a
-> **REAL** token — never the literal `<TOKEN>` (bash reads a bare `<` as a redirect).
+> token-auth. NOT CodeCommit, NOT `pde-hub`.
+>
+> **TOKEN HANDLING — read this, it has bitten us (OD-008/OD-018).** Do NOT put the token
+> in the clone URL. A placeholder pasted literally makes git read it as a username and
+> silently PROMPT FOR A PASSWORD (not a loud failure — the Attempt-9 miss), and a token in
+> the URL lands in `.git/config` (a credential leak). So this block **PROMPTS** for the PAT
+> (`read -rs`, not echoed — nothing to paste-wrong, nothing to forget to edit), a credential
+> helper holds it, and the clone URL stays CLEAN.
+>
+> **Paste the two `read` lines FIRST, on their own, then paste the rest** (a `read` buried
+> mid-paste gets fed the next line by the terminal). **Do NOT type your PAT into chat —
+> it only goes into this prompt.**
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
+read -rs -p "GitHub PAT (repo read; not echoed): " GH_PAT; echo
+```
+
+```bash
+# fail LOUDLY if nothing was entered (no silent password prompt downstream)
+: "${GH_PAT:?no PAT entered — re-run the read line above and type your token}"
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
-cd ~
-rm -rf pde-platform
-git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
+cd ~ && rm -rf pde-platform
+# credential helper holds the token; the clone URL stays CLEAN (no token in .git/config)
+git config --global credential.helper store
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+unset GH_PAT   # value now lives only in the (mode-600) credential store
+git clone "https://github.com/warrenrutledge64/pde-platform.git"
 cd pde-platform
-git remote -v                              # confirm github.com/warrenrutledge64/pde-platform
+git remote -v        # MUST show a CLEAN url: https://github.com/... with NO token/@user
 git fetch origin
 git checkout feature/story-3.2
 git reset --hard origin/feature/story-3.2
+git log --oneline -1 # record this <HEAD-SHA> — it is what the validator gates on
 ```
 
 **STEP 0 LAUNCH-PAD LOCK (mechanical, fail-loud — paste as one block).** This is the
@@ -163,38 +184,50 @@ and every later step from this same shell/directory:
 the secret-at-the-edge inputs the deploy project resolves at runtime; they must exist
 BEFORE the first pipeline run or hop 2 / the clone fail-fasts.
 
-- `EXTERNAL_ID` must be the **exact** value baked into the Phase-1 member trust (the
-  `sts:ExternalId` condition on `pde-member-execution-<env>`). If you do not have it,
-  it is the value used when the member roles were deployed (Story 1.1 /
-  `restore/phase-1-green`).
+- `EXTERNAL_ID` is a **shared secret YOU establish** — an arbitrary high-entropy string
+  that must be IDENTICAL in two places for the cross-account assume (hop 2) to work: the
+  Hub SSM param `/pdlv/promotion/external-id` (STEP 0, below) and the `sts:ExternalId`
+  condition on the Dev member role's trust (STEP 2d's redeploy). There is no AWS-assigned
+  "ID" to look up and no special format — you generate the value and set it on both sides.
+  Assume you do NOT already have one (the common case for a new operator/contractor).
+
+  **DEFAULT — GENERATE ONE NOW (do this unless the CHECK below shows a real one exists):**
+  ```bash
+  # generate ONCE; this exact value goes to BOTH STEP 0 (SSM) and STEP 2d (member trust)
+  PDE_EXTERNAL_ID="$(openssl rand -hex 16)"
+  printf 'RECORD THIS in your durable secret store (OD-019): %s\n' "$PDE_EXTERNAL_ID"
+  ```
+  Keep that value for the rest of this run (STEP 0 and STEP 2d both read `$PDE_EXTERNAL_ID`).
+  Record it somewhere durable — it is intentionally not stored in the repo, and STEP 2d
+  needs the SAME value or hop 2 fails with a generic `AccessDenied` (surfaces LATER, not here).
+
+  **CHECK FIRST (only matters if the member role was already deployed with a real one):**
+  from a **Pipeline-Dev `946509368326`** CloudShell:
+  ```bash
+  aws sts get-caller-identity --query Account --output text    # MUST print 946509368326
+  aws iam get-role --role-name pde-member-execution-dev \
+    --query 'Role.AssumeRolePolicyDocument' --output json
+  # look for: "Condition": {"StringEquals": {"sts:ExternalId": "<VALUE>"}}
+  ```
+  - `<VALUE>` is a **real string** → an ID already exists; do NOT generate a new one
+    (that would break the existing trust). Set `PDE_EXTERNAL_ID="<VALUE>"` to that string.
+  - `<VALUE>` is the literal `<paste-the-new-value>`, or the role doesn't exist yet →
+    nothing was ever set; use the GENERATE block above. (STEP 2d then deploys the member
+    role with this value, so both sides match.)
 - `REPO_TOKEN` is a **read-only** GitHub token (repo scope) for cloning the private PDE
-  repo at the edge.
-
-> ⚠️ **CLOUDSHELL INPUT-COLLISION — each `read -rs` secret prompt is its OWN block (paste
-> ONE block at a time).** If you paste a block that contains a `read -rs` AND the commands that
-> follow it, the terminal feeds the next pasted line into the prompt as stdin — corrupting the
-> secret (this is what corrupted the clone token earlier). So the two secret reads below are
-> SEPARATE fenced blocks: paste the first, type the value, Enter; paste the second, type, Enter;
-> THEN paste the put-parameter block. Never paste two of these blocks together.
-
-Block 1 — read the ExternalId (paste alone; type the value; Enter):
+  repo at the edge (GitHub → Settings → Developer settings → Personal access tokens →
+  fine-grained, repo `warrenrutledge64/pde-platform`, Contents: Read-only).
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
-read -rs -p "ExternalId: " PDE_EXTERNAL_ID; echo
-```
+# PRECONDITION: PDE_EXTERNAL_ID is ALREADY SET from the block above (generated, or set
+# to the existing real value). Do NOT re-type it. Guard against an empty/forgotten var:
+: "${PDE_EXTERNAL_ID:?set PDE_EXTERNAL_ID first — see the GENERATE / CHECK block above}"
+printf 'Using ExternalId ending in: ...%s (keep it — STEP 2d needs the SAME value)\n' "${PDE_EXTERNAL_ID: -4}"
 
-Block 2 — read the repo token (paste alone; type the value; Enter):
-
-```bash
-# Target: Pipeline-Hub 641628980935 (us-east-1)
+# Only the repo token is prompted here (not echoed):
 read -rs -p "Repo token (read-only PAT): " PDE_REPO_TOKEN; echo
-```
 
-Block 3 — write both SecureStrings (safe to paste whole; no `read` here):
-
-```bash
-# Target: Pipeline-Hub 641628980935 (us-east-1)
 aws ssm put-parameter --name /pdlv/promotion/external-id --type SecureString \
   --value "$PDE_EXTERNAL_ID" --overwrite \
   --tags Key=Project,Value=PDE Key=Story,Value=3.2 2>/dev/null \
@@ -205,7 +238,7 @@ aws ssm put-parameter --name /pdlv/promotion/repo-token --type SecureString \
   --tags Key=Project,Value=PDE Key=Story,Value=3.2 2>/dev/null \
   || aws ssm put-parameter --name /pdlv/promotion/repo-token --type SecureString \
        --value "$PDE_REPO_TOKEN" --overwrite
-unset PDE_EXTERNAL_ID PDE_REPO_TOKEN
+unset PDE_REPO_TOKEN   # KEEP PDE_EXTERNAL_ID set — STEP 2d reuses it; unset it only after STEP 2d
 
 # Confirm BOTH exist as SecureString (value NOT printed):
 aws ssm get-parameter --name /pdlv/promotion/external-id --query "Parameter.Type" --output text
@@ -471,19 +504,17 @@ Block A — confirm account + directory (paste whole):
 ```bash
 # Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT (run from ~/pde-platform)
 aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
-git rev-parse --abbrev-ref HEAD && git log --oneline -1     # MUST be feature/story-3.2 (NOT "fatal: not a git repository")
-```
-
-Block B — read the ExternalId (paste ALONE; type the value; Enter):
-
-```bash
-read -rs -p "ExternalId (the REAL shared secret): " PDE_EXTERNAL_ID; echo
-```
-
-Block C — deploy the member role + check status (paste whole; no `read` here):
-
-```bash
-# Target: Pipeline-Dev 946509368326 (us-east-1)
+git log --oneline -1                                        # confirm feature/story-3.2 tip
+# ExternalId MUST be the SAME value you set in /pdlv/promotion/external-id at STEP 0.
+# STEP 0 ran in the HUB shell, so this (DEV) shell won't have the var — re-supply it.
+# SAFEST: read it straight back from the SSM param you already set (no re-typing, no
+# mismatch risk) so the two sides are provably identical:
+PDE_EXTERNAL_ID="$(aws ssm get-parameter --name /pdlv/promotion/external-id \
+  --with-decryption --query 'Parameter.Value' --output text --profile hub 2>/dev/null)"
+# ^ needs Hub read access from this shell (profile 'hub'); if you can't reach Hub SSM
+#   from Dev, instead paste the value you RECORDED at STEP 0 — it must match EXACTLY:
+[ -n "$PDE_EXTERNAL_ID" ] || read -rs -p "ExternalId (EXACT value from STEP 0): " PDE_EXTERNAL_ID; echo
+: "${PDE_EXTERNAL_ID:?ExternalId empty — supply the exact value recorded at STEP 0}"
 aws cloudformation deploy \
   --template-file infra/member-execution-role.yaml \
   --stack-name pde-trust-fabric \

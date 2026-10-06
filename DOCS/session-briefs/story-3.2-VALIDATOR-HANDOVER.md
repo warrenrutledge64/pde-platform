@@ -1,5 +1,26 @@
 # Validator Handover — Story 3.2 (first real cross-account deploy into Pipeline-Dev; closes VD-3b)
 
+> ## ⚠️ OPERATOR — DO THIS FIRST (before you send anything to the validator)
+> The validator's step-0 gate will REJECT the request unless you supply a printed
+> `preflight_story_3_2: PASS`. That PASS does not exist until YOU deploy the branch.
+> Run **the LIVE-RUNBOOK's STEP 0 → STEP 4 in order** — do NOT skip STEP 0 (it holds the
+> clone, the right checkout, AND the two `/pdlv/` secrets the deploy needs). In sequence,
+> from inside the `~/pde-platform` clone on `feature/story-3.2`:
+> 1. **STEP 0** — launch pad + clone + checkout `feature/story-3.2`, and populate the two
+>    `/pdlv/` SecureStrings (generate the ExternalId; set the repo-token). Confirm
+>    `git rev-parse --abbrev-ref HEAD` prints `feature/story-3.2`.
+> 2. **STEP 1** — reconcile the `pdlv-` namespace to the canonical set.
+> 3. **STEP 2 (through 2d)** — deploy all four branch stacks (orchestrator, codebuild,
+>    state-machine, **and the Dev member role at 2d** — using the SAME ExternalId you set
+>    in STEP 0) and VERIFY each live resource changed; never trust the deploy line.
+> 4. **STEP 3** — prove the two-hop assume live (VD-3b).
+> 5. **STEP 4** — run `python3 scripts/preflight_story_3_2.py` and capture the printed
+>    `preflight_story_3_2: PASS` line (for the exact HEAD SHA).
+> 6. ONLY THEN open a fresh validator session and send the fenced block below **plus**
+>    that `PASS` line. If you skip any of STEP 0–4, the gate halts you (by design) — this
+>    box is the route around it, not a wall. The LIVE-RUNBOOK is YOURS to run; you do NOT
+>    hand it to the validator and the validator does NOT run it or help debug it for you.
+>
 > **Feed the fenced block below to an INDEPENDENT validator** — a fresh chat, a
 > second AI, or a human who did **not** build this. The builder does NOT author the
 > pass/fail check (split-brain, `governance/METHODOLOGY.md` §4a / `AGENTS.md`).
@@ -77,10 +98,15 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
     git show feature/story-3.2:governance/PROJECT_PLAN.md
 - Offline structural guards you may re-run (stdlib; NOT a live proof — the live Dev deploy
   is the bar): the five `infra/validate_*.py` checkers, each with `--self-test`.
-- OPERATOR PRECONDITION (an environment gate, NOT your rubric): `scripts/preflight_story_3_2.py`
-  hard-fails a run against stale/un-redeployed infra (every prior attempt failed that way).
-  Use it only to confirm the live infra IS the branch under test before you validate; a
-  green preflight is permission to START, never a reason to seal PASS.
+- OPERATOR PRECONDITION — NON-BYPASSABLE (an environment gate, NOT your rubric):
+  `scripts/preflight_story_3_2.py` reads the LIVE Hub+Dev infra and hard-fails unless it
+  matches the Story-3.2 baseline. EVERY prior attempt (1-7) failed because the deliverable
+  was never actually deployed from the clone, so the run judged stale infra. Therefore the
+  printed `preflight_story_3_2: PASS` for the EXACT `<HEAD-SHA>` under test is the FIRST
+  raw artifact you require (YOUR TASK step 0). A green preflight is permission to START —
+  never a reason to seal PASS; but its ABSENCE or staleness means you have no evidence the
+  deliverable is live, so you SEAL INCONCLUSIVE and STOP. Do not proceed to judge without
+  it.
 
 # ENVIRONMENT FACTS (so you can author account-specific steps)
 - Pipeline-Hub (orchestrates; start/inspect the pipeline here): 641628980935
@@ -89,6 +115,13 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
 - Region us-east-1. Management 467866449172 + Forensics 360999005254 are never targets.
 
 # YOUR TASK — do these in order
+0. GATE — before authoring or judging ANYTHING, require the operator to paste the printed
+   `preflight_story_3_2: PASS` line from `scripts/preflight_story_3_2.py`, run against the
+   live Hub+Dev infra, for the EXACT `<HEAD-SHA>` you resolved above. This proves the
+   branch deliverable is actually deployed (the thing that failed on all seven prior
+   attempts). If that PASS line is absent, stale (a different SHA), or the operator cannot
+   produce it, SEAL INCONCLUSIVE ("deliverable not confirmed live — preflight PASS not
+   provided") and STOP. Do NOT author a DoD, run steps, or judge until this gate is met.
 1. AUTHOR a Definition of Done from the requirement + the full source above — concrete
    pass/fail conditions that must ALL hold, stated BEFORE you see results, with at least
    one adversarial/negative case. DERIVE THE ATTACK SURFACE FROM THE DIFF, NOT A SUMMARY:
@@ -108,8 +141,10 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
    - PASS — every in-scope DoD condition met, shown in the raw output.
    - FAIL — one or more not met (name which + the evidence); a deliverable defect.
    - INCONCLUSIVE — an environment/execution failure (wrong account, stale/un-redeployed
-     infra, an un-populated SSM secret, a dead stack never swept); say what's missing.
-     An environment failure is INCONCLUSIVE, not FAIL.
+     infra, a failed deploy, a blocked clone, an un-populated SSM secret, a dead stack
+     never swept); name exactly what was missing, SEAL, and STOP. An environment failure
+     is INCONCLUSIVE, not FAIL — and you do NOT troubleshoot it or suggest a fix (see
+     RULES); fixing is the operator's job on the next attempt.
 5. Output a one-line record the executor can paste into the RUNBOOK:
    `pass — <what was checked>, <date>, confirmed by <who>`  (or `FAIL — <what failed>, <date>`).
 
@@ -120,6 +155,17 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
 - Prefer breaking it over confirming it. Judge only from RAW live output on real AWS; a
   green `SUCCEEDED`/`CREATE_COMPLETE` line is NOT proof — the live Dev resource is.
 - If this reached you curated by the builder rather than from the repo/stakeholder, refuse.
+- DO NOT TROUBLESHOOT, DEBUG, OR SUGGEST FIXES — you are a judge, not a collaborator.
+  If the run hits an environment/execution failure (a deploy fails, a clone is blocked,
+  a resource is missing/stale, a credential/profile is absent), your ONLY move is to
+  SEAL INCONCLUSIVE and state exactly what was missing — then STOP. Do NOT propose a
+  remedy, a next command, a workaround, or a root cause for the operator to try; do NOT
+  co-debug it with them. The moment you help fix the environment you become a co-owner of
+  the setup you are later asked to bless, and your independence is gone (this is the
+  mirror of the no-builder-rubric rule — validator→operator collaboration is the same
+  covenant leak in the other direction). Naming the missing artifact is diagnosis a judge
+  may give; proposing the fix is not. Fixing is the builder/operator's job on the next
+  attempt; your job ends at the sealed verdict.
 - Calibrate depth: first real cross-account deploy + the VD-3b closure — a thorough
   adversarial DoD is the right bar.
 ```

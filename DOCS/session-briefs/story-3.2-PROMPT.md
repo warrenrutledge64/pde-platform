@@ -1,4 +1,4 @@
-# Session Prompt — Story 3.2 · Attempt 8 (executor-facing)
+# Session Prompt — Story 3.2 · Attempt 9 (executor-facing)
 
 > Source of truth: [`story-3.2-brief.md`](story-3.2-brief.md). Operator surface:
 > [`story-3.2-LIVE-RUNBOOK.md`](story-3.2-LIVE-RUNBOOK.md). Validator (BLIND): kick off a
@@ -10,9 +10,9 @@
 > "environment-real-first" checkpoint — via [`story-3.2-gate1-PROMPT.md`](story-3.2-gate1-PROMPT.md)
 > + [`story-3.2-gate1-VALIDATOR-HANDOVER.md`](story-3.2-gate1-VALIDATOR-HANDOVER.md). Only after
 > Gate 1 seals **GO** do you run this Gate-2 end-to-end. _(The two-gate split is a provisional
-> instance exception for Attempt 8 — it binds nothing in the process.)_
+> instance exception for this run — it binds nothing in the process.)_
 >
-> **Why Attempt 8 / why a restart:** attempts 1-7 ALL failed as environment/execution/
+> **Why Attempt 9 / why a restart:** attempts 1-8 ALL failed as environment/execution/
 > collision misses — **none ever judged the deliverable.** The branch code is
 > offline/CI-green and grep-proven correct. Every failure was an operator-paste miss in
 > CloudShell (wrong directory, wrong account, a name collision, a leftover-stack name lease,
@@ -23,7 +23,7 @@
 > Read `##1` first; everything else is secondary.
 
 ```
-You are the execution agent for Platform Delivery Engine (PDE) — Story 3.2, Attempt 8.
+You are the execution agent for Platform Delivery Engine (PDE) — Story 3.2, Attempt 9.
 PDE is a validation-gated multi-account AWS delivery platform. Pipeline-Hub
 (641628980935) ORCHESTRATES AND PULLS from member accounts. Story 3.2 is the FIRST real
 end-to-end pipeline run: trigger the live pdlv-promotion-pipeline so the Hub does a
@@ -31,7 +31,8 @@ cross-account CloudFormation deploy of the frozen Story 3.1 artifact into Pipeli
 (946509368326), closing VD-3b (the live Hub→member assume).
 
 # ##1 THE ONE THING THAT MUST NOT REPEAT ##
-All 7 prior attempts were ENVIRONMENT/OPERATOR-PASTE misses — the deliverable was NEVER
+All 8 prior attempts were ENVIRONMENT/OPERATOR-PASTE misses (attempt 8 = a Gate Halt: the
+OD-015 preflight gate fired and nothing was judged) — the deliverable was NEVER
 under test (deploys run from ~ not the clone, the Dev step run with HUB creds, a name
 collision, misnamed `pdlv-` stacks holding name leases, an input-collision token
 corruption, the preflight skipped; full record in RUNBOOK §VD-9). The branch is
@@ -61,13 +62,13 @@ DELIVERABLE; only then does triggering the pipeline + the validator judging make
 - NO SELF-CERTIFICATION: an INDEPENDENT validator authors the DoD + seals the verdict
   (story-3.2-VALIDATOR-HANDOVER.md); you RECORD the raw result. No recorded pass → 🟡.
 - NO MAIN COMMITS: branch + PR only, via `gh api repos/warrenrutledge64/pde-platform/pulls`.
-- VERIFY THE LIVE RESOURCE, not the green line (the attempts 1-7 lesson, above).
+- VERIFY THE LIVE RESOURCE, not the green line (the attempts 1-8 lesson, above).
 
 # FIRST — VALIDATION & ADVANCEMENT GATE (HALT if unmet)
 - Confirm in governance/RUNBOOK.md: Story 3.1 is ✅; 3.2 depends on it. 3.2 is build
   tier 6 — a tier advance over 3.1 (tier 5), WITHIN Phase 3 (no phase change).
 - 3.2 itself is 🟡 with VD-9 OPEN / gate ARMED — that is EXPECTED (reworking a 🟡 story
-  is the covenant working). Do NOT flip status on inference. Attempts 1-7 sealed verdicts
+  is the covenant working). Do NOT flip status on inference. Attempts 1-8 sealed verdicts
   are FROZEN audit trail — never edit or re-judge them.
 
 # HANDOFF — pass STATE not HISTORY (fill at session end; schema-shaped, lean)
@@ -89,7 +90,7 @@ roadmap/architecture yourself; point any decision at its RD-### (split-brain, §
 - OD-010 (Phase-2 paired state manifest) OPEN — tracked, not a 3.2 blocker.
 
 # THIS SESSION'S OBJECTIVE
-Run the clean Attempt-8 live validation via ##1 (CI workflow preferred, or the one-shot
+Run the clean Attempt-9 live validation via ##1 (CI workflow preferred, or the one-shot
 script) to a printed preflight PASS, then let the BLIND independent validator (seeded from
 story-3.2-VALIDATOR-KICKOFF.md) author its own DoD and seal the live Dev deploy (artifact
 stack CREATE_COMPLETE + `describe-table` returns the live pdlv-golden-path-artifact,
