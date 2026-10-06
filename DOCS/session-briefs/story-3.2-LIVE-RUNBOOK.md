@@ -135,12 +135,31 @@ and every later step from this same shell/directory:
 the secret-at-the-edge inputs the deploy project resolves at runtime; they must exist
 BEFORE the first pipeline run or hop 2 / the clone fail-fasts.
 
-- `EXTERNAL_ID` must be the **exact** value baked into the Phase-1 member trust (the
-  `sts:ExternalId` condition on `pde-member-execution-<env>`). If you do not have it,
-  it is the value used when the member roles were deployed (Story 1.1 /
-  `restore/phase-1-green`).
+- `EXTERNAL_ID` is a **shared secret** that must be IDENTICAL in two places for the
+  cross-account assume (hop 2) to work: the `sts:ExternalId` condition on the Dev member
+  role's trust policy, and the Hub SSM param `/pdlv/promotion/external-id` you set below.
+  **HOW TO GET IT — read it back from the live Dev member role (it is not generated here):**
+
+  From a **Pipeline-Dev `946509368326`** CloudShell (NOT the Hub — the role lives in Dev):
+  ```bash
+  aws sts get-caller-identity --query Account --output text    # MUST print 946509368326
+  aws iam get-role --role-name pde-member-execution-dev \
+    --query 'Role.AssumeRolePolicyDocument' --output json
+  ```
+  In the output, find:  `"Condition": {"StringEquals": {"sts:ExternalId": "<VALUE>"}}`
+
+  - **If `<VALUE>` is a real string** → THAT is your ExternalId. Use it verbatim below.
+  - **If `<VALUE>` is the literal `<paste-the-new-value>`** (the pre-3.2 Phase-1 role was
+    never given a real ExternalId) → there is nothing to "retrieve"; the shared secret was
+    never set. In that case the STAKEHOLDER CHOOSES the value once (any high-entropy string,
+    e.g. `openssl rand -hex 16`), and it must be written to BOTH sides with the SAME value:
+    the Hub SSM param here (STEP 0) AND the Dev member trust at STEP 2d's redeploy
+    (`ExternalId=<chosen>`). Record the chosen value in your own secret store — its
+    provenance is otherwise undocumented (see OD-019). A mismatch between the two sides
+    surfaces LATER as a generic `AccessDenied` on hop 2, not here — so get them equal now.
 - `REPO_TOKEN` is a **read-only** GitHub token (repo scope) for cloning the private PDE
-  repo at the edge.
+  repo at the edge (GitHub → Settings → Developer settings → Personal access tokens →
+  fine-grained, repo `warrenrutledge64/pde-platform`, Contents: Read-only).
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
