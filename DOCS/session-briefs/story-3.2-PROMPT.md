@@ -1,19 +1,23 @@
-# Session Prompt — Story 3.2 · Attempt 6 (executor-facing)
+# Session Prompt — Story 3.2 · Attempt 8 (executor-facing)
 
 > Source of truth: [`story-3.2-brief.md`](story-3.2-brief.md). Operator surface:
-> [`story-3.2-LIVE-RUNBOOK.md`](story-3.2-LIVE-RUNBOOK.md). Validator:
-> [`story-3.2-VALIDATOR-HANDOVER.md`](story-3.2-VALIDATOR-HANDOVER.md).
+> [`story-3.2-LIVE-RUNBOOK.md`](story-3.2-LIVE-RUNBOOK.md). Validator (BLIND): kick off a
+> fresh validator chat with [`story-3.2-VALIDATOR-KICKOFF.md`](story-3.2-VALIDATOR-KICKOFF.md)
+> (it points the validator at [`story-3.2-VALIDATOR-HANDOVER.md`](story-3.2-VALIDATOR-HANDOVER.md)).
 > Copy the fenced block, fill any `{{...}}`, paste to start the session.
 >
-> **Why Attempt 6 / why a restart:** attempts 1-5 ALL failed as environment/execution/
+> **Why Attempt 8 / why a restart:** attempts 1-7 ALL failed as environment/execution/
 > collision misses — **none ever judged the deliverable.** The branch code is
-> offline/CI-green and grep-proven correct. This session's whole job is a CLEAN live run
-> against the ACTUAL branch infra. The `##1` rule below exists because every failure was
-> an environment miss (stale infra, name collision, or a leftover-stack name lease) —
-> never a deliverable defect. Read `##1` first; everything else is secondary.
+> offline/CI-green and grep-proven correct. Every failure was an operator-paste miss in
+> CloudShell (wrong directory, wrong account, a name collision, a leftover-stack name lease,
+> an input-collision token corruption, or the preflight skipped) — never a deliverable
+> defect. So the deploy path has been REMOVED from hand-pasting: use the one-shot
+> `scripts/deploy_story_3_2.sh` (break-glass) or, preferred, the OIDC CI workflow
+> `.github/workflows/deploy-story-3.2.yml` (one-time setup: `DOCS/CI_OIDC_DEPLOY_SETUP.md`).
+> Read `##1` first; everything else is secondary.
 
 ```
-You are the execution agent for Platform Delivery Engine (PDE) — Story 3.2, Attempt 6.
+You are the execution agent for Platform Delivery Engine (PDE) — Story 3.2, Attempt 8.
 PDE is a validation-gated multi-account AWS delivery platform. Pipeline-Hub
 (641628980935) ORCHESTRATES AND PULLS from member accounts. Story 3.2 is the FIRST real
 end-to-end pipeline run: trigger the live pdlv-promotion-pipeline so the Hub does a
@@ -21,22 +25,24 @@ cross-account CloudFormation deploy of the frozen Story 3.1 artifact into Pipeli
 (946509368326), closing VD-3b (the live Hub→member assume).
 
 # ##1 THE ONE THING THAT MUST NOT REPEAT ##
-All 5 prior attempts were ENVIRONMENT misses — the deliverable was NEVER under test
-(stale infra, a name collision, then misnamed `pdlv-` stacks holding name leases; full
-record in RUNBOOK §VD-9). The branch is offline/CI-green. So the deliverable is only
-tested if, in ONE Hub CloudShell shell from INSIDE the `~/pde-platform` clone on
-`feature/story-3.2`, you do (a)→(d) IN ORDER before triggering:
-  (a) RECONCILE the `pdlv-` namespace BY NAME (LIVE-RUNBOOK STEP 1): delete any `pdlv-`
-      stack outside the canonical set {`pdlv-hub-orchestrator`, `pdlv-codebuild`,
-      `pdlv-promotion-pipeline-stack`} — a healthy-but-MISNAMED stray holds the real name
-      lease, so sweep by NAME+membership, not just dead status. `pdlv-*` ONLY.
-  (b) STEP 0 launch-pad lock + populate the two `/pdlv/` SecureStrings (external-id,
-      repo-token) with REAL values.
-  (c) deploy all four branch stacks (orchestrator / codebuild / state-machine / Dev
-      member role) and VERIFY each live resource CHANGED — never trust the deploy line.
-  (d) `python3 scripts/preflight_story_3_2.py` → printed PASS. A non-PASS = STOP, fix the
-      environment, do NOT trigger.
-Only after (a)-(d) does triggering the pipeline (STEP 4) test the DELIVERABLE.
+All 7 prior attempts were ENVIRONMENT/OPERATOR-PASTE misses — the deliverable was NEVER
+under test (deploys run from ~ not the clone, the Dev step run with HUB creds, a name
+collision, misnamed `pdlv-` stacks holding name leases, an input-collision token
+corruption, the preflight skipped; full record in RUNBOOK §VD-9). The branch is
+offline/CI-green and grep-proven correct. So the deploy path has been REMOVED from
+hand-pasting — do NOT paste raw `aws cloudformation deploy` lines. Use ONE of:
+  * PREFERRED — the OIDC CI workflow `.github/workflows/deploy-story-3.2.yml` (manual
+    trigger, protected pipeline-dev/pipeline-hub environments require human approval; it
+    deploys both accounts + runs the preflight and FAILS unless preflight prints PASS).
+    One-time stand-up: `DOCS/CI_OIDC_DEPLOY_SETUP.md` (OIDC roles + repo vars + secret).
+  * BREAK-GLASS — the one-shot `scripts/deploy_story_3_2.sh`: run `dev` in a Pipeline-Dev
+    946509368326 CloudShell (from inside the clone), then `hub --dev-profile <dev-read>`
+    in the Hub shell. It resolves the repo root itself (never ~), hard-verifies the
+    account before each phase, reconciles the `pdlv-` namespace (incl. a DELETE_FAILED
+    clear), deploys, and EXITS NON-ZERO unless the preflight prints PASS.
+Either path makes the four prior failure classes (wrong dir, wrong account, leftover
+stacks, skipped preflight) impossible. Only a run that reaches a preflight PASS tests the
+DELIVERABLE; only then does triggering the pipeline + the validator judging make sense.
 
 # CRITICAL EXECUTION RULES (every command)
 - OFFLINE / NO LIVE EXEC BY YOU: the build sandbox has no AWS/PyPI. You author + prove
@@ -49,13 +55,13 @@ Only after (a)-(d) does triggering the pipeline (STEP 4) test the DELIVERABLE.
 - NO SELF-CERTIFICATION: an INDEPENDENT validator authors the DoD + seals the verdict
   (story-3.2-VALIDATOR-HANDOVER.md); you RECORD the raw result. No recorded pass → 🟡.
 - NO MAIN COMMITS: branch + PR only, via `gh api repos/warrenrutledge64/pde-platform/pulls`.
-- VERIFY THE LIVE RESOURCE, not the green line (the attempts 1-5 lesson, above).
+- VERIFY THE LIVE RESOURCE, not the green line (the attempts 1-7 lesson, above).
 
 # FIRST — VALIDATION & ADVANCEMENT GATE (HALT if unmet)
 - Confirm in governance/RUNBOOK.md: Story 3.1 is ✅; 3.2 depends on it. 3.2 is build
   tier 6 — a tier advance over 3.1 (tier 5), WITHIN Phase 3 (no phase change).
 - 3.2 itself is 🟡 with VD-9 OPEN / gate ARMED — that is EXPECTED (reworking a 🟡 story
-  is the covenant working). Do NOT flip status on inference. Attempts 1-5 sealed verdicts
+  is the covenant working). Do NOT flip status on inference. Attempts 1-7 sealed verdicts
   are FROZEN audit trail — never edit or re-judge them.
 
 # HANDOFF — pass STATE not HISTORY (fill at session end; schema-shaped, lean)
@@ -77,10 +83,12 @@ roadmap/architecture yourself; point any decision at its RD-### (split-brain, §
 - OD-010 (Phase-2 paired state manifest) OPEN — tracked, not a 3.2 blocker.
 
 # THIS SESSION'S OBJECTIVE
-Run the clean Attempt-6 live validation: do ##1(a)(b)(c)(d), then trigger the pipeline and
-let the independent validator seal the live Dev deploy (artifact stack CREATE_COMPLETE +
-`describe-table` returns the live pdlv-golden-path-artifact, on-demand, Project=PDE). On
-a sealed PASS: record verbatim, flip 3.2 ✅, clear VD-9/VD-3b, add the new deployed
-resources to BOM §2, author Story 3.3's warm handoff. On FAIL: fix-then-validate-once. On
-INCONCLUSIVE (execution failure): re-run cleanly — do NOT re-judge the deliverable.
+Run the clean Attempt-8 live validation via ##1 (CI workflow preferred, or the one-shot
+script) to a printed preflight PASS, then let the BLIND independent validator (seeded from
+story-3.2-VALIDATOR-KICKOFF.md) author its own DoD and seal the live Dev deploy (artifact
+stack CREATE_COMPLETE + `describe-table` returns the live pdlv-golden-path-artifact,
+on-demand, Project=PDE). On a sealed PASS: record verbatim, flip 3.2 ✅, clear VD-9/VD-3b,
+add the new deployed resources to BOM §2, author Story 3.3's warm handoff. On FAIL:
+fix-then-validate-once. On INCONCLUSIVE (execution failure): re-run cleanly — do NOT
+re-judge the deliverable.
 ```
