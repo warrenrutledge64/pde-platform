@@ -135,36 +135,48 @@ and every later step from this same shell/directory:
 the secret-at-the-edge inputs the deploy project resolves at runtime; they must exist
 BEFORE the first pipeline run or hop 2 / the clone fail-fasts.
 
-- `EXTERNAL_ID` is a **shared secret** that must be IDENTICAL in two places for the
-  cross-account assume (hop 2) to work: the `sts:ExternalId` condition on the Dev member
-  role's trust policy, and the Hub SSM param `/pdlv/promotion/external-id` you set below.
-  **HOW TO GET IT — read it back from the live Dev member role (it is not generated here):**
+- `EXTERNAL_ID` is a **shared secret YOU establish** — an arbitrary high-entropy string
+  that must be IDENTICAL in two places for the cross-account assume (hop 2) to work: the
+  Hub SSM param `/pdlv/promotion/external-id` (STEP 0, below) and the `sts:ExternalId`
+  condition on the Dev member role's trust (STEP 2d's redeploy). There is no AWS-assigned
+  "ID" to look up and no special format — you generate the value and set it on both sides.
+  Assume you do NOT already have one (the common case for a new operator/contractor).
 
-  From a **Pipeline-Dev `946509368326`** CloudShell (NOT the Hub — the role lives in Dev):
+  **DEFAULT — GENERATE ONE NOW (do this unless the CHECK below shows a real one exists):**
+  ```bash
+  # generate ONCE; this exact value goes to BOTH STEP 0 (SSM) and STEP 2d (member trust)
+  PDE_EXTERNAL_ID="$(openssl rand -hex 16)"
+  printf 'RECORD THIS in your durable secret store (OD-019): %s\n' "$PDE_EXTERNAL_ID"
+  ```
+  Keep that value for the rest of this run (STEP 0 and STEP 2d both read `$PDE_EXTERNAL_ID`).
+  Record it somewhere durable — it is intentionally not stored in the repo, and STEP 2d
+  needs the SAME value or hop 2 fails with a generic `AccessDenied` (surfaces LATER, not here).
+
+  **CHECK FIRST (only matters if the member role was already deployed with a real one):**
+  from a **Pipeline-Dev `946509368326`** CloudShell:
   ```bash
   aws sts get-caller-identity --query Account --output text    # MUST print 946509368326
   aws iam get-role --role-name pde-member-execution-dev \
     --query 'Role.AssumeRolePolicyDocument' --output json
+  # look for: "Condition": {"StringEquals": {"sts:ExternalId": "<VALUE>"}}
   ```
-  In the output, find:  `"Condition": {"StringEquals": {"sts:ExternalId": "<VALUE>"}}`
-
-  - **If `<VALUE>` is a real string** → THAT is your ExternalId. Use it verbatim below.
-  - **If `<VALUE>` is the literal `<paste-the-new-value>`** (the pre-3.2 Phase-1 role was
-    never given a real ExternalId) → there is nothing to "retrieve"; the shared secret was
-    never set. In that case the STAKEHOLDER CHOOSES the value once (any high-entropy string,
-    e.g. `openssl rand -hex 16`), and it must be written to BOTH sides with the SAME value:
-    the Hub SSM param here (STEP 0) AND the Dev member trust at STEP 2d's redeploy
-    (`ExternalId=<chosen>`). Record the chosen value in your own secret store — its
-    provenance is otherwise undocumented (see OD-019). A mismatch between the two sides
-    surfaces LATER as a generic `AccessDenied` on hop 2, not here — so get them equal now.
+  - `<VALUE>` is a **real string** → an ID already exists; do NOT generate a new one
+    (that would break the existing trust). Set `PDE_EXTERNAL_ID="<VALUE>"` to that string.
+  - `<VALUE>` is the literal `<paste-the-new-value>`, or the role doesn't exist yet →
+    nothing was ever set; use the GENERATE block above. (STEP 2d then deploys the member
+    role with this value, so both sides match.)
 - `REPO_TOKEN` is a **read-only** GitHub token (repo scope) for cloning the private PDE
   repo at the edge (GitHub → Settings → Developer settings → Personal access tokens →
   fine-grained, repo `warrenrutledge64/pde-platform`, Contents: Read-only).
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
-# Set these two shell vars first (NOT echoed): the real ExternalId + a read-only PAT.
-read -rs -p "ExternalId: " PDE_EXTERNAL_ID; echo
+# PRECONDITION: PDE_EXTERNAL_ID is ALREADY SET from the block above (generated, or set
+# to the existing real value). Do NOT re-type it. Guard against an empty/forgotten var:
+: "${PDE_EXTERNAL_ID:?set PDE_EXTERNAL_ID first — see the GENERATE / CHECK block above}"
+printf 'Using ExternalId ending in: ...%s (keep it — STEP 2d needs the SAME value)\n' "${PDE_EXTERNAL_ID: -4}"
+
+# Only the repo token is prompted here (not echoed):
 read -rs -p "Repo token (read-only PAT): " PDE_REPO_TOKEN; echo
 
 aws ssm put-parameter --name /pdlv/promotion/external-id --type SecureString \
@@ -177,7 +189,7 @@ aws ssm put-parameter --name /pdlv/promotion/repo-token --type SecureString \
   --tags Key=Project,Value=PDE Key=Story,Value=3.2 2>/dev/null \
   || aws ssm put-parameter --name /pdlv/promotion/repo-token --type SecureString \
        --value "$PDE_REPO_TOKEN" --overwrite
-unset PDE_EXTERNAL_ID PDE_REPO_TOKEN
+unset PDE_REPO_TOKEN   # KEEP PDE_EXTERNAL_ID set — STEP 2d reuses it; unset it only after STEP 2d
 
 # Confirm BOTH exist as SecureString (value NOT printed):
 aws ssm get-parameter --name /pdlv/promotion/external-id --query "Parameter.Type" --output text
@@ -358,7 +370,16 @@ CHANGED before any pipeline run — never trust the deploy line. Run this **from
 # Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT
 aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
 git log --oneline -1                                        # confirm feature/story-3.2 tip
-read -rs -p "ExternalId (the REAL shared secret): " PDE_EXTERNAL_ID; echo
+# ExternalId MUST be the SAME value you set in /pdlv/promotion/external-id at STEP 0.
+# STEP 0 ran in the HUB shell, so this (DEV) shell won't have the var — re-supply it.
+# SAFEST: read it straight back from the SSM param you already set (no re-typing, no
+# mismatch risk) so the two sides are provably identical:
+PDE_EXTERNAL_ID="$(aws ssm get-parameter --name /pdlv/promotion/external-id \
+  --with-decryption --query 'Parameter.Value' --output text --profile hub 2>/dev/null)"
+# ^ needs Hub read access from this shell (profile 'hub'); if you can't reach Hub SSM
+#   from Dev, instead paste the value you RECORDED at STEP 0 — it must match EXACTLY:
+[ -n "$PDE_EXTERNAL_ID" ] || read -rs -p "ExternalId (EXACT value from STEP 0): " PDE_EXTERNAL_ID; echo
+: "${PDE_EXTERNAL_ID:?ExternalId empty — supply the exact value recorded at STEP 0}"
 aws cloudformation deploy \
   --template-file infra/member-execution-role.yaml \
   --stack-name pde-trust-fabric \
