@@ -15,6 +15,30 @@
 > verdict; this runbook is how you (the operator) produce the raw evidence. The builder
 > does NOT author the acceptance criteria.
 >
+> ### ⭐ PREFERRED PATH — the one-shot script (removes the wrong-dir / wrong-account trap)
+> Seven straight attempts failed on operator-environment mistakes (deploys run from `~`,
+> the "Dev" step run with Hub creds, leftover `pdlv-` stacks, the preflight skipped) — never
+> on the deliverable. **Use `scripts/deploy_story_3_2.sh` instead of hand-pasting STEP 1-2.**
+> It resolves the repo root from its own location (never `~`), HARD-VERIFIES the account
+> before each phase, reconciles the `pdlv-` namespace (incl. a `DELETE_FAILED` stack), deploys
+> the stacks, and runs `preflight_story_3_2.py` — aborting non-zero unless it prints PASS, so a
+> validator can only ever receive a run that passed the gate. Run it from INSIDE the
+> `feature/story-3.2` clone, **DEV phase first, then HUB phase**:
+>
+> ```bash
+> # 1) In a Pipeline-Dev 946509368326 CloudShell (clone the repo there + cd in), stand up the member role:
+> bash scripts/deploy_story_3_2.sh dev
+> # 2) In the Pipeline-Hub 641628980935 CloudShell, deploy the Hub stacks + run the preflight gate:
+> bash scripts/deploy_story_3_2.sh hub
+> # (If you have an assumable Dev profile from the Hub shell, you may instead run the dev phase there:
+> #   bash scripts/deploy_story_3_2.sh dev --dev-profile <profile-with-dev-creds>  )
+> ```
+>
+> Only on a printed `HUB PHASE: PASS` (which includes `preflight ... PASS`) do you trigger the
+> pipeline (STEP 4) and hand the raw output to the validator. The STEP 0-5 blocks below remain
+> as the equivalent manual procedure / reference; the script runs STEP 1 + STEP 2a-2d + the
+> preflight for you.
+>
 > **Target (reference only — the operator trusts `aws sts get-caller-identity`, not a
 > label):** Pipeline-Hub `641628980935`, region `us-east-1`. Members: Dev
 > `946509368326`, Sandbox `586917955591`, Prod `466494951534`. Management/root
