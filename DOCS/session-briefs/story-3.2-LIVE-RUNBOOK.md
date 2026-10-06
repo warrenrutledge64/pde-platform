@@ -193,25 +193,62 @@ for S in $PRESENT; do
 done
 echo "STRAY pdlv- stacks to delete (misnamed/dead, not in the canonical set):${STRAYS:-<none>}"
 
+# Reusable pdlv--only force-delete that CLEARS a DELETE_FAILED stack (attempt-6:
+# pdlv-promotion-pipeline-stack was stuck DELETE_FAILED — a plain delete-stack+wait does
+# NOT clear that state; you must re-issue delete-stack RETAINING the stuck resources).
+force_delete () {
+  local S="$1"
+  case "$S" in pdlv-*) : ;; *) echo "REFUSING to touch non-pdlv stack: $S"; return 0 ;; esac
+  local ST
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo ABSENT)
+  [ "$ST" = ABSENT ] && { echo "  $S already absent"; return 0; }
+  echo "deleting pdlv- stack: $S (status $ST)"
+  aws cloudformation delete-stack --stack-name "$S"
+  if aws cloudformation wait stack-delete-complete --stack-name "$S" 2>/dev/null; then
+    echo "  deleted: $S"; return 0
+  fi
+  # DELETE_FAILED path: retry retaining the resources that blocked the delete.
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo ABSENT)
+  [ "$ST" = ABSENT ] && { echo "  deleted: $S"; return 0; }
+  if [ "$ST" = DELETE_FAILED ]; then
+    local STUCK
+    STUCK=$(aws cloudformation describe-stack-events --stack-name "$S" \
+      --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].LogicalResourceId" --output text | tr '\t' ' ')
+    echo "  DELETE_FAILED; retrying --retain-resources $STUCK"
+    aws cloudformation delete-stack --stack-name "$S" --retain-resources $STUCK
+    aws cloudformation wait stack-delete-complete --stack-name "$S" 2>/dev/null \
+      && echo "  deleted (retained stuck resources): $S" \
+      || { echo "  STILL stuck: $S — capture describe-stack-events and STOP (do not deploy over it)"; return 1; }
+  else
+    echo "  $S is $ST — inspect before deploying; do not proceed"; return 1
+  fi
+}
+
 # Delete each stray — pdlv--only guard (never a pde-*/ZTIE/management/Forensics stack):
-for S in $STRAYS; do
-  case "$S" in
-    pdlv-*)
-      echo "deleting stray pdlv- stack: $S"
-      aws cloudformation delete-stack --stack-name "$S"
-      aws cloudformation wait stack-delete-complete --stack-name "$S"
-      echo "  deleted: $S" ;;
-    *) echo "REFUSING to touch non-pdlv stack: $S" ;;
+for S in $STRAYS; do force_delete "$S"; done
+
+# ALSO clear any CANONICAL stack sitting in a DEAD / DELETE_FAILED / *_FAILED state (attempt-6:
+# a canonical name can be stuck DELETE_FAILED and must be cleared before a fresh create):
+for S in $CANON; do
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo ABSENT)
+  case "$ST" in
+    DELETE_FAILED|ROLLBACK_COMPLETE|ROLLBACK_FAILED|CREATE_FAILED|UPDATE_ROLLBACK_FAILED|REVIEW_IN_PROGRESS)
+      echo "canonical stack $S is $ST — clearing before deploy"; force_delete "$S" ;;
+    *) : ;;  # ABSENT / CREATE_COMPLETE / UPDATE_COMPLETE are fine (STEP 2 create-or-update)
   esac
 done
 
-# VERIFY the namespace is now ONLY the canonical set (or empty on a first deploy):
+# VERIFY no pdlv- stack remains in a dead/stuck state, and only canonical names (or none) are present:
+echo "--- dead/stuck pdlv- stacks remaining (EXPECT none) ---"
 aws cloudformation list-stacks \
-  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE ROLLBACK_COMPLETE \
-      CREATE_FAILED REVIEW_IN_PROGRESS \
+  --stack-status-filter DELETE_FAILED ROLLBACK_COMPLETE ROLLBACK_FAILED CREATE_FAILED \
+      UPDATE_ROLLBACK_FAILED REVIEW_IN_PROGRESS \
   --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text
-# EXPECT: only names from {pdlv-hub-orchestrator, pdlv-codebuild, pdlv-promotion-pipeline-stack},
-# or empty. If any OTHER pdlv- name remains, STOP — STEP 2 will collide on it.
+echo "--- live pdlv- stacks (EXPECT only canonical names, or empty) ---"
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+  --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text
+# If any dead/stuck pdlv- stack remains, or any NON-canonical name is present, STOP — STEP 2 will collide.
 ```
 
 > **Only ever delete `pdlv-`-named stacks**, and only those outside the canonical set.
@@ -227,6 +264,31 @@ aws cloudformation list-stacks \
 
 Three deploys, all **additive** / in-place updates of `pdlv-` Hub stacks (plus a member
 redeploy per account). Each carries the mandatory `Project=PDE` stack tag (OD-012).
+
+> ### 🧭 STEP 2 DIRECTORY GUARD — run FIRST, in the SAME shell as every 2a-2d deploy (BLOCKING)
+> Attempt 6 (2026-10-04) failed because the deploys ran from the home directory (`~`), not the
+> clone — so `--template-file infra/*.yaml` resolved to nothing and every deploy died with
+> `[ERROR]: Invalid template path`. The STEP-0 LAUNCH-PAD LOCK is a separate block that was
+> skipped. This guard re-asserts the working directory + branch + template presence RIGHT HERE,
+> and HARD-EXITS the shell before any `cloudformation deploy` if you are not in the clone. Paste
+> it as one block, in the same CloudShell tab you will run 2a-2c in; re-paste it if the tab drops:
+>
+> ```bash
+> # Target: Pipeline-Hub 641628980935 (us-east-1)  — run from ~/pde-platform
+> {
+>   case "$(pwd)" in */pde-platform) : ;; *) echo "STEP2 GUARD: FAIL — pwd is $(pwd), not .../pde-platform. Run: cd ~/pde-platform"; exit 1 ;; esac
+>   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "STEP2 GUARD: FAIL — not inside the git clone (cd ~/pde-platform)"; exit 1; }
+>   [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/story-3.2" ] || { echo "STEP2 GUARD: FAIL — not on feature/story-3.2"; exit 1; }
+>   for f in infra/hub-orchestrator-role.yaml infra/codebuild-projects.yaml infra/state-machine.yaml infra/member-execution-role.yaml; do
+>     test -f "$f" || { echo "STEP2 GUARD: FAIL — $f not found from $(pwd) (wrong dir/branch)"; exit 1; }
+>   done
+>   echo "STEP2 GUARD: PASS — $(pwd) @ $(git log --oneline -1); templates resolve. Safe to deploy."
+> }
+> ```
+>
+> Do NOT run any 2a-2d `cloudformation deploy` until this prints `STEP2 GUARD: PASS`. The guard
+> for STEP 2d (which runs in the Dev account) is restated in that block, since it is a different
+> shell/account.
 
 **2a — the NEW unified Hub orchestrator** (`pdlv-hub-orchestrator`, pass-through + boundary,
 trust pinned to the deploy service role):
@@ -314,10 +376,28 @@ CHANGED before any pipeline run — never trust the deploy line. Run this **from
 `946509368326` CloudShell/credential**, on the `feature/story-3.2` checkout (confirm with
 `git log --oneline -1`). The ExternalId is the SAME shared secret you put in SSM in STEP 0:
 
+> **STEP 2d DIRECTORY GUARD (BLOCKING — this is a DIFFERENT shell + account than 2a-2c).**
+> The Dev shell in attempt 6 was outside the clone (`git log` → "fatal: not a git repository").
+> You must have the `feature/story-3.2` clone on THIS Dev CloudShell too (clone it here if the
+> Dev CloudShell is a fresh box). Paste this guard first; it hard-exits unless you are in the
+> clone, on the branch, in Dev, with the member template present:
+>
+> ```bash
+> # Target: Pipeline-Dev 946509368326 (us-east-1)  — run from ~/pde-platform on the Dev box
+> {
+>   [ "$(aws sts get-caller-identity --query Account --output text)" = "946509368326" ] || { echo "2d GUARD: FAIL — not in Pipeline-Dev 946509368326"; exit 1; }
+>   case "$(pwd)" in */pde-platform) : ;; *) echo "2d GUARD: FAIL — pwd is $(pwd), not .../pde-platform (clone the repo on the Dev box + cd in)"; exit 1 ;; esac
+>   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "2d GUARD: FAIL — not inside the git clone"; exit 1; }
+>   [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/story-3.2" ] || { echo "2d GUARD: FAIL — not on feature/story-3.2"; exit 1; }
+>   test -f infra/member-execution-role.yaml || { echo "2d GUARD: FAIL — infra/member-execution-role.yaml not found from $(pwd)"; exit 1; }
+>   echo "2d GUARD: PASS — Dev 946509368326, $(pwd) @ $(git log --oneline -1)"
+> }
+> ```
+
 ```bash
-# Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT
+# Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT (run from ~/pde-platform)
 aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
-git log --oneline -1                                        # confirm feature/story-3.2 tip
+git rev-parse --abbrev-ref HEAD && git log --oneline -1     # MUST be feature/story-3.2 (NOT "fatal: not a git repository")
 read -rs -p "ExternalId (the REAL shared secret): " PDE_EXTERNAL_ID; echo
 aws cloudformation deploy \
   --template-file infra/member-execution-role.yaml \
