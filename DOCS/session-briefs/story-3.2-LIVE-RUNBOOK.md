@@ -25,14 +25,33 @@
 > validator can only ever receive a run that passed the gate. Run it from INSIDE the
 > `feature/story-3.2` clone, **DEV phase first, then HUB phase**:
 >
+ You run the two phases in TWO SEPARATE CloudShell sessions — one in the Dev account, one in
+> the Hub account (confirmed operating model). **Each CloudShell is its own box and needs its
+> OWN clone of `feature/story-3.2` first** — the Dev box did not have the repo in attempt 7
+> ("fatal: not a git repository"), which is why the script refuses to run until it is inside the
+> clone. Clone on EACH box, then run its phase from inside the clone:
+>
 > ```bash
-> # 1) In a Pipeline-Dev 946509368326 CloudShell (clone the repo there + cd in), stand up the member role:
-> bash scripts/deploy_story_3_2.sh dev
-> # 2) In the Pipeline-Hub 641628980935 CloudShell, deploy the Hub stacks + run the preflight gate:
-> bash scripts/deploy_story_3_2.sh hub
-> # (If you have an assumable Dev profile from the Hub shell, you may instead run the dev phase there:
-> #   bash scripts/deploy_story_3_2.sh dev --dev-profile <profile-with-dev-creds>  )
+> # ───────────────────────────────────────────────────────────────────────────────
+> # (1) PIPELINE-DEV 946509368326 CloudShell  — stands up the member role first
+> # ───────────────────────────────────────────────────────────────────────────────
+> aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
+> cd ~ && rm -rf pde-platform
+> git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
+> cd pde-platform && git checkout feature/story-3.2 && git reset --hard origin/feature/story-3.2
+> bash scripts/deploy_story_3_2.sh dev      # verifies Dev account, redeploys + verifies the member role
+>
+> # ───────────────────────────────────────────────────────────────────────────────
+> # (2) PIPELINE-HUB 641628980935 CloudShell  — deploy Hub stacks + the preflight gate
+> # ───────────────────────────────────────────────────────────────────────────────
+> aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+> cd ~/pde-platform && git fetch origin && git checkout feature/story-3.2 && git reset --hard origin/feature/story-3.2
+> bash scripts/deploy_story_3_2.sh hub      # verifies Hub account, reconciles pdlv-, deploys, runs preflight (PASS or abort)
 > ```
+>
+> Run the two `/pdlv/` SecureStrings (STEP 0) in the Hub shell before the `hub` phase if they
+> are not already set. The `dev` phase prompts for the ExternalId; the `hub` phase ends on a
+> printed `HUB PHASE: PASS` (which includes `preflight ... PASS`) — only then trigger STEP 4.
 >
 > Only on a printed `HUB PHASE: PASS` (which includes `preflight ... PASS`) do you trigger the
 > pipeline (STEP 4) and hand the raw output to the validator. The STEP 0-5 blocks below remain
