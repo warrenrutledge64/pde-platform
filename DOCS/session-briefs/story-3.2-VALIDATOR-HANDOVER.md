@@ -77,10 +77,15 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
     git show feature/story-3.2:governance/PROJECT_PLAN.md
 - Offline structural guards you may re-run (stdlib; NOT a live proof — the live Dev deploy
   is the bar): the five `infra/validate_*.py` checkers, each with `--self-test`.
-- OPERATOR PRECONDITION (an environment gate, NOT your rubric): `scripts/preflight_story_3_2.py`
-  hard-fails a run against stale/un-redeployed infra (every prior attempt failed that way).
-  Use it only to confirm the live infra IS the branch under test before you validate; a
-  green preflight is permission to START, never a reason to seal PASS.
+- OPERATOR PRECONDITION — NON-BYPASSABLE (an environment gate, NOT your rubric):
+  `scripts/preflight_story_3_2.py` reads the LIVE Hub+Dev infra and hard-fails unless it
+  matches the Story-3.2 baseline. EVERY prior attempt (1-7) failed because the deliverable
+  was never actually deployed from the clone, so the run judged stale infra. Therefore the
+  printed `preflight_story_3_2: PASS` for the EXACT `<HEAD-SHA>` under test is the FIRST
+  raw artifact you require (YOUR TASK step 0). A green preflight is permission to START —
+  never a reason to seal PASS; but its ABSENCE or staleness means you have no evidence the
+  deliverable is live, so you SEAL INCONCLUSIVE and STOP. Do not proceed to judge without
+  it.
 
 # ENVIRONMENT FACTS (so you can author account-specific steps)
 - Pipeline-Hub (orchestrates; start/inspect the pipeline here): 641628980935
@@ -89,6 +94,13 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
 - Region us-east-1. Management 467866449172 + Forensics 360999005254 are never targets.
 
 # YOUR TASK — do these in order
+0. GATE — before authoring or judging ANYTHING, require the operator to paste the printed
+   `preflight_story_3_2: PASS` line from `scripts/preflight_story_3_2.py`, run against the
+   live Hub+Dev infra, for the EXACT `<HEAD-SHA>` you resolved above. This proves the
+   branch deliverable is actually deployed (the thing that failed on all seven prior
+   attempts). If that PASS line is absent, stale (a different SHA), or the operator cannot
+   produce it, SEAL INCONCLUSIVE ("deliverable not confirmed live — preflight PASS not
+   provided") and STOP. Do NOT author a DoD, run steps, or judge until this gate is met.
 1. AUTHOR a Definition of Done from the requirement + the full source above — concrete
    pass/fail conditions that must ALL hold, stated BEFORE you see results, with at least
    one adversarial/negative case. DERIVE THE ATTACK SURFACE FROM THE DIFF, NOT A SUMMARY:
