@@ -60,8 +60,12 @@ pass() { printf '\342\234\223 %s\n' "$*"; }        # ✓
 
 usage() {
   say "usage: bash scripts/deploy_story_3_2.sh <hub|dev> [--dev-profile <name>]"
-  say "  hub : deploy the Hub stacks (orchestrator, codebuild, state-machine) + run the preflight"
+  say "  hub : deploy the Hub stacks (orchestrator, codebuild, state-machine) + run the preflight."
+  say "        PASS --dev-profile <dev-read-profile> so the preflight can READ Dev 946509368326"
+  say "        from the Hub shell (an assumable Dev-read role on the Hub CloudShell)."
   say "  dev : redeploy the Dev member execution role from this branch + verify it changed"
+  say "        (run in a Pipeline-Dev 946509368326 shell; --dev-profile optional if its"
+  say "        default creds are already Dev)."
   exit 2
 }
 
@@ -233,7 +237,16 @@ deploy_hub infra/codebuild-projects.yaml    pdlv-codebuild               codebui
 deploy_hub infra/state-machine.yaml         pdlv-promotion-pipeline-stack state-machine    || exit 1
 
 # --- The non-bypassable gate: preflight MUST print PASS -----------------------
+# The preflight reads BOTH Hub and Dev. In the hub phase the default creds are Hub, so
+# it needs a Dev-READ path to reach 946509368326 — pass --dev-profile <dev-read-profile>
+# (an assumable Dev-read role configured on the Hub CloudShell). Without it the preflight
+# will fail with '[ENV] dev creds are account 641628980935, expected 946509368326' (the
+# Attempt-7 symptom) — which is the gate working, not a deliverable defect.
 say "STEP 3 — running the preflight gate (the validator may only judge a PASS)…"
+if [ -z "$DEV_PROFILE" ]; then
+  say "  NOTE: no --dev-profile given; the preflight's Dev-read will use the default creds."
+  say "  If this Hub shell cannot read Dev 946509368326, re-run: bash scripts/deploy_story_3_2.sh hub --dev-profile <dev-read-profile>"
+fi
 pf_args=()
 [ -n "$DEV_PROFILE" ] && pf_args+=(--dev-profile "$DEV_PROFILE")
 if python3 scripts/preflight_story_3_2.py "${pf_args[@]}"; then
