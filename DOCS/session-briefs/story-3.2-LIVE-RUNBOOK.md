@@ -63,20 +63,41 @@ df -h ~
 Confirm the Hub, then clone the CORRECT repo and get on `feature/story-3.2`:
 
 > **AUTHORITATIVE SOURCE (OD-008):** GitHub **`warrenrutledge64/pde-platform`**,
-> token-auth. NOT CodeCommit, NOT `pde-hub`. Clone with the whole URL **QUOTED** and a
-> **REAL** token — never the literal `<TOKEN>` (bash reads a bare `<` as a redirect).
+> token-auth. NOT CodeCommit, NOT `pde-hub`.
+>
+> **TOKEN HANDLING — read this, it has bitten us (OD-008/OD-018).** Do NOT put the token
+> in the clone URL. Two reasons: (1) if you paste the placeholder literally, git reads it
+> as a username and silently PROMPTS FOR A PASSWORD (it does not fail loudly) — exactly
+> what happened on the Attempt-9 clone (`Password for 'https://REAL_PAT@github.com/...'`);
+> (2) a token in the URL lands in `.git/config`'s remote (a credential leak a clean-clone
+> check flags). Instead: put your REAL token in the first-line variable below, let a
+> credential helper hold it, and clone with a CLEAN url. The guard fails loudly if you
+> forgot to substitute the token.
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
-aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
-cd ~
-rm -rf pde-platform
-git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
-cd pde-platform
-git remote -v                              # confirm github.com/warrenrutledge64/pde-platform
-git fetch origin
-git checkout feature/story-3.2
-git reset --hard origin/feature/story-3.2
+# >>> EDIT THIS ONE LINE: replace the placeholder with your REAL GitHub PAT <<<
+GH_PAT="PASTE_YOUR_REAL_TOKEN_HERE"
+
+# fail LOUDLY if the token wasn't substituted (no silent password prompt)
+case "$GH_PAT" in ""|PASTE_YOUR_REAL_TOKEN_HERE|REAL_PAT|"<TOKEN>")
+  echo "STOP: set GH_PAT to your real PAT on the line above, then re-run."; : ;;
+*)
+  aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+  cd ~ && rm -rf pde-platform
+  # credential helper holds the token; the clone URL stays CLEAN (no token in .git/config)
+  git config --global credential.helper store
+  printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+  chmod 600 ~/.git-credentials
+  git clone "https://github.com/warrenrutledge64/pde-platform.git"
+  cd pde-platform
+  git remote -v        # MUST show a CLEAN url: https://github.com/... with NO token/@user
+  git fetch origin
+  git checkout feature/story-3.2
+  git reset --hard origin/feature/story-3.2
+  git log --oneline -1 # record this <HEAD-SHA> — it is what the validator gates on
+  ;;
+esac
 ```
 
 **STEP 0 LAUNCH-PAD LOCK (mechanical, fail-loud — paste as one block).** This is the
