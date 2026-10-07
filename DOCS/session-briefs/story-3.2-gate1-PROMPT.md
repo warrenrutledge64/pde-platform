@@ -46,11 +46,18 @@ The live environment matches the Story-3.2 baseline the branch defines:
 2. Have the USER stand up the environment via the committed, non-bypassable deploy path (NOT
    hand-pasted deploys): PREFERRED the OIDC CI workflow .github/workflows/deploy-story-3.2.yml
    (one-time setup DOCS/CI_OIDC_DEPLOY_SETUP.md), or BREAK-GLASS scripts/deploy_story_3_2.sh
-   (dev phase in a Pipeline-Dev 946509368326 shell, then hub --dev-profile <dev-read> in Hub).
-   Both deploy the four branch stacks + run scripts/preflight_story_3_2.py and FAIL unless it
-   prints PASS.
+   (dev phase in a Pipeline-Dev 946509368326 shell, then hub in the Hub shell). Both deploy
+   the four branch stacks + run scripts/preflight_story_3_2.py and FAIL unless it prints PASS.
+   The preflight reads BOTH accounts. Two supported credential shapes:
+     * PROFILE / CI: `hub --dev-profile <dev-read>` runs the FULL preflight from the Hub shell
+       and prints ONE `preflight_story_3_2: PASS`.
+     * PER-ACCOUNT CloudShell (no cross-account profile — the default here): the hub phase runs
+       `--scope hub` from the Hub shell (prints `preflight_story_3_2 [hub]: PASS`); the USER then
+       runs `python3 scripts/preflight_story_3_2.py --scope dev` in the Dev shell (prints
+       `preflight_story_3_2 [dev]: PASS`). The TWO scoped PASSes together are the full baseline.
 3. CAPTURE THE RAW GATE-1 EVIDENCE for the validator (USER runs; you collect verbatim):
-   a. the full scripts/preflight_story_3_2.py output (its PASS line + per-check detail);
+   a. the full scripts/preflight_story_3_2.py output — EITHER the single `PASS` (profile/CI run)
+      OR BOTH scoped `[hub]`/`[dev]` PASS outputs (per-account run) — each with its per-check detail;
    b. the RAW AWS reads behind it, so the validator can judge the environment WITHOUT trusting
       the script — run in the stated account:
       # Hub 641628980935:
