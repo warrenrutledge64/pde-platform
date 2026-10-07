@@ -130,7 +130,7 @@ if [ "$PHASE" = dev ]; then
         --template-file infra/member-execution-role.yaml \
         --stack-name pde-trust-fabric \
         --capabilities CAPABILITY_NAMED_IAM \
-        --parameter-overrides EnvironmentName=dev ExternalId="$EID" \
+        --parameter-overrides EnvironmentName=dev ExternalId="$EID" StoryTag=3.2 \
         --tags Project=PDE Story=3.2 Component=trust-fabric \
         --no-fail-on-empty-changeset; then
     unset EID; fail "member-role deploy failed — capture the error above; do NOT validate"; exit 1

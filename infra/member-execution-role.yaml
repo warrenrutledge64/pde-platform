@@ -76,6 +76,21 @@ Parameters:
     Description: Which member this role is being deployed into (for naming/tagging).
     AllowedValues: [dev, sandbox, prod]
 
+  StoryTag:
+    Type: String
+    Description: >-
+      The id of the story that currently OWNS/redeploys this role, applied as the
+      role's `Story` resource tag. This role is a long-lived trust-fabric resource
+      first authored under Story 1.1 and redeployed by later stories; the tag marks
+      which story last stood it up and is used by scripts/preflight_story_3_2.py as a
+      "redeployed from the right branch" freshness signal. It is a PARAMETER (never a
+      hardcoded literal) so a redeploy cannot silently carry a stale value. Default is
+      the current owning story (3.2); a future story that redeploys this role passes
+      its own id.
+    Default: "3.2"
+    AllowedPattern: "^(G-)?[0-9]+(\\.[0-9]+)?$"
+    ConstraintDescription: Must be a story id, e.g. 3.2, 1.1, or G-1.
+
 # ---------------------------------------------------------------------------
 # RESOURCES
 # ---------------------------------------------------------------------------
@@ -180,7 +195,7 @@ Resources:
         - !Ref MemberExecutionPermissions
       Tags:
         - { Key: Project, Value: PDE }
-        - { Key: Story, Value: "1.1" }
+        - { Key: Story, Value: !Ref StoryTag }
         - { Key: Component, Value: trust-fabric }
         - { Key: Model, Value: orchestrate-and-pull }
         - { Key: Environment, Value: !Ref EnvironmentName }
