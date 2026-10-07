@@ -252,7 +252,7 @@ aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type
 
 ## STEP 1 — Reconcile the `pdlv-` namespace to the canonical set (name-driven, `pdlv-*` only)
 
-> **Two failure classes to clear before STEP 2 deploys (both learned live):**
+> **Three failure classes to clear before STEP 2 deploys (all learned live):**
 > 1. a **dead** `ROLLBACK_COMPLETE`/`*_FAILED` `pdlv-` stack blocks a re-deploy; and
 > 2. a **healthy but MISNAMED** `pdlv-` stack from a prior manual run holds the
 >    resource-name lease and makes STEP 2 fail with
@@ -261,6 +261,22 @@ aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type
 >    Functions names that the canonical `pdlv-codebuild` / `pdlv-promotion-pipeline-stack`
 >    needed). A status-only sweep MISSES case 2 — a misnamed stack can be
 >    `CREATE_COMPLETE`.
+> 3. a `pdlv-` stack **wedged in `DELETE_IN_PROGRESS`/`DELETE_FAILED` by ORPHANED RUNNING
+>    executions on a state machine it owns** (OD-023, Gate-1 2026-10-07: `pdlv-gate-probe`
+>    had 2 executions RUNNING for ~5 days from a prior attempt; CloudFormation cannot
+>    delete a state machine with live executions, so it timed out repeatedly — a direct
+>    `delete-state-machine` does NOT stop them either). If a `pdlv-` stack delete hangs,
+>    check `aws stepfunctions list-executions --status-filter RUNNING` on its SM and
+>    `aws stepfunctions stop-execution` each ARN (bounded to `pdlv-` names only); the
+>    delete then drains. The name-driven sweep below does NOT yet auto-stop executions.
+>
+> **Also watch (OD-024, Gate-1 2026-10-07): STALE IAM TRUST DRIFT.** If a trusted role was
+> deleted + recreated (e.g. `pdlv-codebuild-service-role` during churn), a role that trusts
+> it BY ARN (the orchestrator) freezes to the OLD unique id and a no-op redeploy will NOT
+> re-resolve it — the `[hub]` preflight then fails `orchestrator trust names ONLY
+> pdlv-codebuild-service-role` with a bare `AROA…` principal. Remedy: delete + recreate the
+> `pdlv-hub-orchestrator` stack (same name keeps the downstream member trust valid); on
+> recreate IAM re-resolves the trust to the live ARN. Then re-run `--scope hub`.
 >
 > This step therefore reconciles by NAME: the ONLY `pdlv-` stacks that may exist for
 > Story 3.2 are the canonical three — **`pdlv-hub-orchestrator`**, **`pdlv-codebuild`**,

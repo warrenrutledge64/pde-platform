@@ -26,7 +26,7 @@
 
 | Component | Type | Version | Notes |
 |-----------|------|---------|-------|
-| `infra/member-execution-role.yaml` | CloudFormation template | Story 1.1 | Orchestrate-and-pull trust fabric — member exec role the Hub *orchestrator* invokes (RD-006 amended). Offline-proven (21 invariants). Not yet deployed. |
+| `infra/member-execution-role.yaml` | CloudFormation template | Story 1.1 (Story-tag parameterized in 3.2) | Orchestrate-and-pull trust fabric — member exec role the Hub *orchestrator* invokes (RD-006 amended). Offline-proven (`validate_trust_fabric` 25 invariants). The role's `Story` tag is a `StoryTag` parameter (default `3.2`, never hardcoded) — OD-022 fix. Deployed live in Dev during Story 3.2 Gate 1 (member role tagged `Story=3.2`); still 🟡/VD-9 OPEN — deployed, not yet validated end-to-end. |
 | `scripts/phase1_gate.py` | Python 3 / Boto3 script | Story 1.2 | Phase-1 gate — Hub (as `pdlv-hub-orchestrator`, repointed from the legacy `pde-hub-orchestrator` in Story 3.2 per RD-009) assumes each `pde-member-execution-<env>` role (Dev→Sandbox→Prod) with the ExternalId and prints the returned account ids. Offline-proven (24 invariants). Its live cross-account run is the deferred VD-3b, proven in Story 3.2. |
 | `scripts/test_phase1_gate.py` | Python 3 (stdlib) checker | Story 1.2 | Offline proof bar for the Phase-1 gate script — 24 source + behaviour invariants against a fake STS stub (no AWS / no network). |
 | `DOCS/CLOUDSHELL_BOOTSTRAP.md` | Operator runbook | Story 1.2 | Reproducible Pipeline-Hub CloudShell bootstrap — credential-helper repo clone (no token in URL), explicit feature-branch checkout, AWS CLI / Python 3 / Boto3 / cfn-lint tooling, ExternalId-as-env-var, gate-script usage. |
