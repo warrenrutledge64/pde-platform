@@ -288,6 +288,26 @@ inventory; if it's in the inventory, it maps to a restore point.*
   prose gate was skipped twice; the durable fix was `scripts/preflight_story_3_2.py`,
   which hard-fails unless the live orchestrator trust/boundary + member tag/scope +
   state-machine ASL match the Story-3.2 baseline.)_
+- **Environment-real-first: for a cross-account/boundary story, prove the live
+  environment IS the baseline BEFORE judging the deliverable (RD-012).** When a
+  story's live validation crosses an AWS account / environment boundary, a mechanical
+  environment **preflight** (reads the live resources per-axis, hard-fails unless they
+  match the baseline, pinned to the exact `HEAD` SHA) MUST produce a printed
+  `preflight: PASS` first, and that PASS is **required evidence** the deliverable
+  validator may not proceed without. **Tiered:** the PASS-as-evidence is always
+  mandatory for cross-account stories; a **separate, independently-sealed blind Gate 1**
+  (environment GO/NO-GO authored from the raw reads, ahead of the deliverable Gate 2)
+  is run **only** when a story accrues **≥ 2 consecutive environment-miss INCONCLUSIVE
+  verdicts**. **Guardrails:** (a) pin the PASS to the exact `HEAD` SHA and **re-capture
+  if any infra changed** — a stale GO is not a GO; (b) the preflight PASS is **evidence,
+  never the ruling** — the validator judges the raw reads itself (§4a); (c) it is
+  **fail-open / depth-adaptive** — single-account and doc-only stories are out of scope
+  and the lane no-ops where inapplicable. _(PDE Story 3.2: seven consecutive attempts
+  were environment/execution misses that never judged the deliverable; introducing an
+  environment-real-first Gate 1 ahead of the deliverable Gate 2 produced the first clean
+  sealed GO off raw reads at Attempt 8. This bullet is the reusable-OS generalization —
+  keep the instance-specific preflight (`preflight_story_3_2.py`) in the instance; a
+  future spawn writes its own baseline-preflight to the same shape.)_
 - **Validate on a checkout-proof target — prefer CI on the PR head over a
   hand-pasted clone.** A human-driven clone/checkout is the single most common
   cause of a wasted validation cycle: it can clone the wrong repo, paste a literal
