@@ -256,7 +256,7 @@ and proving the two-hop assume live is exactly what Story 3.2's first real Dev d
 
 | Story | Tier | State |
 |-------|------|-------|
-| 3.3 | 7 | ⬜ **Ready now** — Story 3.2 is ✅ (sealed PASS Attempt 11, 2026-10-08; `story-3.2-validated` @ `30e72f3`; VD-9 CLEARED, gate DISARMED), so 3.3's only dependency is met. **Validate the Dev deployment, approve the Sandbox gate, promote to `Pipeline-Sandbox` `586917955591`.** The live Story-3.2 execution is holding at `AwaitSandboxApproval` — 3.3 approves that gate, lets the two-hop deploy run into Sandbox, and verifies the live artifact there, then holds at `AwaitProdApproval` (Prod is Story 3.4). Handoff authored on the Troikauge split architecture (G-4): requirement [`story-3.3-requirement.md`](../DOCS/session-briefs/story-3.3-requirement.md) + operations [`story-3.3-operations.md`](../DOCS/session-briefs/story-3.3-operations.md). Carry-forward from 3.2: run deploy/preflight from a FRESH checkout (HEAD == `origin/feature/story-3.3`; the freshness guard enforces it) and verify the LIVE Sandbox resource, never the green line. |
+| 3.3 | 7 | ⬜ **Ready now** — Story 3.2 is ✅ (sealed PASS Attempt 11, 2026-10-08; `story-3.2-validated` @ `30e72f3`; VD-9 CLEARED, gate DISARMED), so 3.3's only dependency is met. **Validate the Dev deployment, approve the Sandbox gate, promote to `Pipeline-Sandbox` `586917955591`.** The live Story-3.2 execution is holding at `AwaitSandboxApproval` — 3.3 approves that gate, lets the two-hop deploy run into Sandbox, and verifies the live artifact there, then holds at `AwaitProdApproval` (Prod is Story 3.4). Handoff authored on the Troikauge split architecture (G-4): requirement [`story-3.3-requirement.md`](../DOCS/session-briefs/story-3.3-requirement.md) + operations [`story-3.3-operations.md`](../DOCS/session-briefs/story-3.3-operations.md) + validator handover [`story-3.3-VALIDATOR-HANDOVER.md`](../DOCS/session-briefs/story-3.3-VALIDATOR-HANDOVER.md). Carry-forward from 3.2: run deploy/preflight from a FRESH checkout (HEAD == `origin/feature/story-3.3`; the freshness guard enforces it) and verify the LIVE Sandbox resource, never the green line. |
 
 **Blocked (waiting on an unmet dependency):**
 
@@ -275,7 +275,9 @@ the live `pdlv-golden-path-artifact` stack + table there, then holds at `AwaitPr
 (Prod = Story 3.4). The handoff is authored on the Troikauge split architecture (G-4, now 🟡):
 requirement [`story-3.3-requirement.md`](../DOCS/session-briefs/story-3.3-requirement.md)
 (Planner output) + operations [`story-3.3-operations.md`](../DOCS/session-briefs/story-3.3-operations.md)
-(operator surface, mapped to the four Moderator gates) — the monolithic `*-PROMPT.md` is retired.
+(operator surface, mapped to the four Moderator gates) + validator handover
+[`story-3.3-VALIDATOR-HANDOVER.md`](../DOCS/session-briefs/story-3.3-VALIDATOR-HANDOVER.md)
+(the independent-validation path) — the monolithic `*-PROMPT.md` / `*-VALIDATOR-KICKOFF.md` are retired.
 Carry-forward from the 3.2 close (ITIL continual-improvement): deploy/preflight from a FRESH
 checkout (HEAD == `origin/feature/story-3.3`; the `deploy_story_3_2.sh`-lineage freshness guard
 enforces it) and verify the LIVE Sandbox resource, never the green execution line; run BOTH
@@ -535,7 +537,7 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 **G-4 — Troikauge Document Architecture & Template Modernization**  🟡 _In Progress_
 - Steps: adopt the lean [`REQUIREMENT_TEMPLATE.md`](../DOCS/REQUIREMENT_TEMPLATE.md) (Planner's story output) + [`OPERATIONS_TEMPLATE.md`](../DOCS/OPERATIONS_TEMPLATE.md) (Builder's operator surface, mapped to the four Moderator gates) and retire the monolithic PROMPT files in favor of the split requirement/operations architecture.
 - **Scope / sequencing:** applies to **Story 3.3 and later**; it did **NOT** block Story 3.2 (which cleared VD-9 on its own via `scripts/deploy_story_3_2.sh` + `scripts/preflight_story_3_2.py`). **Started 2026-10-08** on the Story-3.2 sealed PASS — the natural bridge: Story 3.3 is handed off on the new split architecture (a filled requirement + operations pair) as the first adopter, instead of a monolithic PROMPT.
-- **Progress:** Story 3.3 handoff authored on the two templates (`DOCS/session-briefs/story-3.3-requirement.md` + `story-3.3-operations.md`); the monolithic `*-PROMPT.md` is retired going forward.
+- **Progress:** Story 3.3 handoff authored on the new architecture — `DOCS/session-briefs/story-3.3-requirement.md` (Planner) + `story-3.3-operations.md` (Builder operator surface) + `story-3.3-VALIDATOR-HANDOVER.md` (the independent-validation path, from `VALIDATOR_BRIEF_TEMPLATE.md`); the monolithic `*-PROMPT.md` / `*-VALIDATOR-KICKOFF.md` are retired going forward.
 - **Validation Result:** pending (G-class — closes by stakeholder review once Story 3.3+ run on the new templates and the PROMPTs are retired).
 - **Advancement gate:** depends on G-3 ✅ (the codified Troikauge core).
 
