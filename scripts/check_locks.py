@@ -75,6 +75,12 @@ VALIDATOR_BRIEF_SUFFIX = "-validator-handover.md"
 # Handoff artifacts Lock 3 (scope-reduction) guards.
 HANDOFF_SUFFIXES = ("-prompt.md", "-validator-handover.md", "-brief.md")
 
+# The lock checker's OWN source + tests contain IAM/trust/wildcard strings as
+# fixtures and detection patterns (e.g. an ``AWS::IAM::Role`` sabotage case in the
+# self-test). Those are the scanner's test data, NOT a real privilege surface, so
+# they must be excluded from the LOCK 2 diff scan or the checker flags itself.
+_SELF_FILES = ("scripts/check_locks.py", "scripts/test_check_locks.py")
+
 # Lock 1: a line that asserts a scope boundary / "given".
 _GIVEN_RE = re.compile(
     r"\b(out of scope|out-of-scope|known (?:stakeholder )?exception|"
@@ -208,6 +214,10 @@ def _diff_adds_iam(root: Path, base: str, head: str) -> list[str]:
     for path in _changed_files(root, base, head):
         # only inspect infra-ish text; skip the briefs themselves + binaries
         if path.lower().endswith(HANDOFF_SUFFIXES):
+            continue
+        # skip the lock checker's own source/tests — their IAM/trust/wildcard
+        # strings are fixtures + detection patterns, not a real privilege surface.
+        if path in _SELF_FILES:
             continue
         added = _added_lines(root, base, head, path)
         blob = "\n".join(added)
