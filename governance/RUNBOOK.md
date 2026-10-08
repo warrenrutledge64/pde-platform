@@ -178,6 +178,11 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 RD-011, is built + offline-proven on `feature/story-3.2` but not yet live-validated). No
 NEW feature story (a new tier / new dependency layer) may begin until VD-9 clears on a
 recorded live PASS; reworking Story 3.2 itself is always allowed (the covenant working).
+_(Troikauge: Story 3.2's live run passes the four **Moderator** gates — Pre-Execution →
+Deployment → Preflight → Live Result ([`governance/MODERATOR_PROTOCOL.md`](MODERATOR_PROTOCOL.md))
+— **before** the independent Validator judges anything; the seven non-judging attempts
+below were all gate-class misses, i.e. the deliverable was never under test. Roles &
+barriers: [`governance/AGENTS.md`](AGENTS.md).)_
 _(VD-8 was CLEARED on the sealed PASS of Story 3.1, 2026-10-04, Independent Validator,
 PR #41 head `d88c604`.)_ Story 3.1 ✅ — the
 Phase 3 Golden Path has its payload; Story 3.2 (deploy it to Pipeline-Dev THROUGH the

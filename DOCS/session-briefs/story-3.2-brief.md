@@ -136,6 +136,11 @@ deploy.**
   Dev table + its account/tags after the run.
 - **ZTIE-safe (RD-009).** `pdlv-` for Hub resources; the member roles correctly keep
   `pde-member-execution-<env>`. Never create a `pde-*` Hub resource.
+- **Troikauge Moderator gates precede validation.** The live run must pass the four
+  Moderator gates in order — Pre-Execution (STEP 0) → Deployment (STEP 2/2d) → Preflight
+  (`preflight_story_3_2.py` PASS) → Live Result (STEP 5) — BEFORE the independent
+  Validator judges anything (`../../governance/MODERATOR_PROTOCOL.md`;
+  `../../governance/AGENTS.md`). The seven non-judging attempts were all gate-class misses.
 
 ### Lessons Learned / Carry-Forward *(schema-shaped — pass state, not history)*
 

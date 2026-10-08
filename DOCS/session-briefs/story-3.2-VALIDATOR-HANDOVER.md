@@ -100,7 +100,11 @@ change, and seal a verdict from the raw output I run for you. Do not rubber-stam
   is the bar): the five `infra/validate_*.py` checkers, each with `--self-test`.
 - OPERATOR PRECONDITION — NON-BYPASSABLE (an environment gate, NOT your rubric):
   `scripts/preflight_story_3_2.py` reads the LIVE Hub+Dev infra and hard-fails unless it
-  matches the Story-3.2 baseline. EVERY prior attempt (1-7) failed because the deliverable
+  matches the Story-3.2 baseline. This IS the Troikauge **Moderator Preflight Gate**
+  (`governance/MODERATOR_PROTOCOL.md` Gate 3); the Pre-Execution / Deployment / Live-Result
+  gates are the operator's STEP 0 / STEP 2 / STEP 5 checks. The gates are an execution
+  precondition the Moderator owns — they are NOT your acceptance criteria, which you still
+  author yourself. EVERY prior attempt (1-7) failed because the deliverable
   was never actually deployed from the clone, so the run judged stale infra. Therefore the
   printed `preflight_story_3_2: PASS` for the EXACT `<HEAD-SHA>` under test is the FIRST
   raw artifact you require (YOUR TASK step 0). A green preflight is permission to START —
