@@ -422,45 +422,45 @@ Resources:
                 # remote is immediately rewritten to a token-free URL so it is not
                 # persisted in .git/config. CodeBuild also masks the PARAMETER_STORE
                 # value in the log stream.
-                - echo "CLONE: ${SOURCE_LOCATION} @ ${SOURCE_VERSION} (token masked)"
+                - 'echo "CLONE: ${SOURCE_LOCATION} @ ${SOURCE_VERSION} (token masked)"'
                 - |
                   CLONE_URL=$(printf '%s' "$SOURCE_LOCATION" | sed -E "s#^https://#https://x-access-token:${REPO_TOKEN}@#")
                   git clone --depth 1 --branch "$SOURCE_VERSION" "$CLONE_URL" repo
                   unset CLONE_URL
                   git -C repo remote set-url origin "$SOURCE_LOCATION"
                 - cd repo
-                - test -f "$ARTIFACT_TEMPLATE_PATH" || { echo "FATAL: ${ARTIFACT_TEMPLATE_PATH} not found in the cloned repo @ ${SOURCE_VERSION}" >&2; exit 1; }
+                - 'test -f "$ARTIFACT_TEMPLATE_PATH" || { echo "FATAL: ${ARTIFACT_TEMPLATE_PATH} not found in the cloned repo @ ${SOURCE_VERSION}" >&2; exit 1; }'
                 # --- Confirm the engine identity (service role) -------------------
-                - echo "PDE two-hop deploy — engine identity (expect pdlv-codebuild-service-role):"
+                - 'echo "PDE two-hop deploy — engine identity (expect pdlv-codebuild-service-role):"'
                 - aws sts get-caller-identity
                 # --- HOP 1: service role -> unified Hub orchestrator (same account)
-                - echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"
+                - 'echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"'
                 - |
                   H1=$(aws sts assume-role --role-arn "$ORCHESTRATOR_ROLE_ARN" --role-session-name pdlv-deploy-hop1)
                   export AWS_ACCESS_KEY_ID=$(printf '%s' "$H1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
                   export AWS_SECRET_ACCESS_KEY=$(printf '%s' "$H1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
                   export AWS_SESSION_TOKEN=$(printf '%s' "$H1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
                   unset H1
-                - echo "now acting as the orchestrator:"
+                - 'echo "now acting as the orchestrator:"'
                 - aws sts get-caller-identity
                 # --- HOP 2: orchestrator -> member execution role (cross-account) -
                 # The ExternalId is presented ONLY here, where the Phase-1 member
                 # trust requires it. --external-id is not logged (set +x).
-                - echo "HOP 2: assume the member execution role ${TARGET_ROLE_ARN}"
+                - 'echo "HOP 2: assume the member execution role ${TARGET_ROLE_ARN}"'
                 - |
                   H2=$(aws sts assume-role --role-arn "$TARGET_ROLE_ARN" --role-session-name pdlv-deploy-hop2 --external-id "$EXTERNAL_ID")
                   export AWS_ACCESS_KEY_ID=$(printf '%s' "$H2" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
                   export AWS_SECRET_ACCESS_KEY=$(printf '%s' "$H2" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
                   export AWS_SESSION_TOKEN=$(printf '%s' "$H2" | python3 -c 'import json,sys;print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
                   unset H2
-                - echo "now acting LOCALLY in the member (expect the member account id):"
+                - 'echo "now acting LOCALLY in the member (expect the member account id):"'
                 - aws sts get-caller-identity
                 # --- The deploy ACTION runs LOCALLY in the member (RD-006) ---------
                 # One empty, zero-cost DynamoDB table. The STACK-level Project=PDE tag
                 # is applied by the deploy COMMAND (bare-resource template), so the
                 # live stack is attributable (OD-012). The pdlv- stack name is
                 # authorized by the member role's pdlv--scoped stack + dynamodb perms.
-                - echo "DEPLOY: ${ARTIFACT_STACK_NAME} from ${ARTIFACT_TEMPLATE_PATH} into the member"
+                - 'echo "DEPLOY: ${ARTIFACT_STACK_NAME} from ${ARTIFACT_TEMPLATE_PATH} into the member"'
                 - |
                   aws cloudformation deploy \
                     --template-file "$ARTIFACT_TEMPLATE_PATH" \
@@ -468,9 +468,9 @@ Resources:
                     --tags Project=PDE Story=3.2 Component=golden-path-artifact ManagedBy=cloudformation \
                     --no-fail-on-empty-changeset
                 # --- VERIFY the live result, not the deploy's exit code -----------
-                - echo "VERIFY: describe the live artifact stack + table in the member"
-                - aws cloudformation describe-stacks --stack-name "$ARTIFACT_STACK_NAME" --query "Stacks[0].StackStatus" --output text
-                - aws dynamodb describe-table --table-name "$ARTIFACT_STACK_NAME" --query "Table.{Name:TableName,Status:TableStatus,Billing:BillingModeSummary.BillingMode}" --output json
+                - 'echo "VERIFY: describe the live artifact stack + table in the member"'
+                - 'aws cloudformation describe-stacks --stack-name "$ARTIFACT_STACK_NAME" --query "Stacks[0].StackStatus" --output text'
+                - 'aws dynamodb describe-table --table-name "$ARTIFACT_STACK_NAME" --query "Table.{Name:TableName,Status:TableStatus,Billing:BillingModeSummary.BillingMode}" --output json'
       TimeoutInMinutes: 30
       LogsConfig:
         CloudWatchLogs:
