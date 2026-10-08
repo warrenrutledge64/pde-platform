@@ -134,14 +134,17 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | 11 | 5.2 | 5.1 | 5 | Pass a real ZTIE-cleared payload end-to-end to `Pipeline-Prod`, surfaced on the unified Hub dashboard. Closes Phase 5. |
 | G | G-1 | — | Governance | Independent adversarial **fat-audit** of the prompt/handoff templates (RD-008 / §4a; AI RMF MEASURE-2.7). No pipeline dep; runs now. |
 | G | G-2 | G-1 | Governance | **Trim** templates to the audit findings + record the **lean pass** (satisfies the RD-008/§4a gate). Gates Story 1.1's live validation (which uses the audited validator handover). |
+| G | G-3 | — | Governance | ✅ **Codify the Troikauge governance core** (`governance/AGENTS.md` + `governance/MODERATOR_PROTOCOL.md`) — the RD-012 4-seat model + the four Moderator gates. Done via PR #60 / PR #61. |
+| G | G-4 | G-3 | Governance | **Troikauge document architecture & template modernization** — author the lean `REQUIREMENT_TEMPLATE.md` + `OPERATIONS_TEMPLATE.md` and retire the monolithic PROMPT files. Applies to **Story 3.3+**; does **NOT** block Story 3.2. |
 
 > **Governance (`G-`) series.** Tooling/OS-quality stories, tracked separately from the
 > pipeline phases (they are not gate-enforced by `check_docs`, which tracks only
-> `N.N` IDs — the human tracks G-status). Governance thread **G-1 → G-2 both ✅**
-> (2026-09-30) — templates audited + trimmed. Original framing kept for context: **G-1 → G-2**,
-> which must complete **before Story 1.1's live validation** (Story 1.1 uses the
-> validator-handover template G-1/G-2 audit + trim). Story 1.1 may stay 🟡 meanwhile;
-> its *live pass* waits on G-2.
+> `N.N` IDs — the human tracks G-status). Threads: **G-1 → G-2 both ✅** (2026-09-30) —
+> templates audited + trimmed; **G-3 ✅** (2026-10-08, PR #60 / PR #61) — Troikauge
+> governance core codified (RD-012); **G-4** (Troikauge template modernization) is a
+> separate forward thread that applies to **Story 3.3+** and does **NOT** block Story 3.2.
+> (G-1 → G-2 had to complete before Story 1.1's live validation, which uses the
+> validator-handover template they audited/trimmed.)
 
 ## Validation Debt Register
 
@@ -245,7 +248,7 @@ and proving the two-hop assume live is exactly what Story 3.2's first real Dev d
 
 | Story | Tier | State |
 |-------|------|-------|
-| 3.2 | 6 | 🟡 **attempts 1-8 — NONE judged the deliverable (attempts 1-7 environment/execution/collision misses; attempt 8 a GATE HALT, 2026-10-04..05)**: attempts 1-3 validated STALE un-redeployed infra (operator outside the clone so STEP 2a-2d never ran); attempt 4 BLOCKED by the legacy `pde-hub-orchestrator` name collision (RESOLVED by the Q1 rename → `pdlv-hub-orchestrator`); attempt 5 BLOCKED by misnamed `pdlv-` stacks holding resource-name leases (RESOLVED by the hardened name-driven STEP 1 sweep); **attempt 6 sealed FAIL but ALL SIX findings are grep-proven against stale/undeployed infra the branch `c0892ff` contradicts** (CFN still `pde-*`, CodeBuild env still `pde-hub-orchestrator`, service role missing hop-1/SSM, literal `<paste-the-new-value>` trust, legacy buildspec, state machine ABSENT) — the state machine being absent proves STEP 2a-2d never ran and `preflight_story_3_2.py` was skipped; **attempt 7 sealed INCONCLUSIVE** (Hub state-machine deploy failed + Dev clone blocked by an existing directory — again never judged the deliverable; during it the validator drifted into TROUBLESHOOTING with the operator, the under-guarded mirror of the split-brain covenant → handover hardened, see OD-016). **VD-9 OPEN**, gate ARMED. The branch is offline/CI-green + grep-proven correct; the durable gaps are the still-SKIPPABLE preflight (OD-015) + validator-troubleshooting drift (OD-016). Attempt-8 run: deploy STEP 2a-2d FROM the clone AND pass `preflight_story_3_2.py` to a printed PASS BEFORE any validator judging; the validator seals INCONCLUSIVE and STOPS on any environment failure (no co-debugging). **Attempt 8 was the first GATE HALT** — the OD-015 step-0 gate fired on its first outing: the validator refused to judge because no `preflight_story_3_2: PASS` was provided (deliverable not confirmed live). Gate working as designed; the unmet precondition is operator-side (STEP 1→2d deploy + preflight not yet run). Attempt-9: deploy from the clone, get a preflight PASS, THEN hand it + the handover to the validator. Handover [`story-3.2-VALIDATOR-HANDOVER.md`](../DOCS/session-briefs/story-3.2-VALIDATOR-HANDOVER.md); operator surface [`story-3.2-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-3.2-LIVE-RUNBOOK.md). |
+| 3.2 | 6 | 🟡 **attempts 1-8 — NONE judged the deliverable (attempts 1-7 environment/execution/collision misses; attempt 8 a GATE HALT, 2026-10-04..05)**: attempts 1-3 validated STALE un-redeployed infra (operator outside the clone so STEP 2a-2d never ran); attempt 4 BLOCKED by the legacy `pde-hub-orchestrator` name collision (RESOLVED by the Q1 rename → `pdlv-hub-orchestrator`); attempt 5 BLOCKED by misnamed `pdlv-` stacks holding resource-name leases (RESOLVED by the hardened name-driven STEP 1 sweep); **attempt 6 sealed FAIL but ALL SIX findings are grep-proven against stale/undeployed infra the branch `c0892ff` contradicts** (CFN still `pde-*`, CodeBuild env still `pde-hub-orchestrator`, service role missing hop-1/SSM, literal `<paste-the-new-value>` trust, legacy buildspec, state machine ABSENT) — the state machine being absent proves STEP 2a-2d never ran and `preflight_story_3_2.py` was skipped; **attempt 7 sealed INCONCLUSIVE** (Hub state-machine deploy failed + Dev clone blocked by an existing directory — again never judged the deliverable; during it the validator drifted into TROUBLESHOOTING with the operator, the under-guarded mirror of the split-brain covenant → handover hardened, see OD-016). **VD-9 OPEN**, gate ARMED. The branch is offline/CI-green + grep-proven correct; the durable gaps are the still-SKIPPABLE preflight (OD-015) + validator-troubleshooting drift (OD-016). Attempt-8 run: deploy STEP 2a-2d FROM the clone AND pass `preflight_story_3_2.py` to a printed PASS BEFORE any validator judging; the validator seals INCONCLUSIVE and STOPS on any environment failure (no co-debugging). **Attempt 8 was the first GATE HALT** — the OD-015 step-0 gate fired on its first outing: the validator refused to judge because no `preflight_story_3_2: PASS` was provided (deliverable not confirmed live). Gate working as designed; the unmet precondition is operator-side (STEP 1→2d deploy + preflight not yet run). Attempt-9: run `scripts/deploy_story_3_2.sh` (dev then hub) + `scripts/preflight_story_3_2.py` from the clone, get a printed preflight `PASS`, THEN hand it + the handover to the validator — pipeline execution work, with **no Troikauge-template dependency** (the G-4 template modernization is for Story 3.3+ and does NOT gate 3.2). Handover [`story-3.2-VALIDATOR-HANDOVER.md`](../DOCS/session-briefs/story-3.2-VALIDATOR-HANDOVER.md); operator surface [`story-3.2-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-3.2-LIVE-RUNBOOK.md). |
 
 **Blocked (waiting on an unmet dependency):**
 
@@ -255,9 +258,20 @@ and proving the two-hop assume live is exactly what Story 3.2's first real Dev d
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Re-run Story 3.2 live (attempt 6) — SWEEP THE `pdlv-` NAMESPACE
-(STEP 1), DEPLOY ALL FOUR BRANCH STACKS FROM INSIDE THE CLONE, pass the mechanical preflight,
-THEN validate.** Attempts 1-5
+**Default next action:** **Execute Story 3.2 Attempt 9 via its existing scripts and clear
+VD-9 — this is pipeline execution work, NOT blocked by any Troikauge template.** Run
+`bash scripts/deploy_story_3_2.sh dev` then `… hub` from inside the `feature/story-3.2`
+clone (the script resolves the repo root, hard-verifies the account per phase, name-reconciles
+the `pdlv-` namespace, deploys STEP 2a-2d, and runs `scripts/preflight_story_3_2.py` — aborting
+unless it prints `PASS`), then hand the validator the handover + the printed preflight `PASS`.
+The G-4 Troikauge document-architecture work (`REQUIREMENT_TEMPLATE.md` / `OPERATIONS_TEMPLATE.md`,
+PROMPT retirement) is a **separate forward thread for Story 3.3+ and does NOT gate 3.2** — 3.2's
+operator surface (`scripts/deploy_story_3_2.sh`, `scripts/preflight_story_3_2.py`, the existing
+LIVE-RUNBOOK) is complete and in use. _(The four Moderator gates 3.2 already passes map to its
+existing checks: Pre-Execution = STEP 0 launch-pad lock; Deployment = STEP 2/2d verify; Preflight
+= `preflight_story_3_2.py` PASS; Live Result = STEP 5 — see `governance/MODERATOR_PROTOCOL.md`.)_
+
+Background on the prior attempts: attempts 1-5
 (2026-10-04..05) all failed to judge the deliverable: attempts 1-3 validated stale,
 un-redeployed infra (the operator was outside the clone — `git rev-parse HEAD` → "fatal: not
 a git repository" — so the STEP 2a-2d deploys never ran); attempt 4 was BLOCKED by the
@@ -488,6 +502,8 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 |-------|-------|-----------|--------|-----------|
 | G-1 | Independent adversarial fat-audit of the prompt/handoff templates | — | ✅ | 2026-09-30 |
 | G-2 | Trim templates to the audit findings + record the lean pass | G-1 | ✅ | 2026-09-30 |
+| G-3 | Codify Troikauge Governance Core (AGENTS.md & MODERATOR_PROTOCOL.md) | — | ✅ | 2026-10-08 |
+| G-4 | Troikauge Document Architecture & Template Modernization | G-3 | ⬜ | — |
 
 **G-1 — Independent adversarial fat-audit of the prompt/handoff templates**  ✅ _Done (validated)_
 - Steps: paste the ready-to-paste bloat-focused audit prompt ([`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md)) to an **independent** validator (Gemini — not the author). The auditor authors its own rubric under the axiom **fat causes drift and hallucination**, attacks the templates, and returns findings + a **measurably tighter rewrite**.
@@ -498,6 +514,17 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 - Steps: apply the audit's accepted findings — offline-blocker to Rule #1, explicit HANDOFF (HALT) boundary, load-bearing-only, guardrails early. Mirror upstream into `SDD-repo-kit` (reusable-OS). Re-prove offline (`check_docs` + tests).
 - **Validation Result:** pass — applied Gemini's two tighter rewrites to `DOCS/SESSION_PROMPT_TEMPLATE.md` (generic) + `DOCS/session-briefs/story-1.1-PROMPT.md` (instance): offline/no-live-execution constraint is now Rule #1, an explicit **HANDOFF (HALT) — STOP GENERATING** step sits in the execution loop, ~50% leaner with all load-bearing markers preserved (ExternalId, orchestrate-and-pull, member-execution-role, validate_trust_fabric, gh api, Phase-2/CloudTrail/mgmt-account scope-out, least-privilege, no-Terraform, warm-handoff). Mirrored upstream to `SDD-repo-kit`. `check_docs` PASS, 2026-09-30, confirmed by warrenrutledge64 (rewrites authored by the independent auditor, not self-certified). This clears the "prompts are optimized" gate.
 - **Advancement gate:** Story 1.1's LIVE validation (VD-3) may now run against the trimmed prompts.
+
+**G-3 — Codify Troikauge Governance Core (AGENTS.md & MODERATOR_PROTOCOL.md)**  ✅ _Done (validated)_
+- Steps: author `governance/AGENTS.md` (RD-012 4-seat boundary model — roles, authority matrix, information barriers, the §4a solo-seat exception) + `governance/MODERATOR_PROTOCOL.md` (the four mechanical gates: Pre-Execution → Deployment → Preflight → Live Result). Rename the model to **Troikauge** and reconcile `main`.
+- **Validation Result:** pass — Troikauge governance core landed on `main`: `governance/AGENTS.md` + `governance/MODERATOR_PROTOCOL.md` authored and reviewed, model renamed Split-Gauge → Troikauge, `check_docs` PASS. Delivered via **PR #60** (governance core) + **PR #61** (Troikauge rename reconciliation). G-class artifact — judged by specification/structural review (RD-012), not a live AWS gate. 2026-10-08, confirmed by warrenrutledge64.
+- **Advancement gate:** feeds G-4 (document architecture built on the codified seats/gates).
+
+**G-4 — Troikauge Document Architecture & Template Modernization**  ⬜ _Not Started_
+- Steps: author the lean `REQUIREMENT_TEMPLATE.md` (Planner's story output) + `OPERATIONS_TEMPLATE.md` (Builder's operator surface, mapped to the four Moderator gates) and retire the monolithic PROMPT files in favor of the split requirement/operations architecture.
+- **Scope / sequencing:** applies to **Story 3.3 and later**; it does **NOT** block Story 3.2. Story 3.2 clears VD-9 on its own via the existing `scripts/deploy_story_3_2.sh` + `scripts/preflight_story_3_2.py`, with no Troikauge-template dependency.
+- **Validation Result:** pending.
+- **Advancement gate:** depends on G-3 ✅ (the codified Troikauge core).
 
 ---
 
