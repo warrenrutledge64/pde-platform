@@ -64,6 +64,8 @@
 | PDE Phase-2 gate probe state machine | Step Functions state machine (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-gate-probe` in `641628980935` — structurally non-promoting (no deploy state; Fail terminal); proves the approval pause | 2 | `restore/phase-2-green` |
 | PDE gate-probe role | IAM role (CFN stack `pdlv-promotion-pipeline-stack`) | `pdlv-gate-probe-role` in `641628980935` (+ managed policies `pdlv-gate-probe-publish`, `pdlv-gate-probe-logs`) — publish + own-logs only | 2 | `restore/phase-2-green` |
 | PDE gate-probe log group | CloudWatch Logs group (CFN stack `pdlv-promotion-pipeline-stack`) | `/aws/vendedlogs/states/pdlv-gate-probe` in `641628980935` | 2 | `restore/phase-2-green` |
+| PDE Golden-Path artifact stack (Dev) | CloudFormation stack | `pdlv-golden-path-artifact` in `946509368326` (`CREATE_COMPLETE`) | 3 | `story-3.2-validated` (@ `30e72f3`) |
+| PDE Golden-Path artifact table (Dev) | DynamoDB table (CFN stack `pdlv-golden-path-artifact`) | `pdlv-golden-path-artifact` in `946509368326` — `ACTIVE`, `PAY_PER_REQUEST`, `Project=PDE` | 3 | `story-3.2-validated` (@ `30e72f3`) |
 
 > The three member roles trust the specific Hub role `pdlv-hub-orchestrator` + an
 > `sts:ExternalId` (Story 1.1 trust shape, repointed to the RD-009 name in Story 3.2 —

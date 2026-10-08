@@ -15,6 +15,55 @@
 > verdict; this runbook is how you (the operator) produce the raw evidence. The builder
 > does NOT author the acceptance criteria.
 >
+> ### ⭐ PREFERRED PATH — the one-shot script (removes the wrong-dir / wrong-account trap)
+> Seven straight attempts failed on operator-environment mistakes (deploys run from `~`,
+> the "Dev" step run with Hub creds, leftover `pdlv-` stacks, the preflight skipped) — never
+> on the deliverable. **Use `scripts/deploy_story_3_2.sh` instead of hand-pasting STEP 1-2.**
+> It resolves the repo root from its own location (never `~`), HARD-VERIFIES the account
+> before each phase, reconciles the `pdlv-` namespace (incl. a `DELETE_FAILED` stack), deploys
+> the stacks, and runs `preflight_story_3_2.py` — aborting non-zero unless it prints PASS, so a
+> validator can only ever receive a run that passed the gate. Run it from INSIDE the
+> `feature/story-3.2` clone, **DEV phase first, then HUB phase**:
+>
+ **Two ways to run the deploy** (both remove the seven-attempt operator-paste failure class):
+> - **CI / OIDC (recommended standing path):** trigger `.github/workflows/deploy-story-3.2.yml`
+>   (manual; checkout-proof; protected `pipeline-dev`/`pipeline-hub` environments require your
+>   approval before each cross-account deploy). One-time stand-up: [`../CI_OIDC_DEPLOY_SETUP.md`](../CI_OIDC_DEPLOY_SETUP.md).
+> - **Two CloudShells (break-glass / local):** the one-shot script below.
+>
+> You run the two script phases in TWO SEPARATE CloudShell sessions — one in the Dev account,
+> one in the Hub account (confirmed operating model). **Each CloudShell is its own box and needs its
+> OWN clone of `feature/story-3.2` first** — the Dev box did not have the repo in attempt 7
+> ("fatal: not a git repository"), which is why the script refuses to run until it is inside the
+> clone. Clone on EACH box, then run its phase from inside the clone:
+>
+> ```bash
+> # ───────────────────────────────────────────────────────────────────────────────
+> # (1) PIPELINE-DEV 946509368326 CloudShell  — stands up the member role first
+> # ───────────────────────────────────────────────────────────────────────────────
+> aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
+> cd ~ && rm -rf pde-platform
+> git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
+> cd pde-platform && git checkout feature/story-3.2 && git reset --hard origin/feature/story-3.2
+> bash scripts/deploy_story_3_2.sh dev      # verifies Dev account, redeploys + verifies the member role
+>
+> # ───────────────────────────────────────────────────────────────────────────────
+> # (2) PIPELINE-HUB 641628980935 CloudShell  — deploy Hub stacks + the preflight gate
+> # ───────────────────────────────────────────────────────────────────────────────
+> aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+> cd ~/pde-platform && git fetch origin && git checkout feature/story-3.2 && git reset --hard origin/feature/story-3.2
+> bash scripts/deploy_story_3_2.sh hub      # verifies Hub account, reconciles pdlv-, deploys, runs preflight (PASS or abort)
+> ```
+>
+> Run the two `/pdlv/` SecureStrings (STEP 0) in the Hub shell before the `hub` phase if they
+> are not already set. The `dev` phase prompts for the ExternalId; the `hub` phase ends on a
+> printed `HUB PHASE: PASS` (which includes `preflight ... PASS`) — only then trigger STEP 4.
+>
+> Only on a printed `HUB PHASE: PASS` (which includes `preflight ... PASS`) do you trigger the
+> pipeline (STEP 4) and hand the raw output to the validator. The STEP 0-5 blocks below remain
+> as the equivalent manual procedure / reference; the script runs STEP 1 + STEP 2a-2d + the
+> preflight for you.
+>
 > **Target (reference only — the operator trusts `aws sts get-caller-identity`, not a
 > label):** Pipeline-Hub `641628980935`, region `us-east-1`. Members: Dev
 > `946509368326`, Sandbox `586917955591`, Prod `466494951534`. Management/root
@@ -49,7 +98,35 @@
 
 ---
 
+---
+
+> ### 🔱 TROIKAUGE MODERATOR-GATE MAP (read before running)
+>
+> This runbook is the operator execution surface; its guards ARE the four
+> **Moderator** gates from [`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md).
+> Each must be green **before** the independent Validator judges anything — a red
+> gate is a hard stop (a run on stale/wrong/un-deployed infra judges nothing; that is
+> exactly the seven non-judging attempts in VD-9). Roles & barriers:
+> [`../../governance/AGENTS.md`](../../governance/AGENTS.md).
+>
+> | Moderator gate | Satisfied by (this runbook) | Mechanical check |
+> |----------------|-----------------------------|------------------|
+> | **Pre-Execution** | STEP 0 LAUNCH-PAD LOCK (right repo/branch/HEAD, both `/pdlv/` secrets set, real ExternalId) | the LAUNCH-PAD LOCK block (fail-loud) |
+> | **Deployment** | STEP 1 namespace reconcile → STEP 2 GUARD + 2a-2d deploys → STEP 2d VERIFY (live role carries the branch marker) | STEP 2 GUARD / 2d VERIFY blocks |
+> | **Preflight** | STEP 4 PRE-FLIGHT GATE (live infra matches the Story-3.2 baseline, right accounts) | `scripts/preflight_story_3_2.py` → printed `PASS` |
+> | **Live Result** | STEP 5 live-Dev verify (artifact stack `CREATE_COMPLETE`, live table on the proven target) | `describe-stacks` / `describe-table` on Dev `946509368326` |
+>
+> The Builder authors these operational steps; it does **NOT** author the Definition
+> of Done ([`../../governance/AGENTS.md`](../../governance/AGENTS.md) §4.1). The
+> Validator authors the DoD blind and seals the verdict.
+
+---
+
 ## STEP 0 — Launch pad, right code, and the two /pdlv/ secrets (Hub CloudShell)
+
+> **Moderator gate: PRE-EXECUTION** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 1).
+> The LAUNCH-PAD LOCK below is this story's Pre-Execution Gate: right repo/branch/HEAD,
+> both `/pdlv/` secrets present with REAL values. Fail-closed — do not proceed on a FAIL.
 
 **FREE DISK FIRST (OD-007 — CloudShell is ~1 GB and WILL fill up).**
 
@@ -63,20 +140,41 @@ df -h ~
 Confirm the Hub, then clone the CORRECT repo and get on `feature/story-3.2`:
 
 > **AUTHORITATIVE SOURCE (OD-008):** GitHub **`warrenrutledge64/pde-platform`**,
-> token-auth. NOT CodeCommit, NOT `pde-hub`. Clone with the whole URL **QUOTED** and a
-> **REAL** token — never the literal `<TOKEN>` (bash reads a bare `<` as a redirect).
+> token-auth. NOT CodeCommit, NOT `pde-hub`.
+>
+> **TOKEN HANDLING — read this, it has bitten us (OD-008/OD-018).** Do NOT put the token
+> in the clone URL. A placeholder pasted literally makes git read it as a username and
+> silently PROMPT FOR A PASSWORD (not a loud failure — the Attempt-9 miss), and a token in
+> the URL lands in `.git/config` (a credential leak). So this block **PROMPTS** for the PAT
+> (`read -rs`, not echoed — nothing to paste-wrong, nothing to forget to edit), a credential
+> helper holds it, and the clone URL stays CLEAN.
+>
+> **Paste the two `read` lines FIRST, on their own, then paste the rest** (a `read` buried
+> mid-paste gets fed the next line by the terminal). **Do NOT type your PAT into chat —
+> it only goes into this prompt.**
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
+read -rs -p "GitHub PAT (repo read; not echoed): " GH_PAT; echo
+```
+
+```bash
+# fail LOUDLY if nothing was entered (no silent password prompt downstream)
+: "${GH_PAT:?no PAT entered — re-run the read line above and type your token}"
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
-cd ~
-rm -rf pde-platform
-git clone "https://REAL_PAT@github.com/warrenrutledge64/pde-platform.git"
+cd ~ && rm -rf pde-platform
+# credential helper holds the token; the clone URL stays CLEAN (no token in .git/config)
+git config --global credential.helper store
+printf 'https://warrenrutledge64:%s@github.com\n' "$GH_PAT" > ~/.git-credentials
+chmod 600 ~/.git-credentials
+unset GH_PAT   # value now lives only in the (mode-600) credential store
+git clone "https://github.com/warrenrutledge64/pde-platform.git"
 cd pde-platform
-git remote -v                              # confirm github.com/warrenrutledge64/pde-platform
+git remote -v        # MUST show a CLEAN url: https://github.com/... with NO token/@user
 git fetch origin
 git checkout feature/story-3.2
 git reset --hard origin/feature/story-3.2
+git log --oneline -1 # record this <HEAD-SHA> — it is what the validator gates on
 ```
 
 **STEP 0 LAUNCH-PAD LOCK (mechanical, fail-loud — paste as one block).** This is the
@@ -114,17 +212,48 @@ and every later step from this same shell/directory:
 the secret-at-the-edge inputs the deploy project resolves at runtime; they must exist
 BEFORE the first pipeline run or hop 2 / the clone fail-fasts.
 
-- `EXTERNAL_ID` must be the **exact** value baked into the Phase-1 member trust (the
-  `sts:ExternalId` condition on `pde-member-execution-<env>`). If you do not have it,
-  it is the value used when the member roles were deployed (Story 1.1 /
-  `restore/phase-1-green`).
+- `EXTERNAL_ID` is a **shared secret YOU establish** — an arbitrary high-entropy string
+  that must be IDENTICAL in two places for the cross-account assume (hop 2) to work: the
+  Hub SSM param `/pdlv/promotion/external-id` (STEP 0, below) and the `sts:ExternalId`
+  condition on the Dev member role's trust (STEP 2d's redeploy). There is no AWS-assigned
+  "ID" to look up and no special format — you generate the value and set it on both sides.
+  Assume you do NOT already have one (the common case for a new operator/contractor).
+
+  **DEFAULT — GENERATE ONE NOW (do this unless the CHECK below shows a real one exists):**
+  ```bash
+  # generate ONCE; this exact value goes to BOTH STEP 0 (SSM) and STEP 2d (member trust)
+  PDE_EXTERNAL_ID="$(openssl rand -hex 16)"
+  printf 'RECORD THIS in your durable secret store (OD-019): %s\n' "$PDE_EXTERNAL_ID"
+  ```
+  Keep that value for the rest of this run (STEP 0 and STEP 2d both read `$PDE_EXTERNAL_ID`).
+  Record it somewhere durable — it is intentionally not stored in the repo, and STEP 2d
+  needs the SAME value or hop 2 fails with a generic `AccessDenied` (surfaces LATER, not here).
+
+  **CHECK FIRST (only matters if the member role was already deployed with a real one):**
+  from a **Pipeline-Dev `946509368326`** CloudShell:
+  ```bash
+  aws sts get-caller-identity --query Account --output text    # MUST print 946509368326
+  aws iam get-role --role-name pde-member-execution-dev \
+    --query 'Role.AssumeRolePolicyDocument' --output json
+  # look for: "Condition": {"StringEquals": {"sts:ExternalId": "<VALUE>"}}
+  ```
+  - `<VALUE>` is a **real string** → an ID already exists; do NOT generate a new one
+    (that would break the existing trust). Set `PDE_EXTERNAL_ID="<VALUE>"` to that string.
+  - `<VALUE>` is the literal `<paste-the-new-value>`, or the role doesn't exist yet →
+    nothing was ever set; use the GENERATE block above. (STEP 2d then deploys the member
+    role with this value, so both sides match.)
 - `REPO_TOKEN` is a **read-only** GitHub token (repo scope) for cloning the private PDE
-  repo at the edge.
+  repo at the edge (GitHub → Settings → Developer settings → Personal access tokens →
+  fine-grained, repo `warrenrutledge64/pde-platform`, Contents: Read-only).
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
-# Set these two shell vars first (NOT echoed): the real ExternalId + a read-only PAT.
-read -rs -p "ExternalId: " PDE_EXTERNAL_ID; echo
+# PRECONDITION: PDE_EXTERNAL_ID is ALREADY SET from the block above (generated, or set
+# to the existing real value). Do NOT re-type it. Guard against an empty/forgotten var:
+: "${PDE_EXTERNAL_ID:?set PDE_EXTERNAL_ID first — see the GENERATE / CHECK block above}"
+printf 'Using ExternalId ending in: ...%s (keep it — STEP 2d needs the SAME value)\n' "${PDE_EXTERNAL_ID: -4}"
+
+# Only the repo token is prompted here (not echoed):
 read -rs -p "Repo token (read-only PAT): " PDE_REPO_TOKEN; echo
 
 aws ssm put-parameter --name /pdlv/promotion/external-id --type SecureString \
@@ -137,7 +266,7 @@ aws ssm put-parameter --name /pdlv/promotion/repo-token --type SecureString \
   --tags Key=Project,Value=PDE Key=Story,Value=3.2 2>/dev/null \
   || aws ssm put-parameter --name /pdlv/promotion/repo-token --type SecureString \
        --value "$PDE_REPO_TOKEN" --overwrite
-unset PDE_EXTERNAL_ID PDE_REPO_TOKEN
+unset PDE_REPO_TOKEN   # KEEP PDE_EXTERNAL_ID set — STEP 2d reuses it; unset it only after STEP 2d
 
 # Confirm BOTH exist as SecureString (value NOT printed):
 aws ssm get-parameter --name /pdlv/promotion/external-id --query "Parameter.Type" --output text
@@ -149,29 +278,152 @@ aws ssm get-parameter --name /pdlv/promotion/repo-token  --query "Parameter.Type
 
 ---
 
-## STEP 1 — Dead-stack sweep (name-agnostic, `pdlv-*` only)
+## STEP 1 — Reconcile the `pdlv-` namespace to the canonical set (name-driven, `pdlv-*` only)
 
-A dead `ROLLBACK_COMPLETE`/`*_FAILED` `pdlv-` stack blocks a re-deploy. Sweep the
-`pdlv-` namespace ONLY — never touch a `pde-*` (ZTIE) stack, management, or Forensics.
+> **Two failure classes to clear before STEP 2 deploys (both learned live):**
+> 1. a **dead** `ROLLBACK_COMPLETE`/`*_FAILED` `pdlv-` stack blocks a re-deploy; and
+> 2. a **healthy but MISNAMED** `pdlv-` stack from a prior manual run holds the
+>    resource-name lease and makes STEP 2 fail with
+>    `[AWS::EarlyValidation::ResourceExistenceCheck]` (Attempt-5 blocker: rogue
+>    `pdlv-codebuild-projects` + `pdlv-state-machine` held the CodeBuild / Step
+>    Functions names that the canonical `pdlv-codebuild` / `pdlv-promotion-pipeline-stack`
+>    needed). A status-only sweep MISSES case 2 — a misnamed stack can be
+>    `CREATE_COMPLETE`.
+>
+> This step therefore reconciles by NAME: the ONLY `pdlv-` stacks that may exist for
+> Story 3.2 are the canonical three — **`pdlv-hub-orchestrator`**, **`pdlv-codebuild`**,
+> **`pdlv-promotion-pipeline-stack`**. ANY OTHER `pdlv-`-named stack (misnamed rogue or
+> dead) is swept. Sweep the `pdlv-` namespace ONLY — never touch a `pde-*` (ZTIE) stack,
+> management `467866449172`, or Forensics `360999005254`.
 
 ```bash
 # Target: Pipeline-Hub 641628980935 (us-east-1)
 aws sts get-caller-identity --query Account --output text   # MUST print 641628980935
+
+# The canonical Story-3.2 pdlv- stack set — everything else in pdlv- is a stray to clear.
+CANON="pdlv-hub-orchestrator pdlv-codebuild pdlv-promotion-pipeline-stack"
+
+# List EVERY pdlv- stack currently present (any non-deleted status), then compute the
+# strays = present pdlv- stacks NOT in the canonical set (this catches BOTH a healthy
+# misnamed stack like pdlv-codebuild-projects / pdlv-state-machine AND any dead stack).
+PRESENT=$(aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE \
+      ROLLBACK_COMPLETE CREATE_FAILED ROLLBACK_FAILED UPDATE_ROLLBACK_FAILED \
+      DELETE_FAILED REVIEW_IN_PROGRESS IMPORT_COMPLETE IMPORT_ROLLBACK_COMPLETE \
+  --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text)
+echo "pdlv- stacks present: ${PRESENT:-<none>}"
+
+STRAYS=""
+for S in $PRESENT; do
+  case " $CANON " in
+    *" $S "*) : ;;                 # canonical — keep
+    *) STRAYS="$STRAYS $S" ;;      # not in the canonical set — stray to sweep
+  esac
+done
+echo "STRAY pdlv- stacks to delete (misnamed/dead, not in the canonical set):${STRAYS:-<none>}"
+
+# Reusable pdlv--only force-delete that CLEARS a DELETE_FAILED stack (attempt-6:
+# pdlv-promotion-pipeline-stack was stuck DELETE_FAILED — a plain delete-stack+wait does
+# NOT clear that state; you must re-issue delete-stack RETAINING the stuck resources).
+force_delete () {
+  local S="$1"
+  case "$S" in pdlv-*) : ;; *) echo "REFUSING to touch non-pdlv stack: $S"; return 0 ;; esac
+  local ST
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo ABSENT)
+  [ "$ST" = ABSENT ] && { echo "  $S already absent"; return 0; }
+  echo "deleting pdlv- stack: $S (status $ST)"
+  aws cloudformation delete-stack --stack-name "$S"
+  if aws cloudformation wait stack-delete-complete --stack-name "$S" 2>/dev/null; then
+    echo "  deleted: $S"; return 0
+  fi
+  # DELETE_FAILED path: retry retaining the resources that blocked the delete.
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo ABSENT)
+  [ "$ST" = ABSENT ] && { echo "  deleted: $S"; return 0; }
+  if [ "$ST" = DELETE_FAILED ]; then
+    local STUCK
+    STUCK=$(aws cloudformation describe-stack-events --stack-name "$S" \
+      --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].LogicalResourceId" --output text | tr '\t' ' ')
+    echo "  DELETE_FAILED; retrying --retain-resources $STUCK"
+    aws cloudformation delete-stack --stack-name "$S" --retain-resources $STUCK
+    aws cloudformation wait stack-delete-complete --stack-name "$S" 2>/dev/null \
+      && echo "  deleted (retained stuck resources): $S" \
+      || { echo "  STILL stuck: $S — capture describe-stack-events and STOP (do not deploy over it)"; return 1; }
+  else
+    echo "  $S is $ST — inspect before deploying; do not proceed"; return 1
+  fi
+}
+
+# Delete each stray — pdlv--only guard (never a pde-*/ZTIE/management/Forensics stack):
+for S in $STRAYS; do force_delete "$S"; done
+
+# ALSO clear any CANONICAL stack sitting in a DEAD / DELETE_FAILED / *_FAILED state (attempt-6:
+# a canonical name can be stuck DELETE_FAILED and must be cleared before a fresh create):
+for S in $CANON; do
+  ST=$(aws cloudformation describe-stacks --stack-name "$S" --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo ABSENT)
+  case "$ST" in
+    DELETE_FAILED|ROLLBACK_COMPLETE|ROLLBACK_FAILED|CREATE_FAILED|UPDATE_ROLLBACK_FAILED|REVIEW_IN_PROGRESS)
+      echo "canonical stack $S is $ST — clearing before deploy"; force_delete "$S" ;;
+    *) : ;;  # ABSENT / CREATE_COMPLETE / UPDATE_COMPLETE are fine (STEP 2 create-or-update)
+  esac
+done
+
+# VERIFY no pdlv- stack remains in a dead/stuck state, and only canonical names (or none) are present:
+echo "--- dead/stuck pdlv- stacks remaining (EXPECT none) ---"
 aws cloudformation list-stacks \
-  --stack-status-filter ROLLBACK_COMPLETE CREATE_FAILED ROLLBACK_FAILED \
-      UPDATE_ROLLBACK_FAILED DELETE_FAILED REVIEW_IN_PROGRESS \
+  --stack-status-filter DELETE_FAILED ROLLBACK_COMPLETE ROLLBACK_FAILED CREATE_FAILED \
+      UPDATE_ROLLBACK_FAILED REVIEW_IN_PROGRESS \
   --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text
-# For EACH pdlv- name printed above (there should normally be none):
-#   aws cloudformation delete-stack --stack-name <that-pdlv-name>
-#   aws cloudformation wait stack-delete-complete --stack-name <that-pdlv-name>
+echo "--- live pdlv- stacks (EXPECT only canonical names, or empty) ---"
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+  --query "StackSummaries[?starts_with(StackName, 'pdlv-')].StackName" --output text
+# If any dead/stuck pdlv- stack remains, or any NON-canonical name is present, STOP — STEP 2 will collide.
 ```
+
+> **Only ever delete `pdlv-`-named stacks**, and only those outside the canonical set.
+> Deleting a stray `pdlv-` stack is non-destructive to ZTIE/PDE's real control plane
+> (the canonical stacks are re-created in STEP 2; the artifact is a disposable empty
+> table). If a stray stack has EXPORTS imported by another stack, delete the importer
+> first (CloudFormation will name it in the delete error) — but in a clean Story-3.2
+> Hub there should be none.
 
 ---
 
 ## STEP 2 — Deploy the orchestrator + refresh the two-hop control plane (Hub)
 
+> **Moderator gate: DEPLOYMENT** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 2).
+> STEP 1's name-driven reconcile clears dead/misnamed stacks; the STEP 2 GUARD +
+> 2a-2d deploys apply the branch; the STEP 2d VERIFY reads the branch marker off the
+> live role (`Story=3.2` tag, `pdlv-`-scoped grant, real ExternalId) — never trust the
+> green deploy line. Branch-not-applied ⇒ STOP (the attempt-1/2 stale-infra class).
+
 Three deploys, all **additive** / in-place updates of `pdlv-` Hub stacks (plus a member
 redeploy per account). Each carries the mandatory `Project=PDE` stack tag (OD-012).
+
+> ### 🧭 STEP 2 DIRECTORY GUARD — run FIRST, in the SAME shell as every 2a-2d deploy (BLOCKING)
+> Attempt 6 (2026-10-04) failed because the deploys ran from the home directory (`~`), not the
+> clone — so `--template-file infra/*.yaml` resolved to nothing and every deploy died with
+> `[ERROR]: Invalid template path`. The STEP-0 LAUNCH-PAD LOCK is a separate block that was
+> skipped. This guard re-asserts the working directory + branch + template presence RIGHT HERE,
+> and HARD-EXITS the shell before any `cloudformation deploy` if you are not in the clone. Paste
+> it as one block, in the same CloudShell tab you will run 2a-2c in; re-paste it if the tab drops:
+>
+> ```bash
+> # Target: Pipeline-Hub 641628980935 (us-east-1)  — run from ~/pde-platform
+> {
+>   case "$(pwd)" in */pde-platform) : ;; *) echo "STEP2 GUARD: FAIL — pwd is $(pwd), not .../pde-platform. Run: cd ~/pde-platform"; exit 1 ;; esac
+>   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "STEP2 GUARD: FAIL — not inside the git clone (cd ~/pde-platform)"; exit 1; }
+>   [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/story-3.2" ] || { echo "STEP2 GUARD: FAIL — not on feature/story-3.2"; exit 1; }
+>   for f in infra/hub-orchestrator-role.yaml infra/codebuild-projects.yaml infra/state-machine.yaml infra/member-execution-role.yaml; do
+>     test -f "$f" || { echo "STEP2 GUARD: FAIL — $f not found from $(pwd) (wrong dir/branch)"; exit 1; }
+>   done
+>   echo "STEP2 GUARD: PASS — $(pwd) @ $(git log --oneline -1); templates resolve. Safe to deploy."
+> }
+> ```
+>
+> Do NOT run any 2a-2d `cloudformation deploy` until this prints `STEP2 GUARD: PASS`. The guard
+> for STEP 2d (which runs in the Dev account) is restated in that block, since it is a different
+> shell/account.
 
 **2a — the NEW unified Hub orchestrator** (`pdlv-hub-orchestrator`, pass-through + boundary,
 trust pinned to the deploy service role):
@@ -259,11 +511,44 @@ CHANGED before any pipeline run — never trust the deploy line. Run this **from
 `946509368326` CloudShell/credential**, on the `feature/story-3.2` checkout (confirm with
 `git log --oneline -1`). The ExternalId is the SAME shared secret you put in SSM in STEP 0:
 
+> **STEP 2d DIRECTORY GUARD (BLOCKING — this is a DIFFERENT shell + account than 2a-2c).**
+> The Dev shell in attempt 6 was outside the clone (`git log` → "fatal: not a git repository").
+> You must have the `feature/story-3.2` clone on THIS Dev CloudShell too (clone it here if the
+> Dev CloudShell is a fresh box). Paste this guard first; it hard-exits unless you are in the
+> clone, on the branch, in Dev, with the member template present:
+>
+> ```bash
+> # Target: Pipeline-Dev 946509368326 (us-east-1)  — run from ~/pde-platform on the Dev box
+> {
+>   [ "$(aws sts get-caller-identity --query Account --output text)" = "946509368326" ] || { echo "2d GUARD: FAIL — not in Pipeline-Dev 946509368326"; exit 1; }
+>   case "$(pwd)" in */pde-platform) : ;; *) echo "2d GUARD: FAIL — pwd is $(pwd), not .../pde-platform (clone the repo on the Dev box + cd in)"; exit 1 ;; esac
+>   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "2d GUARD: FAIL — not inside the git clone"; exit 1; }
+>   [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/story-3.2" ] || { echo "2d GUARD: FAIL — not on feature/story-3.2"; exit 1; }
+>   test -f infra/member-execution-role.yaml || { echo "2d GUARD: FAIL — infra/member-execution-role.yaml not found from $(pwd)"; exit 1; }
+>   echo "2d GUARD: PASS — Dev 946509368326, $(pwd) @ $(git log --oneline -1)"
+> }
+> ```
+
+> ⚠️ **INPUT-COLLISION: the ExternalId `read -rs` is its OWN block.** Paste the account/dir
+> check first, then the secret-read ALONE (type the value, Enter), THEN the deploy block — never
+> as one paste, or the terminal feeds the deploy line into the prompt and corrupts the secret.
+
+Block A — confirm account + directory (paste whole):
+
 ```bash
-# Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT
+# Target: Pipeline-Dev 946509368326 (us-east-1)  <-- SWITCH ACCOUNT (run from ~/pde-platform)
 aws sts get-caller-identity --query Account --output text   # MUST print 946509368326
 git log --oneline -1                                        # confirm feature/story-3.2 tip
-read -rs -p "ExternalId (the REAL shared secret): " PDE_EXTERNAL_ID; echo
+# ExternalId MUST be the SAME value you set in /pdlv/promotion/external-id at STEP 0.
+# STEP 0 ran in the HUB shell, so this (DEV) shell won't have the var — re-supply it.
+# SAFEST: read it straight back from the SSM param you already set (no re-typing, no
+# mismatch risk) so the two sides are provably identical:
+PDE_EXTERNAL_ID="$(aws ssm get-parameter --name /pdlv/promotion/external-id \
+  --with-decryption --query 'Parameter.Value' --output text --profile hub 2>/dev/null)"
+# ^ needs Hub read access from this shell (profile 'hub'); if you can't reach Hub SSM
+#   from Dev, instead paste the value you RECORDED at STEP 0 — it must match EXACTLY:
+[ -n "$PDE_EXTERNAL_ID" ] || read -rs -p "ExternalId (EXACT value from STEP 0): " PDE_EXTERNAL_ID; echo
+: "${PDE_EXTERNAL_ID:?ExternalId empty — supply the exact value recorded at STEP 0}"
 aws cloudformation deploy \
   --template-file infra/member-execution-role.yaml \
   --stack-name pde-trust-fabric \
@@ -275,6 +560,10 @@ unset PDE_EXTERNAL_ID
 aws cloudformation describe-stacks --stack-name pde-trust-fabric \
   --query "Stacks[0].StackStatus" --output text
 ```
+
+> _(The one-shot `scripts/deploy_story_3_2.sh dev` is immune to this collision — its `read -rs`
+> runs inside the script, which controls its own stdin. This manual split is for operators who
+> paste the blocks by hand instead of using the script.)_
 
 **VERIFY THE LIVE ROLE CHANGED (do NOT proceed until all three pass):**
 
@@ -331,6 +620,8 @@ ORCH=$(aws sts assume-role \
 ## STEP 4 — Trigger the pipeline (the first real end-to-end run)
 
 > ### 🚦 PRE-FLIGHT GATE — MECHANICAL, not prose (do NOT start the pipeline until it PASSES)
+> **Moderator gate: PREFLIGHT** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 3) —
+> live infra matches the Story-3.2 baseline + right accounts.
 > This gate exists because attempts 1 AND 2 (2026-10-04) FAILED by triggering the pipeline
 > against **un-redeployed, stale infra** (a June-10 legacy `pde-hub-orchestrator`, the pre-3.2
 > state machine/buildspec, the `Story=1.1` Dev member role) — in attempt 2 the operator was
@@ -385,6 +676,11 @@ aws logs tail /aws/codebuild/pdlv-deploy --since 15m --format short | tail -60
 
 ## STEP 5 — VERIFY the live result in Pipeline-Dev (not the green execution line)
 
+> **Moderator gate: LIVE RESULT** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 4).
+> The raw output must come from the target proven green by the gates above and be
+> complete (no aborted step, no false-negative). Hand it raw to the Validator — the
+> operator does not judge.
+
 The skeptical proof: the artifact stack is `CREATE_COMPLETE` in Dev and the live
 `pdlv-golden-path-artifact` table exists, is on-demand, and is `Project=PDE`-tagged.
 **Run from a Pipeline-Dev `946509368326` CloudShell/credential.**
@@ -410,6 +706,19 @@ aws dynamodb list-tags-of-resource \
 > Hand ALL raw output back to the validator. On the sealed PASS the executor records
 > the verdict, flips 3.2 ✅, and authors Story 3.3's warm handoff. 3.2 does NOT close
 > Phase 3 (3.3/3.4 remain). On FAIL/INCONCLUSIVE, 3.2 stays 🟡.
+>
+> **PR STRUCTURE FOR THE CLOSE-OUT (two PRs, by design — see METHODOLOGY §7).** Story
+> 3.2's non-deliverable work (this runbook + the handoff docs + the governance ledger
+> records of attempts 1-4 and the Q1 rename) was split onto **docs-only PR #43**, which
+> merged to `main` immediately because it touches no `infra/*.yaml` (the merge-order
+> guard does not apply). The **deployable deliverable** — the four `infra/*.yaml`
+> templates + their pinned checkers/scripts + the static-bar workflow — stays on the
+> **gated PR #42**, which is intentionally un-mergeable (`mergeable_state: unstable`,
+> merge-order guard RED) while the gate is **ARMED**. So the close-out rides **#42**:
+> on the sealed PASS, land the close-out commit on `feature/story-3.2` (record the
+> verdict in `governance/RUNBOOK.md`, flip 3.2 ✅, clear VD-9 → set **Gate status:
+> DISARMED**, add the new deployed resources to BOM §2). The merge-order guard then
+> goes GREEN, #42 becomes mergeable, and the deliverable + close-out land together.
 
 ---
 

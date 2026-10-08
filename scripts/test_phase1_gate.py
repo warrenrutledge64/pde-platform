@@ -2,7 +2,7 @@
 """Offline proof bar for the PDE Phase-1 gate script (scripts/phase1_gate.py).
 
 The build sandbox is network-restricted and the live cross-account AssumeRole is
-the deferred VD-3b (Phase 2, once ``pde-hub-orchestrator`` exists). So this is a
+the deferred VD-3b (once ``pdlv-hub-orchestrator`` exists; Story 3.2). So this is a
 stdlib-only, no-AWS, no-network checker that proves the gate script is *correct by
 construction*:
 
@@ -62,7 +62,7 @@ class FakeSTS:
     def get_caller_identity(self):
         return {
             "Account": self._caller_account,
-            "Arn": f"arn:aws:sts::{self._caller_account}:assumed-role/pde-hub-orchestrator/sess",
+            "Arn": f"arn:aws:sts::{self._caller_account}:assumed-role/pdlv-hub-orchestrator/sess",
         }
 
     def assume_role(self, *, RoleArn, RoleSessionName, ExternalId):
@@ -104,8 +104,8 @@ def main() -> int:
     checks: list[tuple[str, bool]] = []
 
     # ---- SOURCE invariants (the trust-fabric contract) ---------------------- #
-    checks.append(("targets the real pde-hub-orchestrator (Option B)",
-                   mod.HUB_ORCHESTRATOR_ROLE == "pde-hub-orchestrator"))
+    checks.append(("targets the pdlv-hub-orchestrator (RD-009; repointed in Story 3.2)",
+                   mod.HUB_ORCHESTRATOR_ROLE == "pdlv-hub-orchestrator"))
     checks.append(("member role name matches the Story 1.1 template contract",
                    mod.member_role_name("dev") == "pde-member-execution-dev"
                    and mod.member_role_name("prod") == "pde-member-execution-prod"))

@@ -31,10 +31,14 @@ Parameters:
     Description: >-
       The EXACT name of the Hub-side orchestrator role allowed to assume/direct
       this member execution role. Per RD-006 the member trusts a specific Hub
-      ROLE, not the Hub account root. This orchestrator role is created in the Hub
-      during Phase 2; the trust may name it before it exists (it resolves at
-      assume-time).
-    Default: pde-hub-orchestrator
+      ROLE, not the Hub account root. The orchestrator role lives in PDE's pdlv-
+      Hub namespace (RD-009): the default is pdlv-hub-orchestrator, matching the
+      Story 3.2 Hub orchestrator stack (infra/hub-orchestrator-role.yaml) and the
+      Phase-1 gate script (scripts/phase1_gate.py). It is deliberately NOT the
+      legacy pde-hub-orchestrator name, which collides with a pre-existing Hub role
+      and violates RD-009. The trust may name it before it exists (resolved at
+      assume-time); re-deploying this stack repoints the live member trust to it.
+    Default: pdlv-hub-orchestrator
     AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
 
   ExternalId:
@@ -53,10 +57,39 @@ Parameters:
     Default: pde-
     AllowedPattern: "^[a-z][a-z0-9-]{1,15}$"
 
+  ArtifactPrefix:
+    Type: String
+    Description: >-
+      ZTIE-safe Hub/pipeline resource prefix for the PDE ARTIFACTS this member role
+      deploys locally (RD-009). This is DISTINCT from RolePrefix: the role itself keeps
+      the pde- name (it is the Phase-1 trust principal the Hub names), but the deployed
+      artifact stacks + their resources use pdlv- (substring-disjoint from ZTIE's pde-*
+      so the member's local-execution grants are walled off from the ZTIE namespace).
+      The Story 3.1 Golden-Path artifact deploys as a pdlv- stack / pdlv- DynamoDB
+      table, so the local CFN + DynamoDB grants below are scoped to exactly pdlv-*.
+    Default: pdlv-
+    AllowedPattern: "^pdlv-$"
+    ConstraintDescription: Must be exactly "pdlv-" (RD-009 — ZTIE-safe artifact prefix).
+
   EnvironmentName:
     Type: String
     Description: Which member this role is being deployed into (for naming/tagging).
     AllowedValues: [dev, sandbox, prod]
+
+  StoryTag:
+    Type: String
+    Description: >-
+      The id of the story that currently OWNS/redeploys this role, applied as the
+      role's `Story` resource tag. This role is a long-lived trust-fabric resource
+      first authored under Story 1.1 and redeployed by later stories; the tag marks
+      which story last stood it up and is used by scripts/preflight_story_3_2.py as a
+      "redeployed from the right branch" freshness signal. It is a PARAMETER (never a
+      hardcoded literal) so a redeploy cannot silently carry a stale value. Default is
+      the current owning story (3.2); a future story that redeploys this role passes
+      its own id.
+    Default: "3.2"
+    AllowedPattern: "^(G-)?[0-9]+(\\.[0-9]+)?$"
+    ConstraintDescription: Must be a story id, e.g. 3.2, 1.1, or G-1.
 
 # ---------------------------------------------------------------------------
 # RESOURCES
@@ -77,6 +110,11 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
+          # CloudFormation stack lifecycle, scoped to the pdlv- ARTIFACT namespace
+          # (RD-009) — NOT the pde- role namespace. The Story 3.1 Golden-Path artifact
+          # deploys as a pdlv- stack, so this is what the local deploy actually needs;
+          # scoping to pdlv-* walls the member's execution grants off from ZTIE's pde-*
+          # stacks in the same account. NOT AdministratorAccess, NOT a wildcard stack.
           - Sid: LocalCloudFormationStackOps
             Effect: Allow
             Action:
@@ -95,7 +133,34 @@ Resources:
               - cloudformation:ValidateTemplate
               - cloudformation:TagResource
               - cloudformation:UntagResource
-            Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${RolePrefix}*/*"
+            Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/${ArtifactPrefix}*/*"
+          # The actual resource the Golden-Path artifact creates: an on-demand
+          # DynamoDB table. Scoped STRICTLY to pdlv-* table names (RD-009) in this
+          # account — these actions can touch ONLY pdlv- tables, never a pde- (ZTIE)
+          # table. The action set is the CONCRETE table-lifecycle set CloudFormation
+          # needs to create/update/delete + describe/tag the artifact table (NOT a
+          # dynamodb:* service wildcard; least privilege, and avoids a checkov
+          # action-wildcard finding). No data-plane item actions (the artifact is
+          # empty; the pipeline is a correctness probe, not a datastore).
+          - Sid: LocalPdlvDynamoDbArtifactOnly
+            Effect: Allow
+            Action:
+              - dynamodb:CreateTable
+              - dynamodb:DeleteTable
+              - dynamodb:UpdateTable
+              - dynamodb:DescribeTable
+              - dynamodb:DescribeContinuousBackups
+              - dynamodb:DescribeTimeToLive
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:UpdateTimeToLive
+              - dynamodb:ListTagsOfResource
+              - dynamodb:TagResource
+              - dynamodb:UntagResource
+            Resource:
+              - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ArtifactPrefix}*"
+              - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${ArtifactPrefix}*/index/*"
+          # Describe/list are account-level reads CloudFormation needs; they expose no
+          # mutate power and cannot be ARN-scoped.
           - Sid: ReadOnlyDescribe
             Effect: Allow
             Action:
@@ -130,7 +195,7 @@ Resources:
         - !Ref MemberExecutionPermissions
       Tags:
         - { Key: Project, Value: PDE }
-        - { Key: Story, Value: "1.1" }
+        - { Key: Story, Value: !Ref StoryTag }
         - { Key: Component, Value: trust-fabric }
         - { Key: Model, Value: orchestrate-and-pull }
         - { Key: Environment, Value: !Ref EnvironmentName }

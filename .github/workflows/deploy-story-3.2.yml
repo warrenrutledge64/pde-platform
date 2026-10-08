@@ -1,0 +1,170 @@
+name: PDE Story 3.2 — live deploy (checkout-proof)
+
+# WHY THIS WORKFLOW EXISTS (VD-9 / OD-015 — seven straight operator-environment misses)
+# -------------------------------------------------------------------------------------
+# Story 3.2's deliverable was never once under test across seven hand-run attempts: every
+# failure was an operator/environment mistake in CloudShell — deploys run from ~ instead of
+# the clone, the Dev step run with Hub creds, leftover/DELETE_FAILED pdlv- stacks, a
+# read -rs input-collision corrupting the clone token, and the preflight gate skipped. The
+# durable fix is to remove the human-wrong-context path entirely: GitHub Actions checks out
+# the EXACT commit, has no ~-vs-clone or wrong-account ambiguity, and (below) cannot skip the
+# preflight — the job fails unless preflight_story_3_2.py prints PASS. This is the same
+# "run it in CI, not a hand-pasted CloudShell" lesson that unstuck Story 2.2.
+#
+# AUTH MODEL — GitHub OIDC (NO long-lived secrets), stakeholder-approved (c-1, 2026-10-05).
+# ----------------------------------------------------------------------------------------
+# This job assumes IAM roles via OIDC federation (aws-actions/configure-aws-credentials).
+# It never stores access keys. You MUST provide the role ARNs as REPO VARIABLES before this
+# workflow can run (Settings -> Secrets and variables -> Actions -> Variables):
+#
+#   PDE_HUB_DEPLOY_ROLE_ARN   — an OIDC-assumable role in Pipeline-Hub 641628980935 that can
+#                               deploy the pdlv- Hub stacks (CloudFormation + the IAM the
+#                               templates create) AND read Dev 946509368326 for the preflight
+#                               (or assume a Dev-read role). Least-privilege; scoped to pdlv-*.
+#   PDE_DEV_DEPLOY_ROLE_ARN   — an OIDC-assumable role in Pipeline-Dev 946509368326 that can
+#                               deploy the pde-member-execution-dev role (pde-trust-fabric stack).
+#
+# Each role's trust policy must federate THIS repo's OIDC subject (e.g.
+# token.actions.githubusercontent.com, repo:warrenrutledge64/pde-platform, ref
+# refs/heads/feature/story-3.2 or an environment). Standing up those OIDC roles is an IAM
+# action in each account (not something this workflow can create) — it is the prerequisite.
+#
+# UNTIL BOTH VARS ARE SET, the job SELF-ABORTS with a clear message (it does not run with
+# empty/placeholder ARNs). It is MANUAL-ONLY (workflow_dispatch) — never on push — so a
+# cross-account deploy is only ever triggered deliberately, after the Dev member role exists.
+#
+# ExternalId + repo-clone token: the deploy project resolves these at the edge from the Hub
+# SSM SecureStrings (/pdlv/promotion/external-id, /pdlv/promotion/repo-token) — set those in
+# the Hub account out-of-band (they are secrets; not passed through this workflow).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy-story-3.2" to confirm a live cross-account deploy'
+        required: true
+        default: ""
+
+permissions:
+  id-token: write      # required for OIDC role assumption
+  contents: read
+
+concurrency:
+  group: pde-story-3-2-deploy
+  cancel-in-progress: false   # never interrupt an in-flight cross-account deploy
+
+jobs:
+  preconditions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm the deliberate-deploy phrase
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "deploy-story-3.2" ]; then
+            echo "Refusing: confirmation phrase not provided (type 'deploy-story-3.2')."; exit 1
+          fi
+      - name: Require the OIDC role ARNs to be configured (no placeholder deploys)
+        env:
+          HUB_ARN: ${{ vars.PDE_HUB_DEPLOY_ROLE_ARN }}
+          DEV_ARN: ${{ vars.PDE_DEV_DEPLOY_ROLE_ARN }}
+        run: |
+          miss=0
+          [ -n "$HUB_ARN" ] || { echo "MISSING repo variable PDE_HUB_DEPLOY_ROLE_ARN"; miss=1; }
+          [ -n "$DEV_ARN" ] || { echo "MISSING repo variable PDE_DEV_DEPLOY_ROLE_ARN"; miss=1; }
+          if [ "$miss" = 1 ]; then
+            echo "Set the OIDC role ARNs as repo variables before running (see workflow header)."; exit 1
+          fi
+          echo "OIDC role ARNs are configured."
+
+  # DEV phase — stand up / refresh the member execution role FROM THIS COMMIT, then verify
+  # the live role actually changed (Story=3.2 tag, pdlv--scoped CFN+DynamoDB, real ExternalId).
+  deploy-dev-member-role:
+    needs: preconditions
+    runs-on: ubuntu-latest
+    environment: pipeline-dev        # optional manual-approval gate if the env is protected
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume the Pipeline-Dev deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.PDE_DEV_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: pde-story-3-2-dev
+
+      - name: Confirm we are in Pipeline-Dev 946509368326
+        run: |
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          echo "account: $acct"
+          [ "$acct" = "946509368326" ] || { echo "wrong account for the Dev phase"; exit 1; }
+
+      - name: Deploy the member execution role from this commit
+        # ExternalId is read from the Hub SSM SecureString at pipeline runtime (edge-resolved);
+        # the member-role trust condition value must match it. It is provided to this stack as
+        # a protected Actions secret so it is never printed. (Set PDE_EXTERNAL_ID as a secret.)
+        env:
+          PDE_EXTERNAL_ID: ${{ secrets.PDE_EXTERNAL_ID }}
+        run: |
+          if [ -z "$PDE_EXTERNAL_ID" ]; then
+            echo "MISSING secret PDE_EXTERNAL_ID (the shared member-trust ExternalId)"; exit 1
+          fi
+          aws cloudformation deploy \
+            --template-file infra/member-execution-role.yaml \
+            --stack-name pde-trust-fabric \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides EnvironmentName=dev ExternalId="$PDE_EXTERNAL_ID" \
+            --tags Project=PDE Story=3.2 Component=trust-fabric \
+            --no-fail-on-empty-changeset
+
+      - name: Verify the LIVE Dev role is the Story-3.2 deliverable (not the pre-3.2 role)
+        run: |
+          set -e
+          tag=$(aws iam list-role-tags --role-name pde-member-execution-dev \
+            --query "Tags[?Key=='Story'].Value" --output text)
+          [ "$tag" = "3.2" ] || { echo "Story tag is '$tag' (expected 3.2) — OLD role still live"; exit 1; }
+          pol=$(aws iam list-attached-role-policies --role-name pde-member-execution-dev \
+            --query "AttachedPolicies[?contains(PolicyName,'member-execution-permissions')].PolicyArn" --output text)
+          ver=$(aws iam get-policy --policy-arn "$pol" --query "Policy.DefaultVersionId" --output text)
+          doc=$(aws iam get-policy-version --policy-arn "$pol" --version-id "$ver" --query "PolicyVersion.Document" --output json)
+          echo "$doc" | grep -q 'stack/pdlv-' || { echo "CFN scope not pdlv-*"; exit 1; }
+          echo "$doc" | grep -q 'stack/pde-' && { echo "CFN scope still includes pde-* — OLD role"; exit 1; } || true
+          echo "$doc" | grep -q 'dynamodb:CreateTable' || { echo "missing DynamoDB grant"; exit 1; }
+          echo "$doc" | grep -q 'table/pdlv-' || { echo "DynamoDB grant not scoped to table/pdlv-*"; exit 1; }
+          cond=$(aws iam get-role --role-name pde-member-execution-dev \
+            --query "Role.AssumeRolePolicyDocument.Statement[0].Condition" --output json)
+          echo "$cond" | grep -q '<' && { echo "ExternalId is a <placeholder>"; exit 1; } || true
+          echo "Dev member role verified as the Story-3.2 deliverable."
+
+  # HUB phase — reconcile the pdlv- namespace, deploy the three Hub stacks, then run the
+  # preflight. The job FAILS unless the preflight prints PASS (non-bypassable gate).
+  deploy-hub-and-gate:
+    needs: deploy-dev-member-role
+    runs-on: ubuntu-latest
+    environment: pipeline-hub        # optional manual-approval gate if the env is protected
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume the Pipeline-Hub deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.PDE_HUB_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: pde-story-3-2-hub
+
+      - name: Confirm we are in Pipeline-Hub 641628980935
+        run: |
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          echo "account: $acct"
+          [ "$acct" = "641628980935" ] || { echo "wrong account for the Hub phase"; exit 1; }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Reconcile the pdlv- namespace + deploy the Hub stacks + run the preflight gate
+        # The one-shot script does the namespace reconcile (incl. DELETE_FAILED clear), the
+        # three Hub deploys from the repo root, and the preflight — and EXITS NON-ZERO unless
+        # the preflight prints PASS. In CI the runner is already in the checked-out repo and
+        # authed to Hub, so no --dev-profile is needed IF the Hub OIDC role can also read Dev;
+        # if Dev-read requires a separate role, set PDE_DEV_READ_PROFILE and pass it through.
+        run: bash scripts/deploy_story_3_2.sh hub

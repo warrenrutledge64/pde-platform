@@ -49,6 +49,9 @@ jobs:
 
       - name: Offline invariant checkers (+ in-memory self-test)
         run: |
+          python3 infra/validate_trust_fabric.py
+          python3 infra/validate_hub_orchestrator_role.py
+          python3 infra/validate_hub_orchestrator_role.py --self-test
           python3 infra/validate_state_machine.py
           python3 infra/validate_state_machine.py --self-test
           python3 infra/validate_codebuild_projects.py

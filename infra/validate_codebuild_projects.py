@@ -44,6 +44,61 @@ def _strip_comments(text: str) -> str:
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
+def _unsafe_buildspec_command_lines(template_text: str) -> list[str]:
+    """Return buildspec command scalars CodeBuild's YAML parser would mis-read.
+
+    THE LIVE DEFECT THIS GUARDS (Story 3.2 Attempt-9, VD-9, 2026-10-07): the live
+    `pdlv-deploy` build failed in DOWNLOAD_SOURCE with
+      YAML_FILE_ERROR: Expected Commands[3] to be of string type: found subkeys
+      instead ... value of the key tag ... might be empty
+    because a `commands:` entry was an UNQUOTED plain scalar containing a colon-
+    space (e.g. `- echo "HOP 1: assume the orchestrator"`). YAML reads `: ` inside
+    an unquoted scalar as a mapping key/value, so CodeBuild sees "subkeys" where a
+    command string was expected and the whole buildspec fails to parse. The outer
+    CloudFormation YAML is still well-formed (the buildspec is just an opaque block
+    scalar to cfn-lint / our other invariants), so this slips past the rest of the
+    offline bar and ONLY surfaced at live deploy time — the exact "offline-can't-
+    catch-it" class the methodology says to fold back into the offline checker.
+
+    FIX PATTERN (AWS guidance): any command containing a YAML-special sequence —
+    primarily a colon-space `: ` or a trailing colon — must be wrapped in quotes so
+    it is a single scalar. A `- |` block scalar is immune (its body is literal), so
+    only PLAIN `- ` scalars inside a BuildSpec need this.
+
+    Returns the offending raw command lines (empty list == safe).
+    """
+    offenders: list[str] = []
+    lines = template_text.splitlines()
+    in_buildspec = False
+    bs_indent = 0
+    for line in lines:
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
+        if re.match(r"BuildSpec:\s*\|", stripped):
+            in_buildspec = True
+            bs_indent = indent
+            continue
+        if in_buildspec:
+            # The buildspec block ends when indentation returns to/above the
+            # `BuildSpec:` key (a sibling/parent key), on a non-blank line.
+            if stripped and indent <= bs_indent:
+                in_buildspec = False
+            else:
+                # A command list item is `- ...`; a block scalar item is `- |`.
+                m = re.match(r"-\s+(.*)$", stripped)
+                if m:
+                    body = m.group(1)
+                    if body.strip() in ("|", ">"):
+                        continue  # block scalar — literal, YAML-safe
+                    already_quoted = (body.startswith("'") and body.rstrip().endswith("'")) or \
+                                     (body.startswith('"') and body.rstrip().endswith('"'))
+                    has_colon_space = ": " in body
+                    trailing_colon = body.rstrip().endswith(":") or body.rstrip().endswith(':"')
+                    if (has_colon_space or trailing_colon) and not already_quoted:
+                        offenders.append(stripped)
+    return offenders
+
+
 def _description_bytes(raw_text: str) -> int:
     """Rendered byte length of the top-level folded ('>-') Description block.
 
@@ -120,19 +175,74 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
         ("no attached AWS-managed admin/poweruser policy ARN",
          "iam::aws:policy/AdministratorAccess" not in raw
          and "iam::aws:policy/PowerUserAccess" not in raw),
-        # --- RD-006 orchestrate-and-pull: cross-account power is ONLY AssumeRole
-        #     into the SPECIFIC member roles, no broad Hub deploy policy ---
+        # --- RD-006 orchestrate-and-pull, Story 3.2 TWO-HOP: the service role's only
+        #     cross-account power is sts:AssumeRole into the SINGLE Hub orchestrator
+        #     role (hop 1); the orchestrator does the member assume (hop 2). No broad
+        #     Hub deploy policy; the service role holds NO direct member-assume. ---
         ("the only cross-account action is sts:AssumeRole",
          "sts:AssumeRole" in raw),
-        ("assume targets the SPECIFIC member execution roles (role/<name>-<env>)",
-         "role/${MemberRoleName}-dev" in raw
-         and "role/${MemberRoleName}-sandbox" in raw
-         and "role/${MemberRoleName}-prod" in raw),
-        ("deploy project has NO direct cloudformation:* grant (deploy runs in-member)",
+        ("service-role assume targets ONLY the Hub orchestrator role (hop 1)",
+         "role/${OrchestratorRoleName}" in raw),
+        # The member ARN may appear ONLY as the hop-2 TARGET_ROLE_ARN env-var VALUE
+        # (what the buildspec assumes), NEVER as an IAM policy Resource grant on the
+        # service role. So: no policy-list "- ...role/${MemberRoleName}-<env>" line.
+        ("service role has NO direct member-role assume GRANT (orchestrator does hop 2)",
+         not re.search(r"-\s+!Sub\s+\"arn:[^\"]*role/\$\{MemberRoleName\}-(dev|sandbox|prod)\"", raw)),
+        ("orchestrator role name param defaults to pdlv-hub-orchestrator (RD-009; pdlv--only pattern)",
+         bool(re.search(r"Default:\s*pdlv-hub-orchestrator\b", raw))
+         and bool(re.search(r"OrchestratorRoleName:.*?AllowedPattern:\s*\"\^pdlv-", raw, re.DOTALL))),
+        ("deploy project has NO direct cloudformation:* GRANT (deploy runs in-member)",
          "cloudformation:CreateStack" not in raw
          and "cloudformation:ExecuteChangeSet" not in raw),
         ("member role name param is the Story 1.1 role (pde-member-execution)",
          bool(re.search(r"Default:\s*pde-member-execution\b", raw))),
+        # --- Story 3.2 secret-at-the-edge: the two /pdlv/ SecureStrings are resolved
+        #     at runtime (PARAMETER_STORE), scoped to EXACTLY those two params, and
+        #     NEVER passed as plaintext / committed. ---
+        ("ExternalId + repo token resolved via PARAMETER_STORE (not PLAINTEXT secrets)",
+         raw.count("Type: PARAMETER_STORE") == 2),
+        ("the ExternalId SSM param is /pdlv/ namespaced",
+         bool(re.search(r"Default:\s*/pdlv/[A-Za-z0-9_./-]*external-id", raw))),
+        ("the repo-token SSM param is /pdlv/ namespaced",
+         bool(re.search(r"Default:\s*/pdlv/[A-Za-z0-9_./-]*repo-token", raw))),
+        ("ssm:GetParameter scoped to the two named /pdlv/ parameter ARNs only",
+         "ssm:GetParameter" in raw
+         and "parameter${ExternalIdParameterName}" in raw
+         and "parameter${RepoTokenParameterName}" in raw),
+        # CodeBuild resolves PARAMETER_STORE env vars via the BATCH action
+        # ssm:GetParameters (plural) — a DISTINCT IAM action from the singular
+        # ssm:GetParameter. Omitting it denies DeployDev at DOWNLOAD_SOURCE with
+        # "not authorized to perform: ssm:GetParameters" (Story 3.2 Attempt 9).
+        ("ssm:GetParameters (plural, the PARAMETER_STORE batch action) is granted",
+         bool(re.search(r"ssm:GetParameters\b", raw))),
+        ("kms:Decrypt is constrained to via-SSM only (kms:ViaService)",
+         "kms:Decrypt" in raw and "kms:ViaService" in raw),
+        ("no plaintext ExternalId / repo-token value in the template",
+         "set-this-at-deploy-time" not in raw
+         and "x-access-token:ghp_" not in raw),
+        # --- The deploy buildspec is a REAL two-hop deploy, not a stub ---
+        ("deploy buildspec performs HOP 1 (assume the orchestrator)",
+         "assume-role --role-arn \"$ORCHESTRATOR_ROLE_ARN\"" in raw),
+        ("deploy buildspec performs HOP 2 (assume the member with --external-id)",
+         "assume-role --role-arn \"$TARGET_ROLE_ARN\"" in raw
+         and "--external-id \"$EXTERNAL_ID\"" in raw),
+        ("deploy buildspec fast-fails on an empty ExternalId / repo token",
+         "EXTERNAL_ID is empty" in raw and "REPO_TOKEN is empty" in raw),
+        ("deploy buildspec keeps secrets out of the log (set +x)",
+         "set +x" in raw),
+        ("deploy buildspec runs a REAL cloudformation deploy of the artifact",
+         "cloudformation deploy" in raw and "$ARTIFACT_STACK_NAME" in raw),
+        ("the in-member deploy carries the Project=PDE stack tag (OD-012)",
+         bool(re.search(r"--tags\s+Project=PDE\b", raw))),
+        ("deploy buildspec VERIFIES the live result (describe-stacks + describe-table)",
+         "cloudformation describe-stacks" in raw and "dynamodb describe-table" in raw),
+        # --- VD-9 (Story 3.2 Attempt-9): every buildspec command scalar must be
+        #     YAML-safe for CodeBuild's parser. An UNQUOTED plain `- ` command with a
+        #     colon-space (`: `) or trailing colon is read as a mapping -> the live
+        #     DOWNLOAD_SOURCE YAML_FILE_ERROR ("found subkeys instead"). Block
+        #     scalars (`- |`) are exempt. Tests the FULL (un-stripped) text. ---
+        ("every buildspec command is YAML-safe for CodeBuild (no unquoted colon-space scalar — VD-9)",
+         not _unsafe_buildspec_command_lines(full)),
         # --- Service role is scoped + trusted only by CodeBuild ---
         ("a CodeBuild service role exists",
          "CodeBuildServiceRole:" in raw and "Type: AWS::IAM::Role" in raw),
@@ -164,8 +274,10 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          "467866449172" not in raw),
         ("Hub-only: no Pipeline-Forensics (ZTIE) account 360999005254",
          "360999005254" not in raw),
-        ("member account ids are the PDE members (dev/sandbox/prod)",
-         "946509368326" in raw and "586917955591" in raw and "466494951534" in raw),
+        ("references the Dev member account id (the default hop-2 target)",
+         "946509368326" in raw),
+        ("no Sandbox/Prod member ids needed here (two-hop: orchestrator targets members)",
+         "586917955591" not in raw and "466494951534" not in raw),
     ]
 
 
@@ -210,6 +322,39 @@ def self_test() -> int:
         ("wildcard action injected",
          good.replace("Action: sts:AssumeRole", 'Action: "*"', 1),
          "no full wildcard action"),
+        # Story 3.2: a plaintext ExternalId secret regression (back to PARAMETER_STORE
+        # -> PLAINTEXT) must be caught — the secret must stay resolved at the edge.
+        ("ExternalId downgraded from PARAMETER_STORE to PLAINTEXT",
+         good.replace("Type: PARAMETER_STORE", "Type: PLAINTEXT", 1),
+         "resolved via PARAMETER_STORE"),
+        # VD-9 Attempt 9: dropping ssm:GetParameters (plural) — the PARAMETER_STORE
+        # batch action CodeBuild actually calls — must be caught. Its absence is the
+        # live "not authorized to perform: ssm:GetParameters" DeployDev denial.
+        ("ssm:GetParameters (plural) dropped — the live Attempt-9 DeployDev denial",
+         good.replace("              - ssm:GetParameters\n", "", 1),
+         "ssm:GetParameters"),
+        # Story 3.2: dropping the hop-2 --external-id (the Phase-1 member trust needs
+        # it) must be caught.
+        ("hop-2 --external-id dropped",
+         good.replace('--external-id "$EXTERNAL_ID"', ""),
+         "performs HOP 2"),
+        # Story 3.2: broadening the service-role assume back to a direct member-role
+        # grant (bypassing the orchestrator chokepoint) must be caught.
+        ("direct member-assume grant re-introduced on the service role",
+         good.replace(
+             '              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrchestratorRoleName}"',
+             '              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"',
+             1),
+         "NO direct member-role assume GRANT"),
+        # VD-9: regress a quoted buildspec command back to an UNQUOTED plain scalar
+        # with a colon-space — the exact live DOWNLOAD_SOURCE YAML_FILE_ERROR. The
+        # YAML-safe invariant must catch it.
+        ("unquoted colon-space buildspec command (the live YAML_FILE_ERROR)",
+         good.replace(
+             '- \'echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"\'',
+             '- echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"',
+             1),
+         "YAML-safe for CodeBuild"),
     ]
 
     all_ok = True
