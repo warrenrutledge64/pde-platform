@@ -251,40 +251,36 @@ and proving the two-hop assume live is exactly what Story 3.2's first real Dev d
 
 ## Ready-Now / Blocked / Default-Next-Action
 
-**In focus now (built, awaiting live validation — the gate is ARMED on this story):**
+**In focus now (next story — Story 3.2 is ✅; the gate is DISARMED, so 3.3 may begin):**
 
 | Story | Tier | State |
 |-------|------|-------|
-| 3.2 | 6 | 🟡 **attempts 1-8 — NONE judged the deliverable (attempts 1-7 environment/execution/collision misses; attempt 8 a GATE HALT, 2026-10-04..05)**: attempts 1-3 validated STALE un-redeployed infra (operator outside the clone so STEP 2a-2d never ran); attempt 4 BLOCKED by the legacy `pde-hub-orchestrator` name collision (RESOLVED by the Q1 rename → `pdlv-hub-orchestrator`); attempt 5 BLOCKED by misnamed `pdlv-` stacks holding resource-name leases (RESOLVED by the hardened name-driven STEP 1 sweep); **attempt 6 sealed FAIL but ALL SIX findings are grep-proven against stale/undeployed infra the branch `c0892ff` contradicts** (CFN still `pde-*`, CodeBuild env still `pde-hub-orchestrator`, service role missing hop-1/SSM, literal `<paste-the-new-value>` trust, legacy buildspec, state machine ABSENT) — the state machine being absent proves STEP 2a-2d never ran and `preflight_story_3_2.py` was skipped; **attempt 7 sealed INCONCLUSIVE** (Hub state-machine deploy failed + Dev clone blocked by an existing directory — again never judged the deliverable; during it the validator drifted into TROUBLESHOOTING with the operator, the under-guarded mirror of the split-brain covenant → handover hardened, see OD-016). **VD-9 OPEN**, gate ARMED. The branch is offline/CI-green + grep-proven correct; the durable gaps are the still-SKIPPABLE preflight (OD-015) + validator-troubleshooting drift (OD-016). Attempt-8 run: deploy STEP 2a-2d FROM the clone AND pass `preflight_story_3_2.py` to a printed PASS BEFORE any validator judging; the validator seals INCONCLUSIVE and STOPS on any environment failure (no co-debugging). **Attempt 8 was the first GATE HALT** — the OD-015 step-0 gate fired on its first outing: the validator refused to judge because no `preflight_story_3_2: PASS` was provided (deliverable not confirmed live). Gate working as designed; the unmet precondition is operator-side (STEP 1→2d deploy + preflight not yet run). **Attempt 9 (2026-10-08) INCONCLUSIVE (env/gating) — but the FIRST to exercise the live deliverable:** DeployDev ran as `pdlv-codebuild-service-role` and was denied `ssm:GetParameters` on `/pdlv/promotion/*` — a real branch defect (policy granted only the singular `ssm:GetParameter`; CodeBuild's PARAMETER_STORE resolver calls the plural `ssm:GetParameters`), now FIXED fix-then-validate-once in `infra/codebuild-projects.yaml` + folded offline (`validate_codebuild_projects.py` → 52 invariants). Attempt-10: run `scripts/deploy_story_3_2.sh` (dev then hub) + `scripts/preflight_story_3_2.py` **BOTH `--scope hub` AND `--scope dev`** from the clone (the omitted `--scope dev` was Attempt 9's gating miss), redeploy the FIXED `pdlv-codebuild`, get a printed preflight `PASS`, THEN hand it + the handover to the validator — pipeline execution work, with **no Troikauge-template dependency** (G-4 is for Story 3.3+ and does NOT gate 3.2). Handover [`story-3.2-VALIDATOR-HANDOVER.md`](../DOCS/session-briefs/story-3.2-VALIDATOR-HANDOVER.md); operator surface [`story-3.2-LIVE-RUNBOOK.md`](../DOCS/session-briefs/story-3.2-LIVE-RUNBOOK.md). |
+| 3.3 | 7 | ⬜ **Ready now** — Story 3.2 is ✅ (sealed PASS Attempt 11, 2026-10-08; `story-3.2-validated` @ `30e72f3`; VD-9 CLEARED, gate DISARMED), so 3.3's only dependency is met. **Validate the Dev deployment, approve the Sandbox gate, promote to `Pipeline-Sandbox` `586917955591`.** The live Story-3.2 execution is holding at `AwaitSandboxApproval` — 3.3 approves that gate, lets the two-hop deploy run into Sandbox, and verifies the live artifact there, then holds at `AwaitProdApproval` (Prod is Story 3.4). Handoff authored on the Troikauge split architecture (G-4): requirement [`story-3.3-requirement.md`](../DOCS/session-briefs/story-3.3-requirement.md) + operations [`story-3.3-operations.md`](../DOCS/session-briefs/story-3.3-operations.md). Carry-forward from 3.2: run deploy/preflight from a FRESH checkout (HEAD == `origin/feature/story-3.3`; the freshness guard enforces it) and verify the LIVE Sandbox resource, never the green line. |
 
 **Blocked (waiting on an unmet dependency):**
 
 | Story | Tier | Blocked on |
 |-------|------|------------|
-| 3.3 | 7 | Story 3.2 not yet validated |
 | 3.4 | 8 | Story 3.3 not yet validated |
 | 4.1 | 9 | Phase 3 gate not yet passed (deferred governance cutover, RD-007) |
 
-**Default next action:** **Execute Story 3.2 Attempt 10 via its existing scripts and clear
-VD-9 — this is pipeline execution work, NOT blocked by any Troikauge template.** Attempt 9
-(2026-10-08) was the FIRST to exercise the live deliverable: DeployDev ran as
-`pdlv-codebuild-service-role` and was denied `ssm:GetParameters` on `/pdlv/promotion/*` — a
-real branch defect (the policy granted only the singular `ssm:GetParameter`; CodeBuild's
-PARAMETER_STORE resolver calls the plural `ssm:GetParameters`), now **FIXED fix-then-validate-once**
-in `infra/codebuild-projects.yaml` + folded into the offline bar (`validate_codebuild_projects.py`
-→ 52 invariants + a `--self-test` sabotage). Attempt 10: run
-`bash scripts/deploy_story_3_2.sh dev` then `… hub` from inside the `feature/story-3.2`
-clone (the script resolves the repo root, hard-verifies the account per phase, name-reconciles
-the `pdlv-` namespace, deploys STEP 2a-2d — now with the fixed `pdlv-codebuild` service-role
-grant — and runs `scripts/preflight_story_3_2.py` — aborting unless it prints `PASS`); run
-BOTH `--scope hub` AND `--scope dev` (the omitted `--scope dev` was Attempt 9's gating miss),
-then hand the validator the handover + the printed preflight `PASS`.
-The G-4 Troikauge document-architecture work (`REQUIREMENT_TEMPLATE.md` / `OPERATIONS_TEMPLATE.md`,
-PROMPT retirement) is a **separate forward thread for Story 3.3+ and does NOT gate 3.2** — 3.2's
-operator surface (`scripts/deploy_story_3_2.sh`, `scripts/preflight_story_3_2.py`, the existing
-LIVE-RUNBOOK) is complete and in use. _(The four Moderator gates 3.2 already passes map to its
-existing checks: Pre-Execution = STEP 0 launch-pad lock; Deployment = STEP 2/2d verify; Preflight
-= `preflight_story_3_2.py` PASS; Live Result = STEP 5 — see `governance/MODERATOR_PROTOCOL.md`.)_
+**Default next action:** **Begin Story 3.3 — validate the Dev deployment, approve the
+Sandbox gate, and promote to `Pipeline-Sandbox` `586917955591`.** Story 3.2 is ✅ (sealed
+PASS Attempt 11, 2026-10-08; `story-3.2-validated` @ `30e72f3`; VD-9 CLEARED, gate DISARMED),
+so the advancement gate is OPEN and 3.3 (tier 7, its only dependency 3.2 now met) may start.
+The live pipeline execution is holding at `AwaitSandboxApproval`: 3.3 approves that gate (the
+SNS task-token callback), lets the same two-hop deploy run cross-account into Sandbox, verifies
+the live `pdlv-golden-path-artifact` stack + table there, then holds at `AwaitProdApproval`
+(Prod = Story 3.4). The handoff is authored on the Troikauge split architecture (G-4, now 🟡):
+requirement [`story-3.3-requirement.md`](../DOCS/session-briefs/story-3.3-requirement.md)
+(Planner output) + operations [`story-3.3-operations.md`](../DOCS/session-briefs/story-3.3-operations.md)
+(operator surface, mapped to the four Moderator gates) — the monolithic `*-PROMPT.md` is retired.
+Carry-forward from the 3.2 close (ITIL continual-improvement): deploy/preflight from a FRESH
+checkout (HEAD == `origin/feature/story-3.3`; the `deploy_story_3_2.sh`-lineage freshness guard
+enforces it) and verify the LIVE Sandbox resource, never the green execution line; run BOTH
+preflight scopes (`--scope hub` AND `--scope sandbox`) to a printed `PASS` before handing the
+independent validator the handover + the PASS line. _(Does NOT close Phase 3 — 3.4 remains;
+the Phase 3 gate is the live Prod artifact-metadata query.)_
 
 Background on the prior attempts: attempts 1-5
 (2026-10-04..05) all failed to judge the deliverable: attempts 1-3 validated stale,
