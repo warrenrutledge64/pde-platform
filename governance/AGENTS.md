@@ -1,6 +1,6 @@
-# AGENTS.md — Split-Gauge operating model (roles & boundaries)
+# AGENTS.md — Troikauge operating model (roles & boundaries)
 
-> **This file defines WHO does WHAT in the PDE "Split-Gauge" operating model and
+> **This file defines WHO does WHAT in the PDE "Troikauge" operating model and
 > the barriers between them.** It is the authority-and-boundary layer that sits
 > on top of the operating system in [`METHODOLOGY.md`](METHODOLOGY.md). The
 > methodology says *how* work is planned, built, validated, and handed off; this
@@ -20,16 +20,18 @@
 
 ---
 
-## 1. Why "Split-Gauge"
+## 1. Why "Troikauge"
 
 A single agent that plans the work, builds it, writes its own pass/fail check,
 curates what the check looks at, and interprets the result proves only one thing:
 that the work is *internally consistent with that agent's own understanding*. That
 is "grading your own paper" (see [`METHODOLOGY.md`](METHODOLOGY.md) §4a). The
-Split-Gauge model splits those jobs across four seats so that no single seat holds
+Troikauge model divides those jobs across four seats so that no single seat holds
 both "I built it" and "I decide whether it's good."
 
-The name is literal: the **builder's gauge** (does my work meet the spec as I read
+The name is a portmanteau: a **troika** of distinct AI seats (Planner/Validator,
+Builder, Moderator) working under one human stakeholder, kept honest by a
+**gauge** metaphor — the **builder's gauge** (does my work meet the spec as I read
 it?) and the **validator's gauge** (does the raw live output prove it works to a
 skeptic who did *not* build it?) are kept physically separate. A green reading on
 one gauge never substitutes for the other.
@@ -252,7 +254,7 @@ non-negotiable; a breach invalidates the validation and the run must be re-done.
 
 ---
 
-*Split-Gauge is the role-and-barrier layer over the "work-like-this" operating
+*Troikauge is the role-and-barrier layer over the "work-like-this" operating
 system in [`METHODOLOGY.md`](METHODOLOGY.md). The discipline — separate gauges,
 honest barriers — not the number of seats, is what makes a green reading mean
 something.*
