@@ -19,6 +19,9 @@ on:
   pull_request:
     paths:
       - "infra/**"
+      - "DOCS/session-briefs/**"
+      - "governance/**"
+      - "scripts/**"
       - ".github/workflows/static-bar.yml"
   workflow_dispatch: {}
 
@@ -106,6 +109,15 @@ jobs:
       # red) until the close-out disarms the gate at head. The merge-gate behaviour
       # is unchanged; only the step order is, so the gate is never the thing that
       # hides the static-bar signal.
+      - name: Input-poisoning locks (validator inputs are repo-derived, not builder-asserted)
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python3 scripts/check_locks.py --self-test
+          # need history to the base to diff; fetch the base ref unshallowed enough
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          # HARD locks (2/3/4) fail the job; the Lock-1 advisory prints via check_docs
+          python3 scripts/check_locks.py --base "origin/${{ github.base_ref }}" --head HEAD
+
       - name: Merge-order guard (deliverable + close-out land together)
         if: always() && github.event_name == 'pull_request'
         run: |
