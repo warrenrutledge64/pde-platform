@@ -269,7 +269,7 @@ VD-9 — this is pipeline execution work, NOT blocked by any Troikauge template.
 clone (the script resolves the repo root, hard-verifies the account per phase, name-reconciles
 the `pdlv-` namespace, deploys STEP 2a-2d, and runs `scripts/preflight_story_3_2.py` — aborting
 unless it prints `PASS`), then hand the validator the handover + the printed preflight `PASS`.
-The G-4 Troikauge document-architecture work (`REQUIREMENT_TEMPLATE.md` / `OPERATIONS_TEMPLATE.md`,
+The G-4 Troikauge document-architecture work ([`REQUIREMENT_TEMPLATE.md`](../DOCS/REQUIREMENT_TEMPLATE.md) / [`OPERATIONS_TEMPLATE.md`](../DOCS/OPERATIONS_TEMPLATE.md),
 PROMPT retirement) is a **separate forward thread for Story 3.3+ and does NOT gate 3.2** — 3.2's
 operator surface (`scripts/deploy_story_3_2.sh`, `scripts/preflight_story_3_2.py`, the existing
 LIVE-RUNBOOK) is complete and in use. _(The four Moderator gates 3.2 already passes map to its
@@ -526,7 +526,7 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 - **Advancement gate:** feeds G-4 (document architecture built on the codified seats/gates).
 
 **G-4 — Troikauge Document Architecture & Template Modernization**  ⬜ _Not Started_
-- Steps: author the lean `REQUIREMENT_TEMPLATE.md` (Planner's story output) + `OPERATIONS_TEMPLATE.md` (Builder's operator surface, mapped to the four Moderator gates) and retire the monolithic PROMPT files in favor of the split requirement/operations architecture.
+- Steps: author the lean [`REQUIREMENT_TEMPLATE.md`](../DOCS/REQUIREMENT_TEMPLATE.md) (Planner's story output) + [`OPERATIONS_TEMPLATE.md`](../DOCS/OPERATIONS_TEMPLATE.md) (Builder's operator surface, mapped to the four Moderator gates) and retire the monolithic PROMPT files in favor of the split requirement/operations architecture. _(The two templates landed via PR #62; G-4 completes the rollout — adopt them on Story 3.3+ and retire the PROMPTs.)_
 - **Scope / sequencing:** applies to **Story 3.3 and later**; it does **NOT** block Story 3.2. Story 3.2 clears VD-9 on its own via the existing `scripts/deploy_story_3_2.sh` + `scripts/preflight_story_3_2.py`, with no Troikauge-template dependency.
 - **Validation Result:** pending.
 - **Advancement gate:** depends on G-3 ✅ (the codified Troikauge core).
