@@ -1,6 +1,6 @@
 # MODERATOR_PROTOCOL.md — Copilot's mechanical gates
 
-> **This file defines the Moderator seat's gates.** In the Split-Gauge operating
+> **This file defines the Moderator seat's gates.** In the Troikauge operating
 > model (see [`AGENTS.md`](AGENTS.md)), Copilot is the **Moderator**: a mechanical
 > gatekeeper that runs *before* independent validation and **refuses to let a
 > validation run start against the wrong target.** It does not judge whether the
