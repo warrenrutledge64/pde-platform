@@ -98,7 +98,35 @@
 
 ---
 
+---
+
+> ### 🔱 TROIKAUGE MODERATOR-GATE MAP (read before running)
+>
+> This runbook is the operator execution surface; its guards ARE the four
+> **Moderator** gates from [`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md).
+> Each must be green **before** the independent Validator judges anything — a red
+> gate is a hard stop (a run on stale/wrong/un-deployed infra judges nothing; that is
+> exactly the seven non-judging attempts in VD-9). Roles & barriers:
+> [`../../governance/AGENTS.md`](../../governance/AGENTS.md).
+>
+> | Moderator gate | Satisfied by (this runbook) | Mechanical check |
+> |----------------|-----------------------------|------------------|
+> | **Pre-Execution** | STEP 0 LAUNCH-PAD LOCK (right repo/branch/HEAD, both `/pdlv/` secrets set, real ExternalId) | the LAUNCH-PAD LOCK block (fail-loud) |
+> | **Deployment** | STEP 1 namespace reconcile → STEP 2 GUARD + 2a-2d deploys → STEP 2d VERIFY (live role carries the branch marker) | STEP 2 GUARD / 2d VERIFY blocks |
+> | **Preflight** | STEP 4 PRE-FLIGHT GATE (live infra matches the Story-3.2 baseline, right accounts) | `scripts/preflight_story_3_2.py` → printed `PASS` |
+> | **Live Result** | STEP 5 live-Dev verify (artifact stack `CREATE_COMPLETE`, live table on the proven target) | `describe-stacks` / `describe-table` on Dev `946509368326` |
+>
+> The Builder authors these operational steps; it does **NOT** author the Definition
+> of Done ([`../../governance/AGENTS.md`](../../governance/AGENTS.md) §4.1). The
+> Validator authors the DoD blind and seals the verdict.
+
+---
+
 ## STEP 0 — Launch pad, right code, and the two /pdlv/ secrets (Hub CloudShell)
+
+> **Moderator gate: PRE-EXECUTION** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 1).
+> The LAUNCH-PAD LOCK below is this story's Pre-Execution Gate: right repo/branch/HEAD,
+> both `/pdlv/` secrets present with REAL values. Fail-closed — do not proceed on a FAIL.
 
 **FREE DISK FIRST (OD-007 — CloudShell is ~1 GB and WILL fill up).**
 
@@ -363,6 +391,12 @@ aws cloudformation list-stacks \
 
 ## STEP 2 — Deploy the orchestrator + refresh the two-hop control plane (Hub)
 
+> **Moderator gate: DEPLOYMENT** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 2).
+> STEP 1's name-driven reconcile clears dead/misnamed stacks; the STEP 2 GUARD +
+> 2a-2d deploys apply the branch; the STEP 2d VERIFY reads the branch marker off the
+> live role (`Story=3.2` tag, `pdlv-`-scoped grant, real ExternalId) — never trust the
+> green deploy line. Branch-not-applied ⇒ STOP (the attempt-1/2 stale-infra class).
+
 Three deploys, all **additive** / in-place updates of `pdlv-` Hub stacks (plus a member
 redeploy per account). Each carries the mandatory `Project=PDE` stack tag (OD-012).
 
@@ -586,6 +620,8 @@ ORCH=$(aws sts assume-role \
 ## STEP 4 — Trigger the pipeline (the first real end-to-end run)
 
 > ### 🚦 PRE-FLIGHT GATE — MECHANICAL, not prose (do NOT start the pipeline until it PASSES)
+> **Moderator gate: PREFLIGHT** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 3) —
+> live infra matches the Story-3.2 baseline + right accounts.
 > This gate exists because attempts 1 AND 2 (2026-10-04) FAILED by triggering the pipeline
 > against **un-redeployed, stale infra** (a June-10 legacy `pde-hub-orchestrator`, the pre-3.2
 > state machine/buildspec, the `Story=1.1` Dev member role) — in attempt 2 the operator was
@@ -639,6 +675,11 @@ aws logs tail /aws/codebuild/pdlv-deploy --since 15m --format short | tail -60
 ---
 
 ## STEP 5 — VERIFY the live result in Pipeline-Dev (not the green execution line)
+
+> **Moderator gate: LIVE RESULT** ([`../../governance/MODERATOR_PROTOCOL.md`](../../governance/MODERATOR_PROTOCOL.md) → Gate 4).
+> The raw output must come from the target proven green by the gates above and be
+> complete (no aborted step, no false-negative). Hand it raw to the Validator — the
+> operator does not judge.
 
 The skeptical proof: the artifact stack is `CREATE_COMPLETE` in Dev and the live
 `pdlv-golden-path-artifact` table exists, is on-demand, and is `Project=PDE`-tagged.
