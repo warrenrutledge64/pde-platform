@@ -235,7 +235,12 @@ Resources:
           - Sid: ReadTheTwoPdlvSecureStringsOnly
             Effect: Allow
             Action:
+              # CodeBuild resolves PARAMETER_STORE env vars via the BATCH API
+              # (ssm:GetParameters, plural) — a DISTINCT IAM action from the
+              # singular ssm:GetParameter the buildspec also uses for direct reads.
+              # Both are required; both stay scoped to EXACTLY the two named params.
               - ssm:GetParameter
+              - ssm:GetParameters
             Resource:
               - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ExternalIdParameterName}"
               - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${RepoTokenParameterName}"

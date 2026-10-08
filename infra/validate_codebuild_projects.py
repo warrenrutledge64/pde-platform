@@ -209,6 +209,12 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          "ssm:GetParameter" in raw
          and "parameter${ExternalIdParameterName}" in raw
          and "parameter${RepoTokenParameterName}" in raw),
+        # CodeBuild resolves PARAMETER_STORE env vars via the BATCH action
+        # ssm:GetParameters (plural) — a DISTINCT IAM action from the singular
+        # ssm:GetParameter. Omitting it denies DeployDev at DOWNLOAD_SOURCE with
+        # "not authorized to perform: ssm:GetParameters" (Story 3.2 Attempt 9).
+        ("ssm:GetParameters (plural, the PARAMETER_STORE batch action) is granted",
+         bool(re.search(r"ssm:GetParameters\b", raw))),
         ("kms:Decrypt is constrained to via-SSM only (kms:ViaService)",
          "kms:Decrypt" in raw and "kms:ViaService" in raw),
         ("no plaintext ExternalId / repo-token value in the template",
@@ -321,6 +327,12 @@ def self_test() -> int:
         ("ExternalId downgraded from PARAMETER_STORE to PLAINTEXT",
          good.replace("Type: PARAMETER_STORE", "Type: PLAINTEXT", 1),
          "resolved via PARAMETER_STORE"),
+        # VD-9 Attempt 9: dropping ssm:GetParameters (plural) — the PARAMETER_STORE
+        # batch action CodeBuild actually calls — must be caught. Its absence is the
+        # live "not authorized to perform: ssm:GetParameters" DeployDev denial.
+        ("ssm:GetParameters (plural) dropped — the live Attempt-9 DeployDev denial",
+         good.replace("              - ssm:GetParameters\n", "", 1),
+         "ssm:GetParameters"),
         # Story 3.2: dropping the hop-2 --external-id (the Phase-1 member trust needs
         # it) must be caught.
         ("hop-2 --external-id dropped",
