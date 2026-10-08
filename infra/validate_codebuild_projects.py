@@ -44,6 +44,61 @@ def _strip_comments(text: str) -> str:
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
+def _unsafe_buildspec_command_lines(template_text: str) -> list[str]:
+    """Return buildspec command scalars CodeBuild's YAML parser would mis-read.
+
+    THE LIVE DEFECT THIS GUARDS (Story 3.2 Attempt-9, VD-9, 2026-10-07): the live
+    `pdlv-deploy` build failed in DOWNLOAD_SOURCE with
+      YAML_FILE_ERROR: Expected Commands[3] to be of string type: found subkeys
+      instead ... value of the key tag ... might be empty
+    because a `commands:` entry was an UNQUOTED plain scalar containing a colon-
+    space (e.g. `- echo "HOP 1: assume the orchestrator"`). YAML reads `: ` inside
+    an unquoted scalar as a mapping key/value, so CodeBuild sees "subkeys" where a
+    command string was expected and the whole buildspec fails to parse. The outer
+    CloudFormation YAML is still well-formed (the buildspec is just an opaque block
+    scalar to cfn-lint / our other invariants), so this slips past the rest of the
+    offline bar and ONLY surfaced at live deploy time — the exact "offline-can't-
+    catch-it" class the methodology says to fold back into the offline checker.
+
+    FIX PATTERN (AWS guidance): any command containing a YAML-special sequence —
+    primarily a colon-space `: ` or a trailing colon — must be wrapped in quotes so
+    it is a single scalar. A `- |` block scalar is immune (its body is literal), so
+    only PLAIN `- ` scalars inside a BuildSpec need this.
+
+    Returns the offending raw command lines (empty list == safe).
+    """
+    offenders: list[str] = []
+    lines = template_text.splitlines()
+    in_buildspec = False
+    bs_indent = 0
+    for line in lines:
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
+        if re.match(r"BuildSpec:\s*\|", stripped):
+            in_buildspec = True
+            bs_indent = indent
+            continue
+        if in_buildspec:
+            # The buildspec block ends when indentation returns to/above the
+            # `BuildSpec:` key (a sibling/parent key), on a non-blank line.
+            if stripped and indent <= bs_indent:
+                in_buildspec = False
+            else:
+                # A command list item is `- ...`; a block scalar item is `- |`.
+                m = re.match(r"-\s+(.*)$", stripped)
+                if m:
+                    body = m.group(1)
+                    if body.strip() in ("|", ">"):
+                        continue  # block scalar — literal, YAML-safe
+                    already_quoted = (body.startswith("'") and body.rstrip().endswith("'")) or \
+                                     (body.startswith('"') and body.rstrip().endswith('"'))
+                    has_colon_space = ": " in body
+                    trailing_colon = body.rstrip().endswith(":") or body.rstrip().endswith(':"')
+                    if (has_colon_space or trailing_colon) and not already_quoted:
+                        offenders.append(stripped)
+    return offenders
+
+
 def _description_bytes(raw_text: str) -> int:
     """Rendered byte length of the top-level folded ('>-') Description block.
 
@@ -181,6 +236,13 @@ def run_checks(template_text: str) -> list[tuple[str, bool]]:
          bool(re.search(r"--tags\s+Project=PDE\b", raw))),
         ("deploy buildspec VERIFIES the live result (describe-stacks + describe-table)",
          "cloudformation describe-stacks" in raw and "dynamodb describe-table" in raw),
+        # --- VD-9 (Story 3.2 Attempt-9): every buildspec command scalar must be
+        #     YAML-safe for CodeBuild's parser. An UNQUOTED plain `- ` command with a
+        #     colon-space (`: `) or trailing colon is read as a mapping -> the live
+        #     DOWNLOAD_SOURCE YAML_FILE_ERROR ("found subkeys instead"). Block
+        #     scalars (`- |`) are exempt. Tests the FULL (un-stripped) text. ---
+        ("every buildspec command is YAML-safe for CodeBuild (no unquoted colon-space scalar — VD-9)",
+         not _unsafe_buildspec_command_lines(full)),
         # --- Service role is scoped + trusted only by CodeBuild ---
         ("a CodeBuild service role exists",
          "CodeBuildServiceRole:" in raw and "Type: AWS::IAM::Role" in raw),
@@ -284,6 +346,15 @@ def self_test() -> int:
              '              - !Sub "arn:${AWS::Partition}:iam::${DevAccountId}:role/${MemberRoleName}-dev"',
              1),
          "NO direct member-role assume GRANT"),
+        # VD-9: regress a quoted buildspec command back to an UNQUOTED plain scalar
+        # with a colon-space — the exact live DOWNLOAD_SOURCE YAML_FILE_ERROR. The
+        # YAML-safe invariant must catch it.
+        ("unquoted colon-space buildspec command (the live YAML_FILE_ERROR)",
+         good.replace(
+             '- \'echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"\'',
+             '- echo "HOP 1: assume the Hub orchestrator ${ORCHESTRATOR_ROLE_ARN}"',
+             1),
+         "YAML-safe for CodeBuild"),
     ]
 
     all_ok = True

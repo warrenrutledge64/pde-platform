@@ -130,7 +130,7 @@ if [ "$PHASE" = dev ]; then
         --template-file infra/member-execution-role.yaml \
         --stack-name pde-trust-fabric \
         --capabilities CAPABILITY_NAMED_IAM \
-        --parameter-overrides EnvironmentName=dev ExternalId="$EID" \
+        --parameter-overrides EnvironmentName=dev ExternalId="$EID" StoryTag=3.2 \
         --tags Project=PDE Story=3.2 Component=trust-fabric \
         --no-fail-on-empty-changeset; then
     unset EID; fail "member-role deploy failed — capture the error above; do NOT validate"; exit 1
@@ -237,26 +237,44 @@ deploy_hub infra/codebuild-projects.yaml    pdlv-codebuild               codebui
 deploy_hub infra/state-machine.yaml         pdlv-promotion-pipeline-stack state-machine    || exit 1
 
 # --- The non-bypassable gate: preflight MUST print PASS -----------------------
-# The preflight reads BOTH Hub and Dev. In the hub phase the default creds are Hub, so
-# it needs a Dev-READ path to reach 946509368326 — pass --dev-profile <dev-read-profile>
-# (an assumable Dev-read role configured on the Hub CloudShell). Without it the preflight
-# will fail with '[ENV] dev creds are account 641628980935, expected 946509368326' (the
-# Attempt-7 symptom) — which is the gate working, not a deliverable defect.
+# The preflight reads BOTH Hub and Dev. Two supported ways to satisfy it:
+#   (1) PROFILE operators / CI: pass --dev-profile <dev-read-profile> (an assumable
+#       Dev-read role on the Hub shell) and this runs the FULL both-account preflight
+#       here, printing a single `preflight_story_3_2: PASS`.
+#   (2) PER-ACCOUNT CloudShell operators (no cross-account profile): this Hub phase runs
+#       the HUB-SCOPED preflight (`--scope hub`) from the Hub shell, and you run the
+#       DEV-SCOPED preflight (`--scope dev`) from the Dev shell. The two scoped PASSes
+#       together are the full baseline the validator reads. (The Dev phase already
+#       proved the Dev role live; the dev-scope preflight is the matching evidence line.)
 say "STEP 3 — running the preflight gate (the validator may only judge a PASS)…"
-if [ -z "$DEV_PROFILE" ]; then
-  say "  NOTE: no --dev-profile given; the preflight's Dev-read will use the default creds."
-  say "  If this Hub shell cannot read Dev 946509368326, re-run: bash scripts/deploy_story_3_2.sh hub --dev-profile <dev-read-profile>"
+if [ -n "$DEV_PROFILE" ]; then
+  say "  --dev-profile given: running the FULL both-account preflight from this Hub shell."
+  if python3 scripts/preflight_story_3_2.py --dev-profile "$DEV_PROFILE"; then
+    pass "preflight PASS (both accounts)"
+    say "HUB PHASE: PASS — Story-3.2 Hub control plane is live and the full preflight gate is green."
+    say "Hand this ENTIRE output to the INDEPENDENT validator; they author the DoD and seal the verdict."
+    exit 0
+  fi
+  rc=$?
+  fail "preflight did NOT pass (exit $rc) — the environment is NOT the Story-3.2 baseline."
+  say  "Do NOT hand this to the validator. Re-run the DEV phase and/or fix the account/env, then re-run the HUB phase."
+  exit 1
 fi
-pf_args=()
-[ -n "$DEV_PROFILE" ] && pf_args+=(--dev-profile "$DEV_PROFILE")
-if python3 scripts/preflight_story_3_2.py "${pf_args[@]}"; then
-  pass "preflight PASS"
-  say "HUB PHASE: PASS — Story-3.2 Hub control plane is live and the preflight gate is green."
-  say "Hand this ENTIRE output to the INDEPENDENT validator; they author the DoD and seal the verdict."
+
+# No profile: per-account mode. Prove the HUB side from this Hub shell.
+say "  No --dev-profile: per-account mode. Proving the HUB side from this Hub shell (--scope hub)."
+if python3 scripts/preflight_story_3_2.py --scope hub; then
+  pass "preflight [hub] PASS"
+  say "HUB PHASE: PASS — Story-3.2 Hub control plane is live and the Hub-scoped preflight is green."
+  say ""
+  say "NEXT (per-account mode): in your Pipeline-DEV 946509368326 CloudShell, from the clone, run:"
+  say "    python3 scripts/preflight_story_3_2.py --scope dev"
+  say "That prints 'preflight_story_3_2 [dev]: PASS'. Hand BOTH scoped outputs (this [hub] PASS"
+  say "AND the [dev] PASS) to the INDEPENDENT validator; together they are the full baseline."
   exit 0
 else
   rc=$?
-  fail "preflight did NOT pass (exit $rc) — the environment is NOT the Story-3.2 baseline."
-  say  "Do NOT hand this to the validator. Re-run the DEV phase (member role) and/or fix the account/env, then re-run the HUB phase."
+  fail "Hub-scoped preflight did NOT pass (exit $rc) — the Hub side is NOT the Story-3.2 baseline."
+  say  "Do NOT hand this to the validator. Fix the Hub deploy/account, then re-run the HUB phase."
   exit 1
 fi
