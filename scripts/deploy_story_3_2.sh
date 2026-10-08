@@ -101,6 +101,22 @@ BR="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$BR" != "$BRANCH" ]; then
   fail "on branch '$BR', expected $BRANCH — run: git checkout $BRANCH && git reset --hard origin/$BRANCH"; exit 1
 fi
+# --- Freshness guard: local HEAD MUST equal origin/$BRANCH (Attempt-10 miss) ---
+# Attempt 10 (2026-10-08) deployed STALE code: `git fetch` was omitted before the
+# reset, so local HEAD stayed on the pre-fix b265154 and `cloudformation deploy`
+# reported "No changes to deploy" — the ssm:GetParameters fix never reached AWS.
+# A branch-name check is NOT enough; this fetches and hard-fails on a stale tip so a
+# stale local HEAD can never be deployed. (Skip with PDE_SKIP_FETCH=1 only offline.)
+if [ "${PDE_SKIP_FETCH:-0}" != 1 ]; then
+  say "freshness: fetching origin/$BRANCH to confirm HEAD is current…"
+  git fetch origin "$BRANCH" >/dev/null 2>&1 || { fail "git fetch origin $BRANCH failed — resolve network/auth before deploying"; exit 1; }
+  LOCAL="$(git rev-parse HEAD)"
+  REMOTE="$(git rev-parse "origin/$BRANCH")"
+  if [ "$LOCAL" != "$REMOTE" ]; then
+    fail "STALE HEAD — local $(git rev-parse --short HEAD) != origin/$BRANCH $(git rev-parse --short "origin/$BRANCH"). Run: git reset --hard origin/$BRANCH (this is the Attempt-10 stale-deploy miss)."; exit 1
+  fi
+  pass "freshness: HEAD == origin/$BRANCH ($(git rev-parse --short HEAD))"
+fi
 for f in infra/hub-orchestrator-role.yaml infra/codebuild-projects.yaml \
          infra/state-machine.yaml infra/member-execution-role.yaml \
          infra/golden-path-artifact.yaml scripts/preflight_story_3_2.py; do
@@ -231,9 +247,43 @@ deploy_hub() {
   case "$st" in CREATE_COMPLETE|UPDATE_COMPLETE) pass "$stack -> $st" ;; *) fail "$stack -> $st (not complete)"; return 1 ;; esac
 }
 
+# --- Verify the LIVE service role carries ssm:GetParameters (Attempt-9/10 defect) ---
+# Reads the ACTUAL deployed pdlv-codebuild-service-role and hard-fails unless its
+# effective policy grants ssm:GetParameters (plural — the PARAMETER_STORE batch
+# action CodeBuild calls). Catches a stale/"No changes to deploy" codebuild stack
+# that still carries the old singular-only policy. Policy names are resolved
+# DYNAMICALLY (list-*), never assumed — the Attempt-10 `get-role-policy` NoSuchEntity
+# miss came from assuming the inline-policy name.
+verify_codebuild_getparameters() {
+  local role="pdlv-codebuild-service-role" found=0 doc name arn ver
+  # Inline policies (resolve names dynamically):
+  for name in $(aws iam list-role-policies --role-name "$role" \
+                  --query "PolicyNames[]" --output text 2>/dev/null); do
+    doc="$(aws iam get-role-policy --role-name "$role" --policy-name "$name" \
+             --query "PolicyDocument" --output json 2>/dev/null || echo '')"
+    printf '%s' "$doc" | grep -q "ssm:GetParameters" && found=1
+  done
+  # Attached managed policies (resolve ARN + default version dynamically):
+  for arn in $(aws iam list-attached-role-policies --role-name "$role" \
+                 --query "AttachedPolicies[].PolicyArn" --output text 2>/dev/null); do
+    ver="$(aws iam get-policy --policy-arn "$arn" --query "Policy.DefaultVersionId" --output text 2>/dev/null)"
+    [ -n "$ver" ] && [ "$ver" != None ] || continue
+    doc="$(aws iam get-policy-version --policy-arn "$arn" --version-id "$ver" \
+             --query "PolicyVersion.Document" --output json 2>/dev/null || echo '')"
+    printf '%s' "$doc" | grep -q "ssm:GetParameters" && found=1
+  done
+  if [ "$found" = 1 ]; then
+    pass "live $role grants ssm:GetParameters (the Attempt-9/10 denial is fixed on AWS)"
+  else
+    fail "live $role does NOT grant ssm:GetParameters — the fixed pdlv-codebuild template was NOT deployed (stale 'No changes to deploy'?). Confirm HEAD==origin/$BRANCH, then re-deploy; do NOT validate."
+    return 1
+  fi
+}
+
 say "STEP 2 — deploying the Hub control plane…"
 deploy_hub infra/hub-orchestrator-role.yaml pdlv-hub-orchestrator        hub-orchestrator || exit 1
 deploy_hub infra/codebuild-projects.yaml    pdlv-codebuild               codebuild        || exit 1
+verify_codebuild_getparameters || exit 1
 deploy_hub infra/state-machine.yaml         pdlv-promotion-pipeline-stack state-machine    || exit 1
 
 # --- The non-bypassable gate: preflight MUST print PASS -----------------------
