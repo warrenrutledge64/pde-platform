@@ -1,5 +1,14 @@
+Author-Seat: Planner / Validator (Gemini)
+
 # Requirement — TEMPLATE (the Planner's story output)
 
+> **`Author-Seat:` (first line — do NOT delete or change the seat).** This requirement
+> is authored by the **Planner** seat and is read-only to the Builder (AGENTS.md §3 /
+> §4.1). The `scripts/check_docs.py` CHECK Q authorship-barrier gate HARD-fails a
+> `*-requirement.md` whose `Author-Seat:` is anything other than the Planner — the
+> mechanical guard that the thing-under-test never frames its own judgment. Keep the
+> line; only the Planner changes what follows it.
+>
 > **Purpose.** The standardized output of the **Planner / Validator seat (Gemini)**
 > acting *as Planner* — the one-page requirement that tells the Builder what a story
 > must achieve and why, and gives the Human the anchor they later restate in their

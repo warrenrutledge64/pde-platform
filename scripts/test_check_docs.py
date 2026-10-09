@@ -412,5 +412,94 @@ class SplitBrainLiveRunbookTests(unittest.TestCase):
             )
 
 
+class CheckQAuthorshipBarrierTests(unittest.TestCase):
+    """CHECK Q: a seat-owned artifact must declare the seat the matrix assigns its type.
+
+    The barrier (AGENTS.md §4.1): the party that BUILDS the code must not author the
+    requirement it is judged against. A ``*-requirement.md`` is Planner-owned; a
+    ``Author-Seat: Builder`` declaration on it is the breach. Fail-open on an artifact
+    with no declared seat (adopt-forward, not retroactive).
+    """
+
+    def _tree(self, root: Path) -> Path:
+        _gov(root, PHASE_RUNBOOK)
+        (root / "DOCS" / "session-briefs").mkdir(parents=True)
+        return root
+
+    def test_builder_authored_requirement_fires(self) -> None:
+        """A requirement declaring the Builder seat is the §4.1 breach -> CHECK Q."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-2.2-requirement.md").write_text(
+                "Author-Seat: Designer / Builder (Kiro)\n\n# Requirement 2.2\nObjective: ...",
+                encoding="utf-8",
+            )
+            violations = check_docs.check_q_authorship_barrier(root / "governance", root)
+            self.assertEqual(len(violations), 1, violations)
+            self.assertEqual(violations[0].check, "CHECK Q")
+            self.assertIn("story-2.2-requirement.md", violations[0].file)
+            self.assertIn("builder", violations[0].detail)
+
+    def test_planner_authored_requirement_passes(self) -> None:
+        """The correct seat on a requirement is clean (tolerates a decorated token)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-2.2-requirement.md").write_text(
+                "Author-Seat: Planner / Validator (Gemini)\n\n# Requirement 2.2\n...",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                check_docs.check_q_authorship_barrier(root / "governance", root), []
+            )
+
+    def test_requirement_without_declared_seat_is_fail_open(self) -> None:
+        """Adopt-forward: a requirement with no Author-Seat line is NOT flagged.
+
+        This is why the pre-existing story-3.3-requirement.md (authored before the
+        convention) keeps the real repo green until it is re-stamped.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-3.3-requirement.md").write_text(
+                "# Requirement 3.3\nObjective: no front-matter seat line here.",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                check_docs.check_q_authorship_barrier(root / "governance", root), []
+            )
+
+    def test_non_seat_owned_artifact_is_ignored(self) -> None:
+        """A builder-owned type (e.g. a PROMPT) is not a CHECK Q target even if it
+        declares the Builder seat — CHECK Q enforces only the requirement barrier."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-2.2-PROMPT.md").write_text(
+                "Author-Seat: Builder\n\n# Prompt 2.2\n...", encoding="utf-8"
+            )
+            self.assertEqual(
+                check_docs.check_q_authorship_barrier(root / "governance", root), []
+            )
+
+    def test_missing_session_briefs_dir_is_no_op(self) -> None:
+        """Fail-open: no DOCS/session-briefs/ -> CHECK Q no-ops."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _gov(root, PHASE_RUNBOOK)
+            self.assertEqual(
+                check_docs.check_q_authorship_barrier(root / "governance", root), []
+            )
+
+    def test_declared_seat_helper_normalises(self) -> None:
+        self.assertEqual(
+            check_docs._declared_author_seat("Author-Seat: Planner / Validator (Gemini)"),
+            "planner",
+        )
+        self.assertEqual(
+            check_docs._declared_author_seat("author-seat: Designer / Builder (Kiro)"),
+            "builder",
+        )
+        self.assertIsNone(check_docs._declared_author_seat("no seat line here"))
+
+
 if __name__ == "__main__":
     unittest.main()

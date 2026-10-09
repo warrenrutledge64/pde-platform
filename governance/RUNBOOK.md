@@ -136,13 +136,16 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | G | G-2 | G-1 | Governance | **Trim** templates to the audit findings + record the **lean pass** (satisfies the RD-008/§4a gate). Gates Story 1.1's live validation (which uses the audited validator handover). |
 | G | G-3 | — | Governance | ✅ **Codify the Troikauge governance core** (`governance/AGENTS.md` + `governance/MODERATOR_PROTOCOL.md`) — the RD-012 4-seat model + the four Moderator gates. Done via PR #60 / PR #61. |
 | G | G-4 | G-3 | Governance | 🟡 **Troikauge document architecture & template modernization** — adopt the lean `REQUIREMENT_TEMPLATE.md` + `OPERATIONS_TEMPLATE.md` and retire the monolithic PROMPT files. Started 2026-10-08 (Story 3.2 ✅): the templates now shape the Story 3.3 handoff. Applies to **Story 3.3+**; did **NOT** block Story 3.2. |
+| G | G-5 | G-3 | Governance | 🟡 **Mechanical authorship barrier (§4.1 CHECK Q)** — make the "builder never frames its own judgment" barrier mechanical: a declared `Author-Seat:` front-matter line on every seat-owned session artifact + `scripts/check_docs.py` **CHECK Q** that HARD-fails a `*-requirement.md` whose declared seat is not the Planner. Adds the explicit `requirement`/`operations` rows to the AGENTS.md §3 matrix. Ported to the `SDD-repo-kit` source template so every future spawn inherits it (reusable-OS discipline). _(The matching METHODOLOGY §7 universal-discipline bullet is a separate STAKEHOLDER-RATIFIED change — LOCK 4 keeps promotion of the standing OS a stakeholder act, not a silent builder commit.)_ Started 2026-10-09. |
 
 > **Governance (`G-`) series.** Tooling/OS-quality stories, tracked separately from the
 > pipeline phases (they are not gate-enforced by `check_docs`, which tracks only
 > `N.N` IDs — the human tracks G-status). Threads: **G-1 → G-2 both ✅** (2026-09-30) —
 > templates audited + trimmed; **G-3 ✅** (2026-10-08, PR #60 / PR #61) — Troikauge
 > governance core codified (RD-012); **G-4** (Troikauge template modernization) is a
-> separate forward thread that applies to **Story 3.3+** and does **NOT** block Story 3.2.
+> separate forward thread that applies to **Story 3.3+** and does **NOT** block Story 3.2;
+> **G-5** (2026-10-09) — the §4.1 authorship barrier made mechanical (`Author-Seat:` +
+> CHECK Q), ported to `SDD-repo-kit`.
 > (G-1 → G-2 had to complete before Story 1.1's live validation, which uses the
 > validator-handover template they audited/trimmed.)
 

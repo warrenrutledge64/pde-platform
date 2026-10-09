@@ -125,6 +125,8 @@ but must not author; "—" = no role.
 | `RUNBOOK.md` status + Validation Result lines | — | **Writes** (records sealed verdict only) | — | Confirms |
 | `RUNBOOK.md` Validation Debt / gate state | — | **Writes** | Reads | Confirms |
 | Story **brief** (`DOCS/session-briefs/*-brief.md`) | **Writes** (Planner) | Reads | — | Approves |
+| Story **requirement** (`DOCS/session-briefs/*-requirement.md`) | **Writes** (Planner) | **Reads only** | — | Restates in own words |
+| Story **operations** (`DOCS/session-briefs/*-operations.md` / `*-LIVE-RUNBOOK.md`) | — | **Writes** (Builder; operator surface, NOT acceptance criteria) | Reads / gates | Runs live |
 | Story **prompt** (`DOCS/session-briefs/*-PROMPT.md`) | — | **Writes** (from brief) | — | — |
 | **Deliverables** (`infra/**`, `scripts/**` logic) | — | **Writes** | Reads | — |
 | **Definition of Done** + live-validation steps | **Writes** (Validator, blind) | — | — | Supplies inputs |
@@ -157,6 +159,15 @@ non-negotiable; a breach invalidates the validation and the run must be re-done.
   notes, or a curated evidence/invariant list — **in a committed artifact or in
   chat.** The validator handover Kiro authors carries only the *pinned target* and
   a stakeholder-owned requirement blank (`[[ ]]`); it never carries the DoD.
+- **The requirement is Planner-authored and Builder-read-only.** The
+  `*-requirement.md` (the "what/why" the Validator derives its DoD from) is written by
+  the Planner (§3) and is an *input* Kiro reads, never one Kiro authors or edits — a
+  Builder-authored requirement is the thing-under-test framing its own judgment.
+  **Enforced mechanically:** every seat-owned session artifact carries an
+  `Author-Seat:` front-matter line, and `scripts/check_docs.py` **CHECK Q** HARD-fails
+  a `*-requirement.md` whose declared seat is not the Planner. The prose barrier plus
+  the mechanical guard is the durable fix (METHODOLOGY §7: when a prose precondition
+  keeps getting skipped, make it mechanical).
 - The Builder's operator runbook (how to *produce* raw output) is permitted and is
   explicitly **not** acceptance criteria — do not inject "judge X by Y" into it.
 - A validator that detects its inputs were curated by the builder must refuse and

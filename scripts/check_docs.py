@@ -29,6 +29,11 @@ Checks:
               ``*-LIVE-RUNBOOK.md`` under DOCS/session-briefs/. The builder does
               not author live-proof steps; the validator authors them blind (§4a).
               Closed-story LIVE-RUNBOOKs are frozen history (grandfathered).
+  CHECK Q  -- (authorship barrier, AGENTS.md §4.1) a seat-owned session artifact
+              declares an ``Author-Seat:`` other than the one the §3 authority
+              matrix assigns its type -- e.g. a ``*-requirement.md`` authored by the
+              Builder (the thing-under-test framing its own judgment). Fail-open: an
+              artifact with no declared seat is not flagged (adopt-forward).
 
 Usage:
     python3 scripts/check_docs.py                 # check cwd
@@ -575,6 +580,111 @@ def check_o_no_builder_live_runbook(gov_dir: Path, repo_root: Path) -> list[Viol
     return violations
 
 
+# ---------------------------------------------------------------------------
+# CHECK Q -- authorship barrier: the thing-under-test must not frame its own judgment.
+# ---------------------------------------------------------------------------
+#
+# The split-brain / Troikauge barrier (AGENTS.md §4.1) says the party that BUILDS the
+# code never frames HOW it is judged: the Planner authors the requirement (the "what/why"
+# that the independent Validator derives its Definition of Done from), and the Builder
+# authors only the operator runbook + the validator handover's pinned-target + a
+# stakeholder requirement blank. A Builder-authored requirement is the concrete breach —
+# the thing-under-test writing its own acceptance envelope.
+#
+# This was a PROSE-only barrier (§4.1 + the §3 authority matrix) with no mechanical guard,
+# exactly the "when a prose precondition keeps getting skipped, make it mechanical"
+# class (METHODOLOGY §7). CHECK Q makes it mechanical via a declared **Author-Seat:**
+# front-matter line each seat-owned session artifact must carry, naming the seat that
+# authored it. The check fails when an artifact's declared seat does not match the seat
+# the authority matrix assigns that artifact TYPE (e.g. a ``*-requirement.md`` that
+# declares ``Author-Seat: Builder`` — the builder framing its own judgment).
+#
+# Why a declared marker and not git authorship? In a solo-operator repo every commit is
+# the same human identity across all seats, so a git-blame/branch heuristic produces only
+# false positives. The declared seat is the robust, reviewable signal (stakeholder choice,
+# Story G-5). Fail-OPEN and depth-adaptive: an artifact with NO Author-Seat line is not
+# flagged (the convention is adopt-forward, not retroactive); no session-briefs dir -> no-op.
+
+# The seat an artifact TYPE must be authored by, per the AGENTS.md §3 authority matrix.
+# Keyed by a filename-suffix pattern -> the required seat token (lower-cased for compare).
+# Builder-owned types (operations / prompt / validator-handover) are intentionally NOT
+# listed as a *forbidden* set here; CHECK Q enforces the one barrier that makes the
+# split honest — the requirement (the judgment input) must be PLANNER-authored, never
+# builder-authored. Extend this map as the matrix assigns new seat-owned types.
+_SEAT_OWNED_ARTIFACTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # The requirement (the "what/why" the Validator derives the DoD from) is the
+    # Planner's; a Builder-authored requirement is the §4.1 breach.
+    (re.compile(r"-requirement\.md$"), "planner"),
+)
+# ``Author-Seat: <seat>`` anywhere near the top of a seat-owned artifact (front-matter or
+# an authoring blockquote). Case-insensitive; the seat token is normalised to lower-case.
+_AUTHOR_SEAT_RE = re.compile(r"author-seat:\s*([A-Za-z/ ]+)", re.IGNORECASE)
+# A declared seat is "builder" / "planner" if it contains that word (tolerates
+# "Planner / Validator", "Designer / Builder (Kiro)", etc.).
+_PLANNER_WORDS = ("planner",)
+_BUILDER_WORDS = ("builder", "designer")
+
+
+def _declared_author_seat(text: str) -> str | None:
+    """Return the normalised declared author seat of an artifact, or None if absent.
+
+    Normalises to a coarse seat word (``planner`` / ``builder``) so a decorated
+    declaration (``Author-Seat: Planner / Validator (Gemini)``) still compares cleanly;
+    returns the raw lower-cased token if it matches neither (so a typo'd seat is visibly
+    reported rather than silently passing)."""
+    m = _AUTHOR_SEAT_RE.search(text)
+    if not m:
+        return None
+    raw = m.group(1).strip().lower()
+    if any(w in raw for w in _BUILDER_WORDS):
+        return "builder"
+    if any(w in raw for w in _PLANNER_WORDS):
+        return "planner"
+    return raw
+
+
+def check_q_authorship_barrier(gov_dir: Path, repo_root: Path) -> list[Violation]:
+    """CHECK Q (split-brain authorship barrier, §4.1): a seat-owned session artifact must
+    not declare an author seat other than the one the authority matrix assigns its TYPE.
+
+    Concretely: a ``*-requirement.md`` (the judgment input the independent Validator
+    derives its DoD from) must be PLANNER-authored — a ``Author-Seat: Builder`` declaration
+    on it is the thing-under-test framing its own judgment and HARD-fails. Fail-OPEN: an
+    artifact with no ``Author-Seat:`` line is not flagged (adopt-forward, not retroactive);
+    no session-briefs dir -> no-op.
+    """
+    candidates = [
+        repo_root / "DOCS" / "session-briefs",
+        gov_dir / "DOCS" / "session-briefs",
+        gov_dir / "session-briefs",
+    ]
+    briefs = next((d for d in candidates if d.is_dir()), None)
+    if briefs is None:
+        return []
+    violations: list[Violation] = []
+    for path in sorted(briefs.glob("*.md")):
+        required = next(
+            (seat for pat, seat in _SEAT_OWNED_ARTIFACTS if pat.search(path.name)), None
+        )
+        if required is None:
+            continue  # not a seat-owned type CHECK Q enforces
+        declared = _declared_author_seat(path.read_text(encoding="utf-8"))
+        if declared is None:
+            continue  # fail-open: no declared seat -> not flagged (adopt-forward)
+        if declared != required:
+            violations.append(
+                Violation(
+                    "CHECK Q",
+                    f"DOCS/session-briefs/{path.name}",
+                    f"declares 'Author-Seat: {declared}' but the authority matrix "
+                    f"(AGENTS.md §3) assigns this artifact type to the {required} seat; "
+                    "the party that builds the code must not author the requirement it "
+                    "is judged against (§4.1). Re-author it in the correct seat.",
+                )
+            )
+    return violations
+
+
 def run_checks(repo_root: Path) -> list[Violation]:
     gov = _governance_dir(repo_root)
     out: list[Violation] = []
@@ -585,6 +695,7 @@ def run_checks(repo_root: Path) -> list[Violation]:
     out += check_m_repo_map(repo_root)
     out += check_n_phase_gate(gov)
     out += check_o_no_builder_live_runbook(gov, repo_root)
+    out += check_q_authorship_barrier(gov, repo_root)
     return out
 
 

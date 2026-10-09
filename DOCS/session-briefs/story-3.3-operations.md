@@ -1,3 +1,5 @@
+Author-Seat: Designer / Builder (Kiro)
+
 # Operations — the Builder's operator instructions
 
 > Operator execution surface authored by the **Designer / Builder seat (Kiro)**
