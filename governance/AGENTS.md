@@ -253,6 +253,20 @@ non-negotiable; a breach invalidates the validation and the run must be re-done.
    the validator handover (target + requirement blank only).
 3. **Moderate** — Copilot runs its gates
    ([`MODERATOR_PROTOCOL.md`](MODERATOR_PROTOCOL.md)). Any red gate stops here.
+
+> **SHARED FACT — all four seats hold this identically (RD-013).** A **green
+> Moderator run is permission to START validation — never a verdict, and never a
+> story close.** It certifies only that the *mechanical preconditions* hold (right
+> target, deployed, right account, usable output); it says nothing about whether the
+> deliverable is *correct*. Each seat's obligation that follows from this one fact:
+> **Copilot** emits a gate record and never writes `PASS`/`✅`/"done" or flips a
+> status; **Gemini** does not treat a green gate as evidence toward its verdict — it
+> authors the DoD and judges the raw output on its own; **Kiro** does not record a
+> result or flip 🟡 → ✅ on a Moderator pass — only on a *sealed Validator verdict*
+> (and `scripts/check_docs.py` **CHECK G** mechanically blocks a ✅ with no recorded
+> Validation Result); **the Human** reads a green gate as "cleared to validate," not
+> "accepted." The story stays 🟡 across a green Moderator run.
+
 4. **Validate** — the Human carries the raw change + requirement to Gemini
    (Validator, fresh context), runs the authored steps live, pastes raw output;
    Gemini seals PASS/FAIL/INCONCLUSIVE.
