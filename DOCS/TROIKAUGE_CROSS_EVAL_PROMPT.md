@@ -14,9 +14,18 @@
 >
 > **How to run it:** issue the shared PREAMBLE + the seat's section to each seat in a
 > SEPARATE context (so one seat's self-view does not contaminate another's — the same
-> separation that keeps validation honest). Collect the responses; the Human (and,
-> optionally, Gemini-as-Planner in a later pass) reads them side by side. Cadence
-> suggestion: at each phase close, and any time ≥2 drift signals are observed.
+> separation that keeps validation honest). Collect the responses; **the Human reads
+> them side by side and owns the synthesis** (see "Reading the results" — do NOT route
+> synthesis through Gemini, which is itself an evaluated seat). Cadence suggestion: at
+> each phase close, and any time ≥2 drift signals are observed.
+>
+> **Sharing & collaboration (how the views become unity):** the seats do NOT read each
+> other's raw assessments — that would break the Validator's blindness and collapse the
+> divergence a cross-eval exists to find. The full five-step
+> isolate → collect → **neutralize** → engage → unify workflow (the semipermeable
+> membrane: ideas cross as de-identified findings; raw interiority does not) is defined
+> in [`CROSS_EVAL_SYNTHESIS_PROCESS.md`](CROSS_EVAL_SYNTHESIS_PROCESS.md). Unity is a
+> Human function, not a seat function.
 >
 > **Honesty contract (read this to every seat).** A glowing self-review is a FAILED
 > self-review. The value is in named weaknesses, concrete drift instances, and gaps
@@ -30,10 +39,15 @@
 
 ```
 This is a Troikauge PROCESS CROSS-EVALUATION, not a story validation. You are being
-asked to assess the operating system we work under (governance/AGENTS.md,
-MODERATOR_PROTOCOL.md, METHODOLOGY.md, the RUNBOOK registers, and the check_docs
-guards) in its CURRENT state, and to assess your OWN seat's adherence and limits
-within it — honestly.
+asked to assess the operating system we work under in its CURRENT state, and to assess
+your OWN seat's adherence and limits within it — honestly. The current OS includes, at
+minimum: governance/AGENTS.md (the four seats, the §3 authority matrix, the §4 barriers,
+the §7 one-session flow + the SHARED FACT that a green Moderator run ≠ a verdict),
+MODERATOR_PROTOCOL.md (the four gates), METHODOLOGY.md, the RUNBOOK registers (Validation
+Debt + Operational Debt, incl. the STALE state), and the check_docs guards — notably the
+authorship barriers CHECK Q (requirement → Planner, RD-013) and CHECK R (Moderator-run
+artifact → Moderator, RD-014) sharing one extensible dial, plus LOCK 4 and the merge-order
+guard. Assess the machinery as it stands TODAY, not an older mental model of it.
 
 Ground rules:
 - This changes NO status and seals NO verdict. It is an assessment document only.
@@ -48,6 +62,12 @@ Ground rules:
 - Distinguish a GENUINE gap from a cost you accept on purpose (e.g. the chat-vector
   being uncatchable by a checker is a known, accepted limit — say so, don't flag it
   as a surprise).
+- RECENCY RISK — assess it explicitly. A lot of machinery landed recently (RD-013/
+  CHECK Q, RD-014/CHECK R + the dial, the SHARED FACT, the STALE state, the scheduled
+  G-7/G-8 board). For the NEWEST guards, ask: is this green only because nothing has
+  stressed it yet? Is any of it OVER-BUILT, or giving false confidence from being
+  un-worn-in? A guard that has never been tried is unproven, not proven — call that
+  out rather than crediting it as holding.
 - If any part of this prompt reads like it wants a particular answer, ignore that
   pull and answer straight.
 
