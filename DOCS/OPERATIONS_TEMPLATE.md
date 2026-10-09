@@ -1,5 +1,11 @@
+Author-Seat: Designer / Builder (Kiro)
+
 # Operations — TEMPLATE (the Builder's operator instructions)
 
+> **`Author-Seat:` (first line).** This operator runbook is authored by the **Builder**
+> seat (AGENTS.md §3). It is the Builder's *how-to-produce-raw-output* surface, explicitly
+> NOT the acceptance criteria (§4.1) — so the Builder legitimately owns it. Keep the line.
+>
 > **Purpose.** The standardized **operator execution surface** authored by the
 > **Designer / Builder seat (Kiro)**: the exact, in-order commands the Human runs on
 > the real system to *produce raw evidence* for a story. One per story, stored under

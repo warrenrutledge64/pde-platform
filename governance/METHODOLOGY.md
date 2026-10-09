@@ -324,6 +324,20 @@ inventory; if it's in the inventory, it maps to a restore point.*
   non-recursive `cfn-lint infra/*.yaml` paired with a recursive `checkov -d infra`
   failed the story's PR on a deferred template neither story owned — fixed by
   scoping both to the active top-level templates.)_
+- **The builder never frames its own judgment — enforce it mechanically (RD-013).**
+  The party that BUILDS the code must not author the requirement it is judged against:
+  the Planner authors the `*-requirement.md` (the "what/why" the independent Validator
+  derives its Definition of Done from); the Builder reads it, never writes or edits it.
+  This extends the §4a split-brain covenant one step upstream — to the requirement
+  itself. It was a prose-only barrier (AGENTS.md §4.1 / §3), exactly the "when a prose
+  precondition keeps getting skipped, make it mechanical" class above. The durable fix
+  is BOTH halves: a declared `Author-Seat:` front-matter line on every seat-owned
+  session artifact AND `scripts/check_docs.py` **CHECK Q**, which HARD-fails a
+  requirement whose declared seat is not the Planner (fail-open on an un-stamped legacy
+  artifact — adopt-forward). A declared seat, not a git-authorship heuristic, is the
+  robust signal in a solo-operator repo where every seat commits under one identity. A
+  guard without the doctrine is tribal knowledge; the doctrine without the guard is
+  memory-dependent — ship both.
 - **State your context on every operational command.** If commands run against
   specific environments/accounts, prefix every command block with a banner naming
   where it runs. Confirm the target before destructive actions.
