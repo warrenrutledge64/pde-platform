@@ -34,6 +34,16 @@ jobs:
     steps:
       - name: Checkout the PR head (exact commit — no stale checkout possible)
         uses: actions/checkout@v4
+        with:
+          # Full history (not the default shallow depth-1) so the input-poisoning
+          # LOCKS and the merge-order guard can compute `origin/<base>..HEAD`: with a
+          # shallow HEAD there is no shared ancestry with the separately-fetched base,
+          # so `git log --format=%B <base>..HEAD` returns nothing and a legitimate
+          # RATIFIED-BY-STAKEHOLDER marker (or RD-### pointer) in a commit message is
+          # invisible to LOCK 4 — a false OS-poisoning failure. This gives the range
+          # the history it needs; it does NOT loosen any guard (the lock logic is
+          # unchanged — it can now actually see the ratification the stakeholder made).
+          fetch-depth: 0
 
       - name: Show the commit under test (target lock)
         run: |
