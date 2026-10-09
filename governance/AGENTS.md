@@ -100,6 +100,13 @@ one gauge never substitutes for the other.
   definitions.
 - Produces non-zero-exit stop signals and gate records; it does **not** author DoDs
   or seal verdicts, and it does **not** modify deliverables.
+- **Owns its own run artifacts (RD-014).** The Builder authors the gate *definitions*
+  (`MODERATOR_PROTOCOL.md`, governance) but **nothing for a run** — no record,
+  attestation, skeleton, or scaffold, in repo or chat. The Moderator produces every run
+  artifact itself from the gate definitions against the pinned target, and **refuses a
+  builder-handed run artifact or scaffold and says so** (as the Validator refuses curated
+  inputs). Enforced by `scripts/check_docs.py` **CHECK R** (committed-artifact vector) +
+  this doctrine (the chat vector).
 - Its gates are *preconditions* of a valid validation run, not a substitute for it.
 
 ### 2.4 Human Stakeholder — User
@@ -132,7 +139,7 @@ but must not author; "—" = no role.
 | **Definition of Done** + live-validation steps | **Writes** (Validator, blind) | — | — | Supplies inputs |
 | Validator handover (`DOCS/session-briefs/*-VALIDATOR-HANDOVER.md`) | Reads (fills blind) | **Writes** target + requirement blank only | — | Fills `[[ ]]` |
 | Moderator gate definitions (`MODERATOR_PROTOCOL.md`) | — | **Writes** (governance) | Reads / executes | Approves |
-| Moderator gate run records | — | — | **Writes** | Reads |
+| Moderator **run artifacts** (records / attestations / scaffolds for a run) | — | **— (never, RD-014)** | **Writes** (self-authored from the gate defs) | Reads |
 | Sealed **verdict** (PASS/FAIL/INCONCLUSIVE) | **Writes** (Validator) | Records verbatim | — | Reads/decides |
 | Merge to `main` | — | — | — | **Owns** |
 
