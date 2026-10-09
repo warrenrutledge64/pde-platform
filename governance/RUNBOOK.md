@@ -137,6 +137,8 @@ THIS session's actual lessons. A close-out without the next handoff is incomplet
 | G | G-3 | — | Governance | ✅ **Codify the Troikauge governance core** (`governance/AGENTS.md` + `governance/MODERATOR_PROTOCOL.md`) — the RD-012 4-seat model + the four Moderator gates. Done via PR #60 / PR #61. |
 | G | G-4 | G-3 | Governance | 🟡 **Troikauge document architecture & template modernization** — adopt the lean `REQUIREMENT_TEMPLATE.md` + `OPERATIONS_TEMPLATE.md` and retire the monolithic PROMPT files. Started 2026-10-08 (Story 3.2 ✅): the templates now shape the Story 3.3 handoff. Applies to **Story 3.3+**; did **NOT** block Story 3.2. |
 | G | G-5 | G-3 | Governance | ✅ **Mechanical authorship barriers (RD-013 CHECK Q + RD-014 CHECK R)** — _Validation Result: pass — accepted on stakeholder review (G-2/G-3 precedent), 2026-10-09, confirmed by warrenrutledge64; evidence: PR #72 pull_request CI run 37871584855 @ 35aab0c all steps green incl. LOCK 4 + merge-order; 34 pde tests OK; both guards verified to bite + fail-open._ Make the "builder never frames its own judgment" barrier mechanical AND codify the doctrine, across two lanes: **(RD-013/§4.1)** a declared `Author-Seat:` line on seat-owned artifacts + **CHECK Q** HARD-failing a `*-requirement.md` whose seat is not the Planner; **(RD-014)** the Builder↔Moderator barrier — the Builder authors the gate *definitions* but **nothing for a run** (no record/attestation/scaffold), the Moderator self-authors + **refuses** a builder-handed artifact, enforced by **CHECK R** (committed vector) + doctrine (chat vector). Both CHECKs share the extensible `_SEAT_OWNED_ARTIFACTS` **dial** (heavier = add a pattern, no new logic). Explicit `requirement`/`operations`/Moderator-run-artifact rows in the AGENTS.md §3 matrix; `MODERATOR_PROTOCOL.md` "what the Builder must never author"; the AGENTS.md §7 SHARED FACT (green Moderator ≠ verdict); RD-013 + RD-014 ratified in PROJECT_PLAN + the METHODOLOGY §7 bullet (promoted by stakeholder ratification per LOCK 4). Ported to the `SDD-repo-kit` source template (reusable-OS discipline). Started 2026-10-09. |
+| G | G-7 | G-3 | Governance | ⬜ **Center-seat story board (derived swimlane view)** — a `scripts/story_board.py` (stdlib, DERIVED-ONLY, drift-safe, `--self-test`) that renders a per-story × per-seat swimlane showing WHERE each story sits in the Troikauge flow (Planner → Builder → Moderate → Validate) and which handoffs are done. Source is COMMITTED REALITY only — derived from the RUNBOOK status + the `session-briefs/` artifacts + git/PR/CI — never a hand-maintained second ledger (single-source-of-truth; the `gen_repo_map.py` discipline). Output in the model's own vocabulary (🟡 until a sealed verdict; a green Moderator gate shows "cleared to validate", never "done" — RD-013 / SHARED FACT). Kit-bound (reusable-OS: every spawn's center seat inherits it). |
+| G | G-8 | G-7 | Governance | ⬜ **Center-seat presence overlay (DEFERRED — assess after G-7)** — a live "current focus" layer on top of the G-7 board, scoped HONESTLY to signals that genuinely exist: the per-session `update_session_information` status + git-recency ("last artifact committed N min ago"). Explicitly NOT a second-by-second per-agent telemetry monitor — the AI seats are prompt-driven, not persistent daemons, so true keystroke-level liveness is not emittable and would be stale/hand-faked (a second ledger). Built ONLY IF G-7 leaves a real gap. Inherits the model-vocabulary rule (no blurring gate-green with accepted). |
 
 > **Governance (`G-`) series.** Tooling/OS-quality stories, tracked separately from the
 > pipeline phases (they are not gate-enforced by `check_docs`, which tracks only
@@ -356,6 +358,8 @@ blocker.)_
 | **OD-016** | Validator↔operator split-brain hardening — the under-guarded direction (validator must seal INCONCLUSIVE + stop, never co-debug) | **Governance pass** — partially DONE (handover RULES updated); confirm the standing handover/METHODOLOGY wording lands | Depends-on: none. Feeds: handover template + METHODOLOGY |
 | **OD-019** | Documented ExternalId secret-retrieval path (partial — LIVE-RUNBOOK STEP 0 now gives a procedure) | **Carry into Story 3.3/3.4** (same two `/pdlv/` SecureStrings reused) — confirm it's durable, not run-local | Depends-on: none. Feeds: 3.3/3.4 operations |
 | **OD-005** | _(DEFERRED, not open work)_ — ZTIE's 18 `pde-*` shadow stacks; PDE avoids + records only (RD-001 scope isolation) | **Not PDE's to fix** — owner-level reconciliation, tracked for visibility | — |
+| **G-7** | Center-seat story board (`scripts/story_board.py`, derived swimlane) | **Governance tooling** — ready now (dep G-3 ✅); build when the center-seat view is prioritized | Depends-on: G-3. Feeds: the center seat's "where is each story / who holds it" view; kit-ported |
+| **G-8** | Center-seat presence overlay (session-status + git-recency) | **DEFERRED** — assess after G-7 ships; build only if G-7 leaves a real gap | Depends-on: G-7. Feeds: a live "current focus" layer |
 
 > **G-4** (Troikauge template modernization) is also 🟡 and applies to Story 3.3+ (not a
 > blocker to 3.2); it closes when the split requirement/operations architecture it
@@ -551,6 +555,9 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 | G-2 | Trim templates to the audit findings + record the lean pass | G-1 | ✅ | 2026-09-30 |
 | G-3 | Codify Troikauge Governance Core (AGENTS.md & MODERATOR_PROTOCOL.md) | — | ✅ | 2026-10-08 |
 | G-4 | Troikauge Document Architecture & Template Modernization | G-3 | 🟡 | — |
+| G-5 | Mechanical authorship barriers (RD-013 CHECK Q + RD-014 CHECK R) | G-3 | ✅ | 2026-10-09 |
+| G-7 | Center-seat story board (derived swimlane view) | G-3 | ⬜ | — |
+| G-8 | Center-seat presence overlay (deferred — assess after G-7) | G-7 | ⬜ | — |
 
 **G-1 — Independent adversarial fat-audit of the prompt/handoff templates**  ✅ _Done (validated)_
 - Steps: paste the ready-to-paste bloat-focused audit prompt ([`../DOCS/session-briefs/story-G-1-fat-audit-prompt.md`](../DOCS/session-briefs/story-G-1-fat-audit-prompt.md)) to an **independent** validator (Gemini — not the author). The auditor authors its own rubric under the axiom **fat causes drift and hallucination**, attacks the templates, and returns findings + a **measurably tighter rewrite**.
@@ -573,6 +580,21 @@ _Tracked separately from the pipeline phases. Not gate-enforced by `check_docs` 
 - **Progress:** Story 3.3 handoff authored on the new architecture — `DOCS/session-briefs/story-3.3-requirement.md` (Planner) + `story-3.3-operations.md` (Builder operator surface) + `story-3.3-VALIDATOR-HANDOVER.md` (the independent-validation path, from `VALIDATOR_BRIEF_TEMPLATE.md`); the monolithic `*-PROMPT.md` / `*-VALIDATOR-KICKOFF.md` are retired going forward.
 - **Validation Result:** pending (G-class — closes by stakeholder review once Story 3.3+ run on the new templates and the PROMPTs are retired).
 - **Advancement gate:** depends on G-3 ✅ (the codified Troikauge core).
+
+**G-5 — Mechanical authorship barriers (RD-013 CHECK Q + RD-014 CHECK R)**  ✅ _Done (validated)_
+- Steps: make the "builder never frames its own judgment" barrier mechanical (declared `Author-Seat:` + CHECK Q on the requirement lane; CHECK R on the Moderator-run-artifact lane, sharing one extensible `_SEAT_OWNED_ARTIFACTS` dial) AND codify the doctrine (RD-013 + RD-014 ratified; AGENTS §2.3/§3/§4.1/§7 SHARED FACT; MODERATOR_PROTOCOL "what the Builder must never author"; METHODOLOGY §7). Port the generic engine to `SDD-repo-kit`.
+- **Validation Result:** pass — accepted on stakeholder review (G-2/G-3 precedent), 2026-10-09, confirmed by warrenrutledge64; evidence PR #72 CI run 37871584855 @ `35aab0c` (all green incl. LOCK 4 + merge-order); 34 pde tests OK; both guards verified to bite + fail-open; kit port merged (SDD-repo-kit PR #15).
+- **Advancement gate:** depends on G-3 ✅.
+
+**G-7 — Center-seat story board (derived swimlane view)**  ⬜ _Not Started_
+- Steps: build `scripts/story_board.py` (stdlib, DERIVED-ONLY, drift-safe, `--self-test`) that renders a per-story × per-seat swimlane (Planner → Builder → Moderate → Validate) from COMMITTED REALITY only — RUNBOOK status + `session-briefs/` artifacts + git/PR/CI — never a hand-maintained second ledger (the `gen_repo_map.py` discipline). Output in the model's vocabulary (🟡 until a sealed verdict; a green Moderator gate reads "cleared to validate", never "done" — RD-013 / SHARED FACT). Port to `SDD-repo-kit` so every spawn's center seat inherits it.
+- **Validation Result:** pending (G-class — closes by stakeholder review of the rendered board against the live RUNBOOK + its `--self-test`/drift-check).
+- **Advancement gate:** depends on G-3 ✅ (the codified seat model the board visualizes).
+
+**G-8 — Center-seat presence overlay (DEFERRED — assess after G-7)**  ⬜ _Not Started_
+- Steps: IF G-7 leaves a real gap, add a live "current focus" layer scoped HONESTLY to emittable signals — the per-session `update_session_information` status + git-recency — explicitly NOT a per-agent keystroke monitor (the seats are prompt-driven, not daemons; true liveness is not emittable and would be a stale/hand-faked second ledger). Inherits the model-vocabulary rule.
+- **Validation Result:** pending (DEFERRED — not started until the post-G-7 assessment decides it is warranted).
+- **Advancement gate:** depends on G-7 (the board it overlays).
 
 ---
 
