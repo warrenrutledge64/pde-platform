@@ -100,6 +100,13 @@ one gauge never substitutes for the other.
   definitions.
 - Produces non-zero-exit stop signals and gate records; it does **not** author DoDs
   or seal verdicts, and it does **not** modify deliverables.
+- **Owns its own run artifacts (RD-014).** The Builder authors the gate *definitions*
+  (`MODERATOR_PROTOCOL.md`, governance) but **nothing for a run** — no record,
+  attestation, skeleton, or scaffold, in repo or chat. The Moderator produces every run
+  artifact itself from the gate definitions against the pinned target, and **refuses a
+  builder-handed run artifact or scaffold and says so** (as the Validator refuses curated
+  inputs). Enforced by `scripts/check_docs.py` **CHECK R** (committed-artifact vector) +
+  this doctrine (the chat vector).
 - Its gates are *preconditions* of a valid validation run, not a substitute for it.
 
 ### 2.4 Human Stakeholder — User
@@ -132,7 +139,7 @@ but must not author; "—" = no role.
 | **Definition of Done** + live-validation steps | **Writes** (Validator, blind) | — | — | Supplies inputs |
 | Validator handover (`DOCS/session-briefs/*-VALIDATOR-HANDOVER.md`) | Reads (fills blind) | **Writes** target + requirement blank only | — | Fills `[[ ]]` |
 | Moderator gate definitions (`MODERATOR_PROTOCOL.md`) | — | **Writes** (governance) | Reads / executes | Approves |
-| Moderator gate run records | — | — | **Writes** | Reads |
+| Moderator **run artifacts** (records / attestations / scaffolds for a run) | — | **— (never, RD-014)** | **Writes** (self-authored from the gate defs) | Reads |
 | Sealed **verdict** (PASS/FAIL/INCONCLUSIVE) | **Writes** (Validator) | Records verbatim | — | Reads/decides |
 | Merge to `main` | — | — | — | **Owns** |
 
@@ -253,6 +260,20 @@ non-negotiable; a breach invalidates the validation and the run must be re-done.
    the validator handover (target + requirement blank only).
 3. **Moderate** — Copilot runs its gates
    ([`MODERATOR_PROTOCOL.md`](MODERATOR_PROTOCOL.md)). Any red gate stops here.
+
+> **SHARED FACT — all four seats hold this identically (RD-013).** A **green
+> Moderator run is permission to START validation — never a verdict, and never a
+> story close.** It certifies only that the *mechanical preconditions* hold (right
+> target, deployed, right account, usable output); it says nothing about whether the
+> deliverable is *correct*. Each seat's obligation that follows from this one fact:
+> **Copilot** emits a gate record and never writes `PASS`/`✅`/"done" or flips a
+> status; **Gemini** does not treat a green gate as evidence toward its verdict — it
+> authors the DoD and judges the raw output on its own; **Kiro** does not record a
+> result or flip 🟡 → ✅ on a Moderator pass — only on a *sealed Validator verdict*
+> (and `scripts/check_docs.py` **CHECK G** mechanically blocks a ✅ with no recorded
+> Validation Result); **the Human** reads a green gate as "cleared to validate," not
+> "accepted." The story stays 🟡 across a green Moderator run.
+
 4. **Validate** — the Human carries the raw change + requirement to Gemini
    (Validator, fresh context), runs the authored steps live, pastes raw output;
    Gemini seals PASS/FAIL/INCONCLUSIVE.

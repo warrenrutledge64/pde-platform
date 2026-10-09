@@ -498,7 +498,76 @@ class CheckQAuthorshipBarrierTests(unittest.TestCase):
             check_docs._declared_author_seat("author-seat: Designer / Builder (Kiro)"),
             "builder",
         )
+        self.assertEqual(
+            check_docs._declared_author_seat("Author-Seat: Moderator (Copilot)"), "moderator"
+        )
         self.assertIsNone(check_docs._declared_author_seat("no seat line here"))
+
+
+class CheckRModeratorLaneBarrierTests(unittest.TestCase):
+    """CHECK R (RD-014): the Builder authors nothing in the Moderator's lane for a run.
+
+    A Moderator run artifact (``*-moderator.md`` / ``*-moderator-attestation.md`` /
+    ``*-gate-record.md``) that declares the Builder seat is the breach. The Builder may
+    author the gate DEFINITIONS (governance) but no run record/attestation. Shares the
+    ``_SEAT_OWNED_ARTIFACTS`` dial + engine with CHECK Q; fail-open on un-stamped files.
+    """
+
+    def _tree(self, root: Path) -> Path:
+        _gov(root, PHASE_RUNBOOK)
+        (root / "DOCS" / "session-briefs").mkdir(parents=True)
+        return root
+
+    def test_builder_authored_moderator_attestation_fires(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-3.3-moderator-attestation.md").write_text(
+                "Author-Seat: Designer / Builder (Kiro)\n\n# gates green", encoding="utf-8"
+            )
+            violations = check_docs._check_authorship_barrier(root / "governance", root)
+            self.assertEqual(len(violations), 1, violations)
+            self.assertEqual(violations[0].check, "CHECK R")
+            self.assertIn("moderator-attestation", violations[0].file)
+            self.assertIn("RD-014", violations[0].detail)
+
+    def test_moderator_authored_record_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-3.3-gate-record.md").write_text(
+                "Author-Seat: Moderator (Copilot)\n\n# four gates green", encoding="utf-8"
+            )
+            self.assertEqual(
+                check_docs._check_authorship_barrier(root / "governance", root), []
+            )
+
+    def test_moderator_record_without_seat_is_fail_open(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(Path(tmp))
+            (root / "DOCS" / "session-briefs" / "story-3.3-moderator.md").write_text(
+                "# gates (no Author-Seat line)", encoding="utf-8"
+            )
+            self.assertEqual(
+                check_docs._check_authorship_barrier(root / "governance", root), []
+            )
+
+    def test_dial_is_extensible_without_new_logic(self) -> None:
+        """The enforced set is data (``_SEAT_OWNED_ARTIFACTS``): the three seeded
+        Moderator patterns all resolve to the 'moderator' seat via the same engine."""
+        seats = {
+            seat
+            for pat, seat in check_docs._SEAT_OWNED_ARTIFACTS
+            if pat.search("x-moderator.md")
+            or pat.search("x-moderator-attestation.md")
+            or pat.search("x-gate-record.md")
+        }
+        self.assertEqual(seats, {"moderator"})
+        # And the requirement lane still resolves to planner on the same dial.
+        self.assertTrue(
+            any(
+                pat.search("x-requirement.md") and seat == "planner"
+                for pat, seat in check_docs._SEAT_OWNED_ARTIFACTS
+            )
+        )
 
 
 if __name__ == "__main__":

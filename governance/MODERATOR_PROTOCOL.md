@@ -204,6 +204,32 @@ runs, or false-negative "clean" readings against absent artifacts.
 
 ---
 
+## What the Builder must never author for the Moderator (RD-014)
+
+The Builder (Kiro) authors the gate **definitions** in this file — a governance act the
+authority matrix ([`AGENTS.md`](AGENTS.md) §3) permits and the Human approves. The Builder
+authors **nothing for a specific run**:
+
+- **No gate run record, attestation, skeleton, scaffold, or "here's what to check"
+  packet — in a committed artifact or in chat.** The Moderator produces every run
+  artifact **itself**, directly from these gate definitions against the pinned target. A
+  builder-shaped run artifact makes the "green gate" partly builder-framed and erodes the
+  independence the Moderator seat exists to provide (the grading-your-own-paper failure,
+  one lane over).
+- **The Moderator refuses a builder-handed run artifact or scaffold and says so** —
+  exactly as the Validator refuses builder-curated inputs ([`AGENTS.md`](AGENTS.md) §4.1).
+  Being handed a scaffold is itself the signal to refuse.
+
+**Enforced mechanically:** [`../scripts/check_docs.py`](../scripts/check_docs.py) **CHECK R**
+HARD-fails a committed Moderator-lane artifact (`*-moderator.md` /
+`*-moderator-attestation.md` / `*-gate-record.md`) whose declared `Author-Seat:` is not the
+Moderator. The enforced set is an extensible dial (`_SEAT_OWNED_ARTIFACTS`) — made heavier
+by adding a filename pattern, no new logic. The chat/un-committed vector is uncatchable by
+any checker and is covered by this doctrine (the Moderator's refusal duty above), not by
+pretend-checker logic.
+
+---
+
 ## Relationship to the rest of the system
 
 - **[`AGENTS.md`](AGENTS.md)** — defines the Moderator seat and the information
