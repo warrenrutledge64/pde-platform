@@ -19,6 +19,14 @@
 > synthesis through Gemini, which is itself an evaluated seat). Cadence suggestion: at
 > each phase close, and any time ≥2 drift signals are observed.
 >
+> **Sharing & collaboration (how the views become unity):** the seats do NOT read each
+> other's raw assessments — that would break the Validator's blindness and collapse the
+> divergence a cross-eval exists to find. The full five-step
+> isolate → collect → **neutralize** → engage → unify workflow (the semipermeable
+> membrane: ideas cross as de-identified findings; raw interiority does not) is defined
+> in [`CROSS_EVAL_SYNTHESIS_PROCESS.md`](CROSS_EVAL_SYNTHESIS_PROCESS.md). Unity is a
+> Human function, not a seat function.
+>
 > **Honesty contract (read this to every seat).** A glowing self-review is a FAILED
 > self-review. The value is in named weaknesses, concrete drift instances, and gaps
 > the guardrails had to catch. Reward yourself for catching your own slips, not for
