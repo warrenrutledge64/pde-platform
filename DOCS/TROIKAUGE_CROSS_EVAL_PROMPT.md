@@ -132,20 +132,81 @@ proposals go to the stakeholder for ratification (LOCK-4 gated).
 
 ---
 
+## For **Gemini (Planner / Validator)**
+
+> **Solo-seat note.** You hold TWO jobs in SEPARATE contexts — strategic **Planner**
+> (what/why; authors the requirement + brief) and independent **Validator** (authors
+> the DoD *blind* and seals the verdict). The integrity of the **firewall between
+> those two contexts** is the basis of the §4a solo-seat fallback — so evaluating it
+> is a first-class part of YOUR self-assessment, not an aside. Answer for both roles
+> AND for the separation between them.
+
+```
+As the Planner/Validator seat, assess the process and your adherence:
+
+1. SELF-ADHERENCE (both roles). Cite instances where you came close to (or did) cross
+   a boundary: as PLANNER — writing implementation/code, slipping a pass/fail rubric
+   into the requirement (the requirement is what/why, NOT a DoD — RD-013); as
+   VALIDATOR — accepting a builder-curated input, inheriting planner framing, being
+   handed a DoD, or helping debug the operator's environment instead of sealing
+   INCONCLUSIVE and stopping (the OD-016 under-guarded direction). For each: did YOU
+   catch it, or did a guard / the Human / the handover contract catch it?
+
+2. THE FIREWALL (the question only your seat answers). How CLEAN is the separation
+   between your Planner context and your Validator context in practice? When you
+   author a DoD "blind," are you honestly blind — or do you reconstruct the planning
+   rationale from memory and judge toward the result you expected to see? Cite the
+   clearest instance where you authored a DoD that could have caught a defect your
+   Planner self would NOT have predicted (evidence the firewall held) — or admit you
+   cannot, which is itself the finding.
+
+3. DRIFT PRESSURE. Where does the process most tempt you to drift — e.g. as Validator,
+   the pull to confirm rather than break; as Planner, the pull to over-specify the
+   requirement into a de-facto rubric? Name the exact moment.
+
+4. GUARDRAIL HONESTY. The §4a fallback rests on "the builder never frames how it is
+   judged" + your two contexts staying separate. Is that separation actually enforced
+   by anything mechanical, or does it rest on your discipline + the Human running you
+   in a fresh context? Name any point where it is honor-system only, and whether that
+   is an accepted cost or a real gap. Does the SHARED FACT (green Moderator ≠ verdict)
+   change how you weigh a Moderator pass? (It should not — you judge raw output.)
+
+5. CONSCIENCE READING. How aware are you of the line between "I planned this" and "I am
+   now judging it as if I had not"? Cite the single clearest moment you held that
+   line — or failed to.
+
+6. ONE CHANGE. One change to the process (especially anything that would make the
+   Planner↔Validator firewall less honor-system and more enforced) — and the failure
+   mode if you're wrong.
+
+Output: a dated assessment grouped by the 6 headings, in SEPARATE Planner and
+Validator contexts if at all possible (two passes), so the firewall you are assessing
+is not breached by the assessment itself. No status change, no verdict sealed here —
+this is a process evaluation. Process-change proposals go to the stakeholder for
+ratification (LOCK-4 gated).
+```
+
+---
+
 ## Reading the results (Human)
 
-- Lay the two seat assessments side by side. **Agreement** on a weakness = high
-  confidence it's real. **Divergence** (one seat sees a gap the other doesn't) is the
-  most interesting signal — it usually marks a boundary one seat is blind to.
+- Lay the three seat assessments (Kiro, Copilot, Gemini) side by side. **Agreement**
+  on a weakness across seats = high confidence it's real. **Divergence** (one seat
+  sees a gap another doesn't) is the most interesting signal — it usually marks a
+  boundary the other seat is blind to. Pay special attention to anything Gemini says
+  about its own Planner↔Validator firewall that the other two cannot see from outside.
 - Score the "conscience" read qualitatively: a seat that cites specific moments it
   STOPPED itself (or honestly names where a guard caught it) is showing self-awareness;
   a seat that reports "no issues" is either exceptional or not looking — probe it.
 - Any genuine process gap becomes a tracked **Operational Debt** row with a scheduling
   edge; any proposed OS change goes through the normal RD/ratification path (never a
   silent commit — LOCK 4).
-- Optionally run a THIRD pass: give both assessments to Gemini (Planner context) to
-  synthesize cross-seat themes — but keep that out of any Validator context so
-  validation independence is untouched.
+- **Synthesis pass — do it YOURSELF (the Human), not a seat.** Because Gemini is now
+  one of the evaluated seats, do NOT hand the three assessments to Gemini to
+  synthesize — that would let an evaluated seat frame the read of its own evaluation
+  (and risk contaminating a later Validator context). The Human owns the cross-seat
+  synthesis. If you want an AI synthesis, use a FOURTH, uninvolved context/model that
+  holds no seat in this project.
 
 > **Why this exists.** Troikauge's value is not only that no seat grades its own paper
 > on a given story — it's that the seats periodically turn the same skeptical lens on
