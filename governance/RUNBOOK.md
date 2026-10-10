@@ -12,6 +12,21 @@
 > foundations forward and build them once. Validation gates are sacred: no phase
 > is done without its live validation, and nothing builds on unproven ground.
 
+## Troikauge 3.0 pre-resumption work queue (PROPOSED — no status changes)
+
+> **Human pause is in force.** This is a priority overlay for onboarding, **not** an alteration to the Build Tiers table, Validation Debt Register, story states, or the sealed validator results. Keep the existing single-source story ledger intact. New governance story IDs and any bypass of an advancement gate require separate Human ratification and corresponding machine-checker-compatible plan/runbook edits.
+
+| Priority | Work package | Lead / independent evidence | Exit evidence |
+|---|---|---|---|
+| P0 | Seat 4 bookkeeping takeover: inventory open PDE work, validation debts, handoff obligations, project issues, restore/BOM status; maintain a canonical cross-project index pointing back to this runbook | Seat 4 with Human confirmation | Reconciliation and responsibility-transfer record; no historical status rewrites |
+| P1 | Bring Copilot Moderator online under `MODERATOR_PROTOCOL.md`: access boundary and four-gate workflow; Copilot authors its OWN run attestations from pinned requirements/code | Copilot, independently reviewed by Human/Seat 4 for provenance | One safe offline demonstration with a genuine fail case and clear distinction between gate PASS and Validator PASS |
+| P2 | Define and rehearse the Planner → Kiro Builder → Copilot Moderator → independent Gemini Validator → Human handoff, including no-curated-input and `Author-Seat:` enforcement | Each designated seat authors only its own artifacts | Handoff/denial matrix and reproducible rehearsal evidence; no production deployment |
+| P3 | Transfer routine bookkeeping from Kiro to Seat 4 for upcoming work; Kiro retains implementation and technical evidence production, never maintains authoritative status or Validator/Moderator attestations | Seat 4; Human signs responsibility change | Updated ownership record plus a reconciled, link-only evidence register |
+| P4 | Obtain explicit Human development-resumption decision; respect outstanding validation debt and resume the original Story 3.3 dependency path without prematurely promoting any status | Human decision; independent Validator for engineering closeout | Signed resume decision and existing runbook gates satisfied |
+
+**Independent blocker:** Issue #81's dedicated Seat 4 AWS account is a design approval only. Private credentials, external gate activation and production deployment remain blocked. PR #87 in `pde-platform` must remain draft/unmerged pending separate review. Onboarding can proceed using appropriately scoped read-only records and offline rehearsals; never loosen private Seat 4 access to accommodate the rehearsal.
+
+
 ## Status Legend
 
 `⬜ Not Started` · `🟡 In Progress` · `⛔ Blocked` · `✅ Done (validated)`
