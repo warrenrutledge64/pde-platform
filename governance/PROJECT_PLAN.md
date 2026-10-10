@@ -5,6 +5,17 @@
 > must stay in sync. No phase is "done" until its live validation passes (see the
 > runbook's Validation & Advancement Gate).
 
+## 1b. Troikauge 3.0 integration priority (proposal — pending independent governance review)
+
+**Development remains paused by the Human Stakeholder.** The immediate objective is to bring the already-defined Copilot Moderator and the Human+ChatGPT Seat 4 Bookkeeper into the working loop **before resuming Story 3.3 and subsequent feature delivery**. This is a governance/onboarding overlay, not a new technical phase, validation PASS, or license to deploy.
+
+**Prioritized pre-resumption sequence:** (P0) Seat 4 inventories and reconciles existing PDE status, validation debt, issue/PR references and ownership without rewriting sealed history; (P1) Copilot independently executes the four pre-validation gates from `MODERATOR_PROTOCOL.md` on a pinned, non-production target and authors its own run record, with no Builder-authored run packet; (P2) Seat 4 assumes routine decision/status/evidence/handoff bookkeeping formerly assigned to Kiro, under Human review, while Kiro retains implementation and technical evidence; (P3) independently verify the end-to-end Planner → Builder → Moderator → Validator → Human-seal handoff using a harmless offline rehearsal; (P4) after explicit Human resume approval and outstanding validation-debt gates, return to the existing Story 3.3 critical path. `G-4` modernization remains in progress; `G-7` derived story board is optional after role handoff, not a prerequisite to safe onboarding.
+
+**Authority:** Gemini Planner and independent Validator contexts remain distinct; Kiro builds and produces engineering evidence, not acceptance standards or Moderator run attestations; Copilot owns independent Moderator per-run gates; Seat 4 (Human+ChatGPT) owns bookkeeping and administrative provenance, **not** Validator verdicts or approvals; the Human retains decision, deployment and merge authority. Seat 4 may read permitted project records only; raw private assessments and secrets are not passed to production seats. A green Moderator gate means only *eligible for independent validation*, not Done.
+
+**Acceptance of this overlay:** documented role/access matrix; read-only access and refusal/denial checks for private Seat 4 material; independent Copilot gate dry run with recorded result; Seat 4 bookkeeping reconciliation with immutable links to existing evidence; independently reviewed onboarding handoff; recorded Human release of the development pause. No new infrastructure, IAM changes, credentials, merges, or production activation implied. Related governance tracking: `pde-platform` issue #81 (dedicated Seat 4 account architecture approved for design only).
+
+
 ## 1. Project Identity
 
 **Project Name:** Platform Delivery Engine (PDE)
